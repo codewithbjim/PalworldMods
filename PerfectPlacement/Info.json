@@ -1,0 +1,21 @@
+{
+  "ModName": "Perfect Placement",
+  "PackageName": "PerfectPlacement",
+  "Version": "0.1.0-dev",
+  "Author": "virtualbjörn",
+  "Description": "Locks a building preview so the player can walk around and fine-tune its transform before final placement.",
+  "Dependencies": null,
+  "Tags": [
+    "Gameplay",
+    "Building",
+    "Quality of Life"
+  ],
+  "InstallRule": [
+    {
+      "Type": "Lua",
+      "Targets": [
+        "./"
+      ]
+    }
+  ]
+}
