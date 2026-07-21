@@ -29,11 +29,11 @@ it, move it, rotate it, and release it back to Palworld.
 
 4. Start a disposable test world. Do not develop against your only save.
 5. Enter build mode and make a building preview visible.
-6. Press `Ctrl+F6` to scan configured class names for a preview candidate.
+6. Press `Alt+F6` to scan configured class names for a preview candidate.
 7. Read the UE4SS console and confirm the selected object's full name.
-8. Press `Ctrl+F7` to lock or release the selected preview.
+8. Middle-click to lock or release the selected preview (`Alt+F7` is the fallback).
 
-If discovery finds nothing, press `Ctrl+F8`. UE4SS will write an actor dump.
+If discovery finds nothing, press `Alt+F8`. UE4SS will write an actor dump.
 Search the dump for `BuildObject`, `Preview`, `Indicator`, and `Placement`, then
 add the relevant class name to `Scripts/config.lua`.
 
@@ -44,20 +44,33 @@ Palworld's normal controls.
 
 | Action | Normal | Fine | Coarse |
 | --- | --- | --- | --- |
-| Move left/right | `Ctrl+Left/Right` | `Ctrl+Shift+Left/Right` | `Ctrl+Alt+Left/Right` |
-| Move forward/back | `Ctrl+Up/Down` | `Ctrl+Shift+Up/Down` | `Ctrl+Alt+Up/Down` |
-| Move vertically | `Ctrl+Page Up/Down` | `Ctrl+Shift+Page Up/Down` | `Ctrl+Alt+Page Up/Down` |
-| Rotate yaw | `Ctrl+Q/E` | `Ctrl+Shift+Q/E` | `Ctrl+Alt+Q/E` |
+| Move left/right | `Numpad 4/6` | Use `Numpad -`, then move | Use `Numpad +`, then move |
+| Move forward/back | `Numpad 8/2` | Use `Numpad -`, then move | Use `Numpad +`, then move |
+| Move vertically | Disabled | Disabled | Disabled |
+| Rotate yaw | `Numpad 7/9` | Configure rotation step | Configure rotation step |
+| Reset to locked transform | `Numpad 5` | — | — |
 
 Additional development controls:
 
-- `Ctrl+[` and `Ctrl+]`: decrease or increase the normal movement step
-- `Ctrl+F6`: discover and select a preview candidate
-- `Ctrl+F7`: lock or release the selected preview
-- `Ctrl+F8`: dump all actors for discovery
+- `Numpad -` and `Numpad +`: decrease or increase the movement step
+- `Alt+F6`: discover and select a preview candidate
+- Middle mouse: lock or release the selected preview
+- `Alt+Middle mouse`: copy the build piece under the cursor
+- `Alt+F7`: fallback lock/release hotkey
+- `Alt+F8`: dump all actors for discovery
 
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation
 increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
+Horizontal movement follows the locked build piece's orientation. The piece's
+yaw defines the movement axes, while the camera decides which aligned axis is
+forward; Numpad 8 therefore moves away from the camera without drifting off the
+piece's orientation. The movement directions turn when the piece is rotated.
+Vertical key bindings are currently disabled until terrain
+and structural-support validation is complete.
+
+While locked, Perfect Placement suspends the local player's builder component
+and applies transforms only when an edit key is pressed. Continuous per-frame
+transform enforcement is disabled to avoid overloading the game thread.
 
 ## Required live discovery
 

@@ -1,0 +1,115 @@
+[center][size=6][b]Perfect Placement[/b][/size]
+[i]Freeze the preview. Walk around it. Place it precisely.[/i][/center]
+
+Freeze a building preview in place, walk around it, and make precise positional and rotational adjustments before handing control back to Palworld.
+
+Perfect Placement is for the moment when vanilla placement is almost right—but the camera, terrain, or snap system will not let you put a piece exactly where you want it.
+
+[line]
+[size=5][b]Highlights[/b][/size]
+
+[list]
+[*][b]Freeze the preview.[/b] Keep the selected build piece fixed in world space while your character and camera remain free.
+[*][b]Precise movement.[/b] Nudge the piece forward, backward, left, or right using configurable centimeter increments.
+[*][b]Controlled rotation.[/b] Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
+[*][b]Instant reset.[/b] Return the preview to the exact position and rotation it had when frozen.
+[*][b]Eyedropper.[/b] Copy the build piece under the cursor into the active preview.
+[*][b]Native guide UI.[/b] The on-screen controls switch between keyboard/mouse and gamepad layouts based on the latest detected input.
+[*][b]Scoped behavior.[/b] Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
+[/list]
+
+[line]
+[size=5][b]Requirements[/b][/size]
+
+[list]
+[*]Palworld on Windows
+[*]A Palworld-compatible UE4SS installation
+[/list]
+
+[b]Perfect Placement contains both a UE4SS Lua mod and a Logic Mod .pak. Install both parts.[/b]
+
+[line]
+[size=5][b]Installation[/b][/size]
+
+[list=1]
+[*]Install a Palworld-compatible version of UE4SS.
+[*]Download Perfect Placement.
+[*]Extract the archive into the Palworld installation folder containing [b]Pal[/b].
+[*]Allow folders to merge.
+[/list]
+
+The installed files should end up at:
+
+[code]Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
+Pal/Content/Paks/LogicMods/PerfectPlacement.pak[/code]
+
+If your UE4SS build still uses [b]mods.txt[/b], add:
+
+[code]PerfectPlacement : 1[/code]
+
+[line]
+[size=5][b]Keyboard and mouse controls[/b][/size]
+
+[table]
+[tr][th]Action[/th][th]Control[/th][/tr]
+[tr][td]Freeze / unfreeze preview[/td][td]Middle mouse[/td][/tr]
+[tr][td]Move[/td][td]Numpad 8 / 2 / 4 / 6[/td][/tr]
+[tr][td]Rotate[/td][td]Numpad 7 / 9[/td][/tr]
+[tr][td]Decrease / increase movement step[/td][td]Numpad - / +[/td][/tr]
+[tr][td]Reset to frozen transform[/td][td]Numpad 5[/td][/tr]
+[tr][td]Copy targeted build piece[/td][td]Alt + Middle mouse[/td][/tr]
+[/table]
+
+[size=5][b]Gamepad controls[/b][/size]
+
+[table]
+[tr][th]Action[/th][th]Control[/th][/tr]
+[tr][td]Freeze / unfreeze preview[/td][td]R3[/td][/tr]
+[tr][td]Move[/td][td]D-pad[/td][/tr]
+[tr][td]Rotate[/td][td]LB / RB[/td][/tr]
+[tr][td]Adjust movement step[/td][td]LT + D-pad left / right[/td][/tr]
+[tr][td]Reset to frozen transform[/td][td]L3[/td][/tr]
+[tr][td]Copy targeted build piece[/td][td]Y[/td][/tr]
+[/table]
+
+The key guide appears only while a live construction preview is available.
+
+[line]
+[size=5][b]Notes and limitations[/b][/size]
+
+[list]
+[*]Horizontal adjustment is currently supported. Vertical adjustment is disabled until terrain and structural-support validation is fully verified.
+[*]Install the mod on each client that wants to use the placement controls.
+[*]Test new mod versions in a disposable world before using an important save.
+[*]Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
+[/list]
+
+[line]
+[size=5][b]Troubleshooting[/b][/size]
+
+[b]Nothing happens when freezing[/b]
+
+Confirm UE4SS loaded PerfectPlacement and that [b]PerfectPlacement.pak[/b] is in [b]Pal/Content/Paks/LogicMods[/b].
+
+[b]The guide appears but the controls do not respond[/b]
+
+Check the UE4SS console or log for [b][PerfectPlacement][/b] errors. For keyboard controls, confirm Num Lock is enabled.
+
+[b]The guide is missing or incomplete[/b]
+
+Remove older Perfect Placement .pak files before installing the current version. Do not keep two versions under different filenames.
+
+When reporting a problem, include your Palworld version, UE4SS version, installed mod list, reproduction steps, and the relevant UE4SS log section.
+
+[line]
+[size=5][b]Uninstallation[/b][/size]
+
+Delete:
+
+[code]Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
+Pal/Content/Paks/LogicMods/PerfectPlacement.pak[/code]
+
+[line]
+[size=5][b]Support and questions[/b][/size]
+
+Open an issue on the project repository and include the diagnostic information listed above.

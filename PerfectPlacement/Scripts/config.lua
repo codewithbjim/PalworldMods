@@ -2,6 +2,25 @@
 -- Unreal Engine uses centimeters for world-space distances.
 
 return {
+    ui = {
+        -- Implemented by the companion Blueprint Logic Mod. Lua discovers the
+        -- spawned host by generated class name and calls its public functions.
+        host_class_name = "WBP_PerfectPlacement_KeyGuide_C",
+        show_frozen_guide_function = "ShowFrozenGuide",
+        show_unfrozen_guide_function = "ShowUnfrozenGuide",
+        hide_function = "HideGuide",
+        refresh_function = "RefreshGuide",
+        show_frozen_toast_function = "ShowFrozenToast",
+        show_unfrozen_toast_function = "ShowUnfrozenToast",
+        hide_toast_function = "HideToast",
+        move_step_property = "MoveStepCm",
+
+        -- Keep the old stock-widget experiment disabled. It is retained in
+        -- main.lua only as an optional diagnostic fallback while the custom
+        -- widget pak is being developed.
+        use_stock_keyguide_fallback = false,
+    },
+
     movement = {
         fine = 1.0,
         normal = 10.0,
@@ -9,6 +28,8 @@ return {
         minimum = 0.1,
         maximum = 1000.0,
         step_scale = 10.0,
+        maximum_below_initial_cm = 25.0,
+        maximum_above_initial_cm = 500.0,
     },
 
     rotation = {
@@ -17,14 +38,12 @@ return {
         coarse = 15.0,
     },
 
-    -- Movement is calculated from the camera yaw. Vertical movement always
-    -- follows world Z, so looking up or down does not change the move step.
-    camera_relative_movement = true,
-
     -- When true, Perfect Placement periodically reapplies the stored transform.
     -- This prevents Palworld's normal placement trace from pulling a locked
     -- preview back to the crosshair while the player walks around.
-    hold_locked_transform = true,
+    -- The player BuilderComponent is suspended while editing, so continuous
+    -- transform reapplication is unnecessary and can overload the game thread.
+    hold_locked_transform = false,
     transform_refresh_ms = 16,
 
     diagnostics = {

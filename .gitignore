@@ -1,2 +1,19 @@
 .DS_Store
 **/.DS_Store
+
+# Local tooling and generated Unreal output
+.video-tools/
+PerfectPlacementBlueprint/Packaged/
+PerfectPlacementBlueprint/PalworldModdingKit/*
+!PerfectPlacementBlueprint/PalworldModdingKit/Content/
+PerfectPlacementBlueprint/PalworldModdingKit/Content/*
+!PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/
+PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/*
+!PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/PerfectPlacement/
+!PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/PerfectPlacement/**
+
+# Superseded cooked-widget experiment and generated release archives
+PerfectPlacementPak/
+Release/Dist/
+Release/Media/*
+!Release/Media/perfect-placement-nexus-banner-1300x372-v2.png
