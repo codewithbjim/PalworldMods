@@ -6,7 +6,6 @@ and rotational adjustments before handing control back to Palworld.
 Perfect Placement is for the moment when vanilla placement is almost right—but
 the camera, terrain, or snap system will not let you put a piece exactly where
 you want it.
-give me bbcode
 ---
 
 ## Highlights
@@ -20,8 +19,8 @@ give me bbcode
 - **Instant reset.** Return the preview to the exact position and rotation it
   had when frozen.
 - **Eyedropper.** Copy the build piece under the cursor into the active preview.
-- **Native guide UI.** The on-screen controls switch between keyboard/mouse and
-  gamepad layouts based on the latest detected input.
+- **Native guide UI.** The on-screen keyboard and mouse controls stay visible
+  while a live construction preview is available.
 - **Scoped behavior.** Perfect Placement only edits the temporary preview. Final
   construction remains on Palworld's normal validation and placement path.
 
@@ -61,27 +60,15 @@ PerfectPlacement : 1
 
 ### Keyboard and mouse
 
-| Action | Control |
-|---|---|
-| Freeze / unfreeze preview | Middle mouse |
-| Move | Numpad 8 / 2 / 4 / 6 |
-| Rotate | Numpad 7 / 9 |
-| Decrease / increase movement step | Numpad - / + |
-| Reset to frozen transform | Numpad 5 |
-| Copy targeted build piece | Alt + Middle mouse |
-
-### Gamepad
-
-| Action | Control |
-|---|---|
-| Freeze / unfreeze preview | R3 |
-| Move | D-pad |
-| Rotate | LB / RB |
-| Adjust movement step | LT + D-pad left / right |
-| Reset to frozen transform | L3 |
-| Copy targeted build piece | Y |
+- **Freeze / unfreeze preview:** Middle mouse
+- **Move:** Numpad 8 / 2 / 4 / 6
+- **Rotate:** Numpad 7 / 9
+- **Decrease / increase movement step:** Numpad - / +
+- **Reset to frozen transform:** Numpad 5
+- **Copy targeted build piece:** Shift + Middle mouse
 
 The key guide appears only while a live construction preview is available.
+Gamepad placement controls are not supported in this release.
 
 ---
 
@@ -122,4 +109,3 @@ mod list, reproduction steps, and the relevant UE4SS log section.
 
 Open an issue on the project repository and include the diagnostic information
 listed above.
-

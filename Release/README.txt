@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.1.0
++PERFECT PLACEMENT 0.1.1
 =======================
 
 REQUIREMENT
@@ -27,18 +27,11 @@ Numpad 8/2/4/6     Move
 Numpad 7/9         Rotate
 Numpad -/+         Decrease / increase movement step
 Numpad 5           Reset to the frozen transform
-Alt + middle mouse Copy targeted build piece
+Shift + middle mouse
+                   Copy targeted build piece
 
-GAMEPAD
--------
-R3                 Freeze / unfreeze
-D-pad              Move
-LB / RB            Rotate
-LT + D-pad L/R     Adjust movement step
-L3                 Reset to the frozen transform
-Y                  Copy targeted build piece
+Gamepad placement controls are not supported in this release.
 
 UNINSTALL
 ---------
 Delete the PerfectPlacement UE4SS mod folder and PerfectPlacement.pak.
-

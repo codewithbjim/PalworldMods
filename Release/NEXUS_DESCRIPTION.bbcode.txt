@@ -14,7 +14,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 [*][b]Controlled rotation.[/b] Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
 [*][b]Instant reset.[/b] Return the preview to the exact position and rotation it had when frozen.
 [*][b]Eyedropper.[/b] Copy the build piece under the cursor into the active preview.
-[*][b]Native guide UI.[/b] The on-screen controls switch between keyboard/mouse and gamepad layouts based on the latest detected input.
+[*][b]Native guide UI.[/b] The on-screen keyboard and mouse controls stay visible while a live construction preview is available.
 [*][b]Scoped behavior.[/b] Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
 [/list]
 
@@ -50,29 +50,17 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 [line]
 [size=5][b]Keyboard and mouse controls[/b][/size]
 
-[table]
-[tr][th]Action[/th][th]Control[/th][/tr]
-[tr][td]Freeze / unfreeze preview[/td][td]Middle mouse[/td][/tr]
-[tr][td]Move[/td][td]Numpad 8 / 2 / 4 / 6[/td][/tr]
-[tr][td]Rotate[/td][td]Numpad 7 / 9[/td][/tr]
-[tr][td]Decrease / increase movement step[/td][td]Numpad - / +[/td][/tr]
-[tr][td]Reset to frozen transform[/td][td]Numpad 5[/td][/tr]
-[tr][td]Copy targeted build piece[/td][td]Alt + Middle mouse[/td][/tr]
-[/table]
-
-[size=5][b]Gamepad controls[/b][/size]
-
-[table]
-[tr][th]Action[/th][th]Control[/th][/tr]
-[tr][td]Freeze / unfreeze preview[/td][td]R3[/td][/tr]
-[tr][td]Move[/td][td]D-pad[/td][/tr]
-[tr][td]Rotate[/td][td]LB / RB[/td][/tr]
-[tr][td]Adjust movement step[/td][td]LT + D-pad left / right[/td][/tr]
-[tr][td]Reset to frozen transform[/td][td]L3[/td][/tr]
-[tr][td]Copy targeted build piece[/td][td]Y[/td][/tr]
-[/table]
+[list]
+[*][b]Freeze / unfreeze preview:[/b] Middle mouse
+[*][b]Move:[/b] Numpad 8 / 2 / 4 / 6
+[*][b]Rotate:[/b] Numpad 7 / 9
+[*][b]Decrease / increase movement step:[/b] Numpad - / +
+[*][b]Reset to frozen transform:[/b] Numpad 5
+[*][b]Copy targeted build piece:[/b] Shift + Middle mouse
+[/list]
 
 The key guide appears only while a live construction preview is available.
+Gamepad placement controls are not supported in this release.
 
 [line]
 [size=5][b]Notes and limitations[/b][/size]

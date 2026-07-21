@@ -47,7 +47,7 @@ return {
     transform_refresh_ms = 16,
 
     diagnostics = {
-        verbose = true,
+        verbose = false,
 
         -- These are intentionally isolated here because Palworld 1.0 class
         -- names must be confirmed from a live UE4SS header/actor dump.

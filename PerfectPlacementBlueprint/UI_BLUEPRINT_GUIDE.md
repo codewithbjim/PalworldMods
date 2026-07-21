@@ -1,9 +1,9 @@
 # Perfect Placement key-guide Blueprint
 
-This companion Logic Mod renders keyboard/mouse and gamepad key guides. It
-does not depend on Common Input. `ModActor` detects the most recently used
-device with ordinary Blueprint input events and tells the widget which guide
-to display. Lua owns placement state and calls the widget's public API.
+This companion Logic Mod ships with the keyboard/mouse key guide enabled.
+Gamepad layouts remain in the widget for future support but must not be selected
+in the current release. Lua owns placement state and calls the widget's public
+API.
 
 ## Assets
 
@@ -31,7 +31,7 @@ CanvasPanel (Root)
 │        │  └─ WidgetSwitcher: UnfrozenInputSwitcher
 │        │     ├─ VerticalBox: KeyboardUnfrozenGuide  [index 0]
 │        │     │  ├─ HorizontalBox: FreezeRow         [MMB] Freeze
-│        │     │  └─ HorizontalBox: CopyRow           [Alt]+[MMB] Copy
+│        │     │  └─ HorizontalBox: CopyRow           [Shift]+[MMB] Copy
 │        │     └─ VerticalBox: GamepadUnfrozenGuide   [index 1]
 │        │        ├─ HorizontalBox: FreezeRow         [R3] Freeze
 │        │        └─ HorizontalBox: CopyRow           [Y] Copy
@@ -145,32 +145,17 @@ Event BeginPlay
 Do not call a Show function on BeginPlay; Lua decides when a placement preview
 exists.
 
-## Device detection without Common Input
+## Shipping input-guide behavior
 
-Add an `Any Key` event to `ModActor`. From its Key value:
+After creating `KeyGuideWidget` on BeginPlay, call
+`SetUsingGamepad(false)` once. Disconnect every execution path that calls
+`SetUsingGamepad(true)`, including the gamepad branch of `Any Key` and the four
+gamepad-axis detection events. The dormant gamepad panels may remain in the
+widget; keeping both input switchers at index 0 prevents unsupported controls
+from appearing without discarding the UI work.
 
-```text
-Any Key
-→ Is Gamepad Key
-→ Branch
-```
-
-On true, verify `KeyGuideWidget` is valid and call
-`SetUsingGamepad(true)`. On false, test `Is Keyboard Key OR Is Mouse Button`;
-if either is true, call `SetUsingGamepad(false)`. Ignore all other key types.
-
-The existing project axes are `Turn` for Mouse X, `LookUp` for Mouse Y,
-`TurnRate`/`LookUpRate` for the right stick, and
-`MoveForwardController`/`MoveRightController` for the left stick. `Any Key`
-normally sees gamepad axes after they cross Unreal's key threshold. If a tested
-controller does not switch on stick movement, add the four controller axis
-events to `ModActor`: take Absolute of Axis Value, compare it to `0.25`, and
-call `SetUsingGamepad(true)` only when above the threshold.
-
-For mouse-only movement switching, use the `Turn` and `LookUp` axis events.
-Take Absolute of Axis Value, compare it to `0.05`, and call
-`SetUsingGamepad(false)` only when above the threshold. Do not switch on zero
-axis events, and do not poll on Tick.
+The existing mouse-detection and `SetUsingGamepad(false)` paths may remain, but
+they are optional while the guide is forced to its keyboard/mouse layout.
 
 ## Toast animations
 
@@ -188,11 +173,10 @@ Collapse `ToastPanel` when either animation finishes.
 Temporarily test these flows in editor:
 
 1. Keyboard input selects both keyboard switchers.
-2. A gamepad button selects both gamepad switchers.
-3. Mouse movement switches back to keyboard/mouse.
-4. Frozen and unfrozen state changes preserve the selected device.
-5. `MoveStepCm` updates both frozen Step labels.
-6. Hidden guides remain hidden when the input device changes.
+2. Gamepad input does not select either gamepad switcher.
+3. Frozen and unfrozen state changes preserve the keyboard/mouse layout.
+4. `MoveStepCm` updates the visible keyboard Step label.
+5. Hidden guides remain hidden when the input device changes.
 
 Remove temporary Show/Hide test events before cooking. Lua owns shipping guide
 visibility and placement state.

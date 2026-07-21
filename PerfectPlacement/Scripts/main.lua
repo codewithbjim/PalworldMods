@@ -50,14 +50,15 @@ local current_move_step = Config.movement.normal
 local transform_loop_started = false
 local preview_tick_was_enabled = nil
 local builder_component = nil
+local cached_builder_component = nil
 local builder_tick_was_enabled = nil
 local lifecycle_monitor_started = false
 local lifecycle_ui_refresh_ticks = 0
+local builder_fallback_scan_cooldown = 0
 local construction_guide_mode = nil
 local building_mode_exit_checks = 0
 local unfrozen_ui_builder_component = nil
 local unfrozen_ui_preview_visible = nil
-local unfrozen_ui_probe_ticks = 0
 local notification_generation = 0
 local locked_preview_name = nil
 local release_preview
@@ -75,6 +76,10 @@ local keyguide_hook_registered = false
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
 local ui_host_missing_was_logged = false
+
+local LIFECYCLE_INTERVAL_MS = 100
+local IDLE_UI_REFRESH_TICKS = 5
+local BUILDER_FALLBACK_RETRY_TICKS = 10
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
@@ -433,14 +438,37 @@ local function set_preview_tick_enabled(enabled)
     return true
 end
 
-local function find_builder_component()
-    local candidates = {}
+local function builder_component_from_player(player)
+    if not is_valid(player) then
+        return nil
+    end
+
+    local component_ok, component = pcall(function()
+        return player.BuilderComponent
+    end)
+    if component_ok and is_valid(component) then
+        cached_builder_component = component
+        builder_fallback_scan_cooldown = 0
+        verbose("Cached BuilderComponent on " .. full_name(player))
+        return component
+    end
+    return nil
+end
+
+local function find_builder_component(allow_global_scan)
+    if is_valid(cached_builder_component) then
+        return cached_builder_component
+    end
+    cached_builder_component = nil
 
     local helper_ok, helper_pawn = pcall(function()
         return UEHelpers:GetPlayerPawn()
     end)
-    if helper_ok and is_valid(helper_pawn) then
-        table.insert(candidates, helper_pawn)
+    if helper_ok then
+        local component = builder_component_from_player(helper_pawn)
+        if component ~= nil then
+            return component
+        end
     end
 
     local controller_ok, controller = pcall(function()
@@ -450,36 +478,40 @@ local function find_builder_component()
         local pawn_ok, controller_pawn = pcall(function()
             return controller:GetPawn()
         end)
-        if pawn_ok and is_valid(controller_pawn) then
-            table.insert(candidates, controller_pawn)
+        if pawn_ok then
+            local component = builder_component_from_player(controller_pawn)
+            if component ~= nil then
+                return component
+            end
         end
 
         local acknowledged_ok, acknowledged_pawn = pcall(function()
             return controller.AcknowledgedPawn
         end)
-        if acknowledged_ok and is_valid(acknowledged_pawn) then
-            table.insert(candidates, acknowledged_pawn)
+        if acknowledged_ok then
+            local component = builder_component_from_player(acknowledged_pawn)
+            if component ~= nil then
+                return component
+            end
         end
     end
 
+    if allow_global_scan == false then
+        return nil
+    end
+
+    verbose("Direct BuilderComponent lookup failed; scanning local player objects.")
     for _, player in ipairs(safe_find_all_of("PalPlayerCharacter")) do
         if is_valid(player) then
             local local_ok, is_local = pcall(function()
                 return player:IsLocallyControlled()
             end)
             if local_ok and is_local then
-                table.insert(candidates, player)
+                local component = builder_component_from_player(player)
+                if component ~= nil then
+                    return component
+                end
             end
-        end
-    end
-
-    for _, player in ipairs(candidates) do
-        local component_ok, component = pcall(function()
-            return player.BuilderComponent
-        end)
-        if component_ok and is_valid(component) then
-            log("Found BuilderComponent on " .. full_name(player))
-            return component
         end
     end
     return nil
@@ -555,7 +587,19 @@ local function start_lifecycle_monitor()
         return
     end
     lifecycle_monitor_started = true
-    LoopAsync(100, function()
+    LoopAsync(LIFECYCLE_INTERVAL_MS, function()
+        -- Frozen previews need responsive safety checks. Outside editing, do
+        -- not enqueue game-thread work until the 2 Hz guide refresh is due.
+        if state ~= State.EDITING then
+            lifecycle_ui_refresh_ticks = lifecycle_ui_refresh_ticks + 1
+            if lifecycle_ui_refresh_ticks < IDLE_UI_REFRESH_TICKS then
+                return
+            end
+            lifecycle_ui_refresh_ticks = 0
+        else
+            lifecycle_ui_refresh_ticks = 0
+        end
+
         ExecuteInGameThread(function()
             if state == State.EDITING then
                 local should_release, reason = should_release_locked_preview()
@@ -563,45 +607,52 @@ local function start_lifecycle_monitor()
                     log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
                     release_preview(reason)
                 end
-            elseif is_valid(unfrozen_ui_builder_component) then
-                local status_ok, in_building_mode, has_preview = pcall(function()
-                    local in_mode = unfrozen_ui_builder_component:IsInBuildingMode()
-                    local checker = unfrozen_ui_builder_component.InstallChecker
-                    local target = nil
-                    if is_valid(checker) then
-                        target = checker.TargetBuildObject
-                    end
-                    return in_mode, is_valid(target)
-                end)
+                return
+            end
 
-                local should_show = status_ok and in_building_mode and has_preview
-                if should_show ~= unfrozen_ui_preview_visible then
-                    unfrozen_ui_preview_visible = should_show
-                    update_construction_hotkey_guide(false, false, not should_show)
-                end
-
-                if not status_ok then
-                    unfrozen_ui_builder_component = nil
+            if not is_valid(unfrozen_ui_builder_component) then
+                unfrozen_ui_builder_component = nil
+                local allow_global_scan = builder_fallback_scan_cooldown <= 0
+                local candidate = find_builder_component(allow_global_scan)
+                if is_valid(candidate) then
+                    unfrozen_ui_builder_component = candidate
                     unfrozen_ui_preview_visible = nil
+                elseif allow_global_scan then
+                    -- Direct helpers are retried every idle refresh. A failed
+                    -- full UObject scan is backed off for roughly five seconds.
+                    builder_fallback_scan_cooldown = BUILDER_FALLBACK_RETRY_TICKS
+                elseif builder_fallback_scan_cooldown > 0 then
+                    builder_fallback_scan_cooldown = builder_fallback_scan_cooldown - 1
                 end
-            else
-                -- Before the first freeze there is no cached BuilderComponent.
-                -- Probe at 2 Hz so the compact guide appears as soon as a real
-                -- Palworld placement preview becomes active.
-                unfrozen_ui_probe_ticks = unfrozen_ui_probe_ticks + 1
-                if unfrozen_ui_probe_ticks >= 5 then
-                    unfrozen_ui_probe_ticks = 0
-                    local candidate = find_builder_component()
-                    if is_valid(candidate) then
-                        local mode_ok, in_building_mode = pcall(function()
-                            return candidate:IsInBuildingMode()
-                        end)
-                        if mode_ok and in_building_mode then
-                            unfrozen_ui_builder_component = candidate
-                            unfrozen_ui_preview_visible = nil
-                        end
-                    end
+            end
+
+            if not is_valid(unfrozen_ui_builder_component) then
+                return
+            end
+
+            local status_ok, in_building_mode, has_preview = pcall(function()
+                local in_mode = unfrozen_ui_builder_component:IsInBuildingMode()
+                local checker = unfrozen_ui_builder_component.InstallChecker
+                local target = nil
+                if is_valid(checker) then
+                    target = checker.TargetBuildObject
                 end
+                return in_mode, is_valid(target)
+            end)
+
+            local should_show = status_ok and in_building_mode and has_preview
+            if should_show ~= unfrozen_ui_preview_visible then
+                unfrozen_ui_preview_visible = should_show
+                update_construction_hotkey_guide(false, false, not should_show)
+            end
+
+            if not status_ok then
+                if cached_builder_component == unfrozen_ui_builder_component then
+                    cached_builder_component = nil
+                end
+                unfrozen_ui_builder_component = nil
+                unfrozen_ui_preview_visible = nil
+                builder_fallback_scan_cooldown = 0
             end
         end)
     end)
@@ -1526,7 +1577,9 @@ local function register_chord(key, modifiers, callback)
     end
 end
 
+local CTRL = { ModifierKey.CONTROL }
 local ALT = { ModifierKey.ALT }
+local SHIFT = { ModifierKey.SHIFT }
 local NONE = {}
 
 -- Numeric keypad controls avoid Palworld's build UI and snap bindings.
@@ -1566,8 +1619,13 @@ local function toggle_preview_lock()
         begin_editing()
     end
 end
+-- UE4SS treats each modifier set as a distinct keyboard binding. Register the
+-- alignment modifiers explicitly so middle-click can freeze a preview while
+-- Palworld's Ctrl- or Alt-based alignment mode is active.
 register_chord(VK.MIDDLE_MOUSE, NONE, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, ALT, copy_looked_at_build_piece)
+register_chord(VK.MIDDLE_MOUSE, CTRL, toggle_preview_lock)
+register_chord(VK.MIDDLE_MOUSE, ALT, toggle_preview_lock)
+register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
 register_chord(VK.F7, ALT, toggle_preview_lock)
 register_chord(VK.F8, ALT, function()
     log("Writing UE4SS actor dump; search it for BuildObject, Preview, Indicator, or Placement.")
@@ -1578,6 +1636,6 @@ end)
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.0")
+log("Loaded Perfect Placement 0.1.1")
 log("Companion key-guide UI bridge revision 14 loaded.")
 log("Open build mode, show a preview, press Alt+F6 to discover it, then middle-click to lock it.")
