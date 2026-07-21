@@ -7,19 +7,6 @@ local MOD = "PerfectPlacement"
 -- UE4SS versions even when a build exposes different symbolic Key names.
 local VK = {
     MIDDLE_MOUSE = 0x04,
-    PAGE_UP = 0x21,
-    PAGE_DOWN = 0x22,
-    LEFT = 0x25,
-    UP = 0x26,
-    RIGHT = 0x27,
-    DOWN = 0x28,
-    OPEN_BRACKET = 0xDB,
-    CLOSE_BRACKET = 0xDD,
-    Q = 0x51,
-    E = 0x45,
-    F6 = 0x75,
-    F7 = 0x76,
-    F8 = 0x77,
     NUMPAD_1 = 0x61,
     NUMPAD_2 = 0x62,
     NUMPAD_3 = 0x63,
@@ -309,7 +296,7 @@ local function discover_preview()
     if not is_valid(best_actor) then
         state = State.SEARCHING
         log(string.format(
-            "No preview candidate found (%d objects checked). Open build mode, display a preview, then press Alt+F6.",
+            "No preview candidate found (%d objects checked).",
             candidates_seen
         ))
         return false
@@ -515,6 +502,27 @@ local function find_builder_component(allow_global_scan)
         end
     end
     return nil
+end
+
+local function find_active_build_context(allow_global_scan)
+    local component = find_builder_component(allow_global_scan)
+    if not is_valid(component) then
+        return nil, nil, nil
+    end
+
+    local status_ok, in_building_mode, checker, target = pcall(function()
+        local active_checker = component.InstallChecker
+        local active_target = nil
+        if is_valid(active_checker) then
+            active_target = active_checker.TargetBuildObject
+        end
+        return component:IsInBuildingMode(), active_checker, active_target
+    end)
+    if not status_ok or not in_building_mode
+        or not is_valid(checker) or not is_valid(target) then
+        return nil, nil, nil
+    end
+    return component, checker, target
 end
 
 local function set_builder_tick_enabled(enabled)
@@ -866,7 +874,7 @@ local function apply_locked_keyguide(construction)
     local row_ok, row_error = setup_text_keyguide_row(
         construction,
         "WBP_Ingameconstruction_KeyGuide_6",
-        "8/2/4/6 Move | 7/9 Rotate | MMB Unlock"
+        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unlock"
     )
     if row_ok then
         log("Locked construction key guide applied as a compact text row.")
@@ -1036,29 +1044,19 @@ local function show_preview_notification(message, color)
 end
 
 local function begin_editing()
-    if not is_valid(preview_actor) and not discover_preview() then
+    -- Keybinds are global in UE4SS. Resolve only the local player's live build
+    -- context here so MMB is a cheap no-op during normal gameplay.
+    local active_component, active_checker, active_preview = find_active_build_context(false)
+    if active_component == nil then
         return
     end
 
-    builder_component = find_builder_component()
+    builder_component = active_component
     unfrozen_ui_builder_component = nil
     unfrozen_ui_preview_visible = nil
-    transform_actor = preview_actor
-    if builder_component ~= nil then
-        local checker_ok, install_checker = pcall(function()
-            return builder_component.InstallChecker
-        end)
-        if checker_ok and is_valid(install_checker) then
-            transform_actor = install_checker
-            local target_ok, exact_target = pcall(function()
-                return install_checker.TargetBuildObject
-            end)
-            if target_ok and is_valid(exact_target) then
-                preview_actor = exact_target
-                log("Using InstallChecker target: " .. full_name(preview_actor))
-            end
-        end
-    end
+    transform_actor = active_checker
+    preview_actor = active_preview
+    log("Using InstallChecker target: " .. full_name(preview_actor))
 
     local root_ok, root_component = pcall(function()
         return preview_actor.RootComponent
@@ -1431,9 +1429,10 @@ local function copy_looked_at_build_piece()
     end
     ExecuteInGameThread(function()
         local ok, error_message = pcall(function()
-            local component = builder_component or find_builder_component()
-            if component == nil or not component:IsValid() then
-                error("local BuilderComponent is unavailable")
+            local component, active_checker, active_preview = find_active_build_context(false)
+            if component == nil then
+                log("Eyedropper ignored: no placement preview is active.")
+                return
             end
             local player = component:GetOwner()
             local camera = component.OwnerCamera
@@ -1477,26 +1476,6 @@ local function copy_looked_at_build_piece()
             end)
             if not id_ok or build_object_id == nil or tostring(build_object_id) == "None" then
                 error("target is not a copyable Pal build object: " .. full_name(target))
-            end
-
-            local building_mode_ok, is_in_building_mode = pcall(function()
-                return component:IsInBuildingMode()
-            end)
-            if not building_mode_ok or not is_in_building_mode then
-                log("Eyedropper ignored: no placement preview is active.")
-                return
-            end
-
-            local checker_ok, active_checker = pcall(function()
-                return component.InstallChecker
-            end)
-            local preview_ok, active_preview = pcall(function()
-                return active_checker.TargetBuildObject
-            end)
-            if not checker_ok or not is_valid(active_checker)
-                or not preview_ok or not is_valid(active_preview) then
-                log("Eyedropper ignored: no placement preview is active.")
-                return
             end
 
             local active_id_ok, active_build_object_id = pcall(function()
@@ -1577,8 +1556,6 @@ local function register_chord(key, modifiers, callback)
     end
 end
 
-local CTRL = { ModifierKey.CONTROL }
-local ALT = { ModifierKey.ALT }
 local SHIFT = { ModifierKey.SHIFT }
 local NONE = {}
 
@@ -1587,11 +1564,9 @@ register_chord(VK.NUMPAD_4, NONE, function() move_preview(0, -1, 0) end)
 register_chord(VK.NUMPAD_6, NONE, function() move_preview(0, 1, 0) end)
 register_chord(VK.NUMPAD_8, NONE, function() move_preview(1, 0, 0) end)
 register_chord(VK.NUMPAD_2, NONE, function() move_preview(-1, 0, 0) end)
+register_chord(VK.NUMPAD_3, NONE, function() move_preview(0, 0, 1) end)
+register_chord(VK.NUMPAD_1, NONE, function() move_preview(0, 0, -1) end)
 register_chord(VK.NUMPAD_5, NONE, reset_preview_transform)
--- Vertical editing is intentionally disabled until full terrain/support
--- validation is available.
--- register_chord(VK.NUMPAD_3, NONE, function() move_preview(0, 0, 1) end)
--- register_chord(VK.NUMPAD_1, NONE, function() move_preview(0, 0, -1) end)
 register_chord(VK.NUMPAD_7, NONE, function() rotate_preview(-1) end)
 register_chord(VK.NUMPAD_9, NONE, function() rotate_preview(1) end)
 
@@ -1602,9 +1577,6 @@ register_chord(VK.NUMPAD_ADD, NONE, function()
     change_move_step(Config.movement.step_scale)
 end)
 
--- Development controls. The final-confirm and cancel hooks remain in the
--- Palworld adapter milestone because their 1.0 function paths need a live dump.
-register_chord(VK.F6, ALT, discover_preview)
 local function toggle_preview_lock()
     local now = os.clock()
     if now - last_lock_toggle_time < 0.3 then
@@ -1619,23 +1591,13 @@ local function toggle_preview_lock()
         begin_editing()
     end
 end
--- UE4SS treats each modifier set as a distinct keyboard binding. Register the
--- alignment modifiers explicitly so middle-click can freeze a preview while
--- Palworld's Ctrl- or Alt-based alignment mode is active.
 register_chord(VK.MIDDLE_MOUSE, NONE, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, CTRL, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, ALT, toggle_preview_lock)
 register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
-register_chord(VK.F7, ALT, toggle_preview_lock)
-register_chord(VK.F8, ALT, function()
-    log("Writing UE4SS actor dump; search it for BuildObject, Preview, Indicator, or Placement.")
-    DumpAllActors()
-end)
 
 -- Start the shared lifecycle/UI monitor immediately so the unfrozen guide can
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.1")
+log("Loaded Perfect Placement 0.1.2")
 log("Companion key-guide UI bridge revision 14 loaded.")
-log("Open build mode, show a preview, press Alt+F6 to discover it, then middle-click to lock it.")
+log("Open build mode, show a preview, then middle-click to lock it.")

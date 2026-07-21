@@ -10,7 +10,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 
 [list]
 [*][b]Freeze the preview.[/b] Keep the selected build piece fixed in world space while your character and camera remain free.
-[*][b]Precise movement.[/b] Nudge the piece forward, backward, left, or right using configurable centimeter increments.
+[*][b]Precise movement.[/b] Nudge the piece forward, backward, left, right, up, or down using configurable centimeter increments.
 [*][b]Controlled rotation.[/b] Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
 [*][b]Instant reset.[/b] Return the preview to the exact position and rotation it had when frozen.
 [*][b]Eyedropper.[/b] Copy the build piece under the cursor into the active preview.
@@ -52,7 +52,8 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 
 [list]
 [*][b]Freeze / unfreeze preview:[/b] Middle mouse
-[*][b]Move:[/b] Numpad 8 / 2 / 4 / 6
+[*][b]Move horizontally:[/b] Numpad 8 / 2 / 4 / 6
+[*][b]Move up / down:[/b] Numpad 3 / 1
 [*][b]Rotate:[/b] Numpad 7 / 9
 [*][b]Decrease / increase movement step:[/b] Numpad - / +
 [*][b]Reset to frozen transform:[/b] Numpad 5
@@ -60,13 +61,14 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 [/list]
 
 The key guide appears only while a live construction preview is available.
+Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.
 Gamepad placement controls are not supported in this release.
 
 [line]
 [size=5][b]Notes and limitations[/b][/size]
 
 [list]
-[*]Horizontal adjustment is currently supported. Vertical adjustment is disabled until terrain and structural-support validation is fully verified.
+[*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 [*]Install the mod on each client that wants to use the placement controls.
 [*]Test new mod versions in a disposable world before using an important save.
 [*]Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.

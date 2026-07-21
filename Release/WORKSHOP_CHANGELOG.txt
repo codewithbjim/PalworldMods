@@ -1,0 +1,29 @@
+Version 0.1.2 — Input handling hotfix
+
+Features
+- Freeze and release a live construction preview while walking around it.
+- Move frozen previews horizontally or vertically in configurable centimeter increments.
+- Allow vertical adjustment from 25 cm below to 650 cm above the frozen origin.
+- Update the in-game keyboard guide with the Numpad 3/1 vertical controls.
+- Rotate around the captured build-piece pivot.
+- Reset to the transform captured when the preview was frozen.
+- Copy the targeted build piece into the active preview.
+- Package the Lua and Logic Mod components through Palworld's official Workshop loader.
+
+Performance and reliability
+- Cache the local player's BuilderComponent instead of rediscovering it every 500 ms outside build mode.
+- Prefer direct player lookups before falling back to a global PalPlayerCharacter scan.
+- Run frozen-preview safety checks on the game thread at 10 Hz and idle guide checks at 2 Hz.
+- Back off failed global player scans for approximately five seconds.
+- Disable verbose diagnostics by default.
+- Keep the unfinished gamepad guide hidden.
+- Ignore middle-mouse bindings unless a live construction preview is active.
+- Resolve the active preview directly from the local BuilderComponent, avoiding the global preview scan and stutter when middle mouse is used in normal play.
+- Remove the legacy Alt+F6, Alt+F7, Alt+F8, Ctrl+Middle Mouse, and Alt+Middle Mouse bindings.
+
+Known limitations
+- This is an experimental beta; test it in a disposable world or backed-up save.
+- Final confirmation/cancel integration with Palworld's authoritative placement path is incomplete.
+- The companion key-guide UI is not reliable on every current setup.
+- Gamepad controls are disabled.
+- Dedicated-server and non-host multiplayer behavior is unverified.

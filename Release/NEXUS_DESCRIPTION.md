@@ -1,28 +1,19 @@
 # Perfect Placement
 
-Freeze a building preview in place, walk around it, and make precise positional
-and rotational adjustments before handing control back to Palworld.
+Freeze a building preview in place, walk around it, and make precise positional and rotational adjustments before handing control back to Palworld.
 
-Perfect Placement is for the moment when vanilla placement is almost right—but
-the camera, terrain, or snap system will not let you put a piece exactly where
-you want it.
+Perfect Placement is for the moment when vanilla placement is almost right—but the camera, terrain, or snap system will not let you put a piece exactly where you want it.
 ---
 
 ## Highlights
 
-- **Freeze the preview.** Keep the selected build piece fixed in world space
-  while your character and camera remain free.
-- **Precise movement.** Nudge the piece forward, backward, left, or right using
-  configurable centimeter increments.
-- **Controlled rotation.** Rotate around the captured build-piece pivot instead
-  of fighting the vanilla camera trace.
-- **Instant reset.** Return the preview to the exact position and rotation it
-  had when frozen.
+- **Freeze the preview.** Keep the selected build piece fixed in world space while your character and camera remain free.
+- **Precise movement.** Nudge the piece forward, backward, left, right, up, or down using configurable centimeter increments.
+- **Controlled rotation.** Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
+- **Instant reset.** Return the preview to the exact position and rotation it had when frozen.
 - **Eyedropper.** Copy the build piece under the cursor into the active preview.
-- **Native guide UI.** The on-screen keyboard and mouse controls stay visible
-  while a live construction preview is available.
-- **Scoped behavior.** Perfect Placement only edits the temporary preview. Final
-  construction remains on Palworld's normal validation and placement path.
+- **Native guide UI.** The on-screen keyboard and mouse controls stay visible while a live construction preview is available.
+- **Scoped behavior.** Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
 
 ---
 
@@ -31,8 +22,7 @@ you want it.
 - Palworld on Windows
 - A Palworld-compatible UE4SS installation
 
-Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install
-both parts.
+Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install both parts.
 
 ---
 
@@ -61,25 +51,25 @@ PerfectPlacement : 1
 ### Keyboard and mouse
 
 - **Freeze / unfreeze preview:** Middle mouse
-- **Move:** Numpad 8 / 2 / 4 / 6
+- **Move horizontally:** Numpad 8 / 2 / 4 / 6
+- **Move up / down:** Numpad 3 / 1
 - **Rotate:** Numpad 7 / 9
 - **Decrease / increase movement step:** Numpad - / +
 - **Reset to frozen transform:** Numpad 5
 - **Copy targeted build piece:** Shift + Middle mouse
 
 The key guide appears only while a live construction preview is available.
+Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.
 Gamepad placement controls are not supported in this release.
 
 ---
 
 ## Notes and limitations
 
-- Horizontal adjustment is currently supported; vertical adjustment is disabled
-  until terrain and structural-support validation is fully verified.
+- Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 - Install on each client that wants to use the placement controls.
 - Test new mod versions in a disposable world before using an important save.
-- Other mods that replace the same construction UI or take ownership of the same
-  input bindings may conflict.
+- Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
 
 ---
 
@@ -87,25 +77,21 @@ Gamepad placement controls are not supported in this release.
 
 **Nothing happens when freezing**
 
-Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement.pak` is in
-`Pal/Content/Paks/LogicMods`.
+Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement.pak` is in `Pal/Content/Paks/LogicMods`.
 
 **The guide appears but the controls do not respond**
 
-Check the UE4SS console/log for `[PerfectPlacement]` errors and confirm Num Lock
-is enabled for keyboard controls.
+Check the UE4SS console/log for `[PerfectPlacement]` errors and confirm Num Lock is enabled for keyboard controls.
 
 **The guide is missing or incomplete**
 
 Remove older Perfect Placement `.pak` files before installing the current one.
 Do not keep two versions under different filenames.
 
-When reporting a problem, include your Palworld version, UE4SS version, installed
-mod list, reproduction steps, and the relevant UE4SS log section.
+When reporting a problem, include your Palworld version, UE4SS version, installed mod list, reproduction steps, and the relevant UE4SS log section.
 
 ---
 
 ## Support and questions
 
-Open an issue on the project repository and include the diagnostic information
-listed above.
+Open an issue on the project repository and include the diagnostic information listed above.

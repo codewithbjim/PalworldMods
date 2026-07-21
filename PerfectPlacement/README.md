@@ -6,15 +6,9 @@ and provide precise camera-relative transform controls before final placement.
 
 ## Current status
 
-This repository contains the complete input, configuration, transform, and
-diagnostic scaffold. The Palworld-specific preview selection and final
-placement hooks are deliberately treated as a development adapter: their exact
-class and function names must be verified against a live Palworld 1.0 UE4SS
-header dump. They should not be guessed because an incorrect final-placement
-hook could consume resources twice or create invalid save data.
-
-The current development controls let you discover a likely preview actor, lock
-it, move it, rotate it, and release it back to Palworld.
+The mod resolves the active placement preview directly through the local
+player's builder component. Its controls can lock, move, rotate, reset, copy,
+and release that preview. Final placement remains under Palworld's control.
 
 ## Installation for development
 
@@ -29,13 +23,7 @@ it, move it, rotate it, and release it back to Palworld.
 
 4. Start a disposable test world. Do not develop against your only save.
 5. Enter build mode and make a building preview visible.
-6. Press `Alt+F6` to scan configured class names for a preview candidate.
-7. Read the UE4SS console and confirm the selected object's full name.
-8. Middle-click to lock or release the selected preview (`Alt+F7` is the fallback).
-
-If discovery finds nothing, press `Alt+F8`. UE4SS will write an actor dump.
-Search the dump for `BuildObject`, `Preview`, `Indicator`, and `Placement`, then
-add the relevant class name to `Scripts/config.lua`.
+6. Middle-click to lock or release the selected preview.
 
 ## Controls
 
@@ -46,18 +34,15 @@ Palworld's normal controls.
 | --- | --- | --- | --- |
 | Move left/right | `Numpad 4/6` | Use `Numpad -`, then move | Use `Numpad +`, then move |
 | Move forward/back | `Numpad 8/2` | Use `Numpad -`, then move | Use `Numpad +`, then move |
-| Move vertically | Disabled | Disabled | Disabled |
+| Move up/down | `Numpad 3/1` | Use `Numpad -`, then move | Use `Numpad +`, then move |
 | Rotate yaw | `Numpad 7/9` | Configure rotation step | Configure rotation step |
 | Reset to locked transform | `Numpad 5` | — | — |
 
-Additional development controls:
+Additional controls:
 
 - `Numpad -` and `Numpad +`: decrease or increase the movement step
-- `Alt+F6`: discover and select a preview candidate
 - Middle mouse: lock or release the selected preview
-- `Alt+Middle mouse`: copy the build piece under the cursor
-- `Alt+F7`: fallback lock/release hotkey
-- `Alt+F8`: dump all actors for discovery
+- `Shift+Middle mouse`: copy the build piece under the cursor
 
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation
 increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
@@ -65,8 +50,8 @@ Horizontal movement follows the locked build piece's orientation. The piece's
 yaw defines the movement axes, while the camera decides which aligned axis is
 forward; Numpad 8 therefore moves away from the camera without drifting off the
 piece's orientation. The movement directions turn when the piece is rotated.
-Vertical key bindings are currently disabled until terrain
-and structural-support validation is complete.
+Vertical movement is clamped from 25 cm below to 650 cm above the initially
+locked position. The upward range corresponds to two standard wall levels.
 
 While locked, Perfect Placement suspends the local player's builder component
 and applies transforms only when an edit key is pressed. Continuous per-frame

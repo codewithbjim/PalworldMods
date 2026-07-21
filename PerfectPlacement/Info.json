@@ -1,20 +1,32 @@
 {
   "ModName": "Perfect Placement",
   "PackageName": "PerfectPlacement",
-  "Version": "0.1.1",
+  "Thumbnail": "thumbnail.png",
+  "Version": "0.1.2",
+  "DebugMode": false,
+  "MinRevision": 82182,
   "Author": "virtualbjörn",
   "Description": "Locks a building preview so the player can walk around and fine-tune its transform before final placement.",
-  "Dependencies": null,
+  "Dependencies": [
+    "UE4SS"
+  ],
   "Tags": [
+    "UE4SS",
     "Gameplay",
-    "Building",
-    "Quality of Life"
+    "Utilities",
+    "User Interface"
   ],
   "InstallRule": [
     {
       "Type": "Lua",
       "Targets": [
-        "./"
+        "./Scripts"
+      ]
+    },
+    {
+      "Type": "LogicMods",
+      "Targets": [
+        "./LogicMods"
       ]
     }
   ]

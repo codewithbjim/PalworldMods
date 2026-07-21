@@ -29,7 +29,7 @@ return {
         maximum = 1000.0,
         step_scale = 10.0,
         maximum_below_initial_cm = 25.0,
-        maximum_above_initial_cm = 500.0,
+        maximum_above_initial_cm = 650.0,
     },
 
     rotation = {

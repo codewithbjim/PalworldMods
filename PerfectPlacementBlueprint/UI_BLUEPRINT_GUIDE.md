@@ -38,7 +38,7 @@ CanvasPanel (Root)
 │        └─ VerticalBox: FrozenGuide                   [index 1]
 │           └─ WidgetSwitcher: FrozenInputSwitcher
 │              ├─ VerticalBox: KeyboardFrozenGuide    [index 0]
-│              │  ├─ HorizontalBox: MoveRow           [Num 8/2/4/6] Move
+│              │  ├─ HorizontalBox: MoveRow           [Num 8/2/4/6, 3/1] Move
 │              │  ├─ HorizontalBox: RotateRow         [Num 7/9] Rotate
 │              │  ├─ HorizontalBox: StepRow           [Num -/+] Step
 │              │  ├─ HorizontalBox: ResetRow          [Num 5] Reset

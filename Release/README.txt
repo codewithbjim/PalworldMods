@@ -1,4 +1,4 @@
-+PERFECT PLACEMENT 0.1.1
++PERFECT PLACEMENT 0.1.2
 =======================
 
 REQUIREMENT
@@ -23,12 +23,18 @@ If your UE4SS build uses mods.txt, add:
 KEYBOARD / MOUSE
 ----------------
 Middle mouse       Freeze / unfreeze
-Numpad 8/2/4/6     Move
+Numpad 8/2/4/6     Move horizontally
+Numpad 3/1         Move up / down
 Numpad 7/9         Rotate
 Numpad -/+         Decrease / increase movement step
 Numpad 5           Reset to the frozen transform
 Shift + middle mouse
                    Copy targeted build piece
+
+Vertical movement is limited to 25 cm below and 650 cm above the initially frozen position.
+
+Mouse bindings are ignored unless Palworld has an active construction preview.
+Normal middle-mouse Pal commands remain unaffected.
 
 Gamepad placement controls are not supported in this release.
 

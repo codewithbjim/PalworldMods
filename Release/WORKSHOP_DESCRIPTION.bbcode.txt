@@ -1,0 +1,83 @@
+[h1]Perfect Placement[/h1]
+[i]Freeze the preview. Walk around it. Fine-tune its position.[/i]
+
+[b]Experimental Steam Workshop beta for Palworld 1.0 on Windows.[/b]
+
+[b]HARD REQUIREMENT FOR THE STEAM WORKSHOP VERSION:[/b] Subscribe to and enable [url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url]. An existing manually installed UE4SS does not satisfy Palworld's Workshop dependency or replace this requirement.
+
+Perfect Placement lets you freeze a live construction preview in world space, walk around it, and adjust its horizontal or vertical position and rotation in precise increments. It is intended for placements that are almost right but difficult to achieve with the normal camera trace or snapping controls.
+
+[h2]Current beta features[/h2]
+[list]
+[*][b]Freeze and release a preview[/b] while keeping normal player and camera movement available.
+[*][b]Move horizontally or vertically[/b] in configurable centimeter increments.
+[*][b]Rotate precisely[/b] around the captured build-piece pivot.
+[*][b]Camera-aware controls[/b] that remain aligned to the piece's own axes.
+[*][b]Reset instantly[/b] to the transform captured when the preview was frozen.
+[*][b]Eyedropper[/b] to copy the targeted build piece into the active preview.
+[/list]
+
+[h2]Requirements[/h2]
+[list]
+[*]Palworld 1.0 for Windows through Steam
+[*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] is a hard requirement for the Steam Workshop version.[/b] It must be subscribed to and enabled through Palworld's Mod Management screen.
+[*]Keyboard and mouse; gamepad placement controls are not supported yet
+[/list]
+
+The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palworld's official mod loader installs both components from this single subscription.
+
+[h2]Enable the mod[/h2]
+[list=1]
+[*]Subscribe to Perfect Placement and [url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url].
+[*]Launch Palworld and open [b]Options → Mod Management[/b].
+[*]Enable [b]UE4SS Experimental[/b] and [b]Perfect Placement[/b]. Both are required.
+[*]Apply the changes and restart Palworld when prompted.
+[*]Test first in a disposable world or a backup of your save.
+[/list]
+
+[h2]Keyboard and mouse controls[/h2]
+[list]
+[*][b]Freeze/release preview:[/b] Middle mouse
+[*][b]Move forward/backward:[/b] Numpad 8 / 2
+[*][b]Move left/right:[/b] Numpad 4 / 6
+[*][b]Move up/down:[/b] Numpad 3 / 1
+[*][b]Rotate left/right:[/b] Numpad 7 / 9
+[*][b]Decrease/increase movement step:[/b] Numpad - / +
+[*][b]Reset to frozen transform:[/b] Numpad 5
+[*][b]Copy targeted build piece:[/b] Shift + Middle mouse
+[/list]
+
+Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.
+
+[h2]Important beta limitations[/h2]
+[list]
+[*][b]Final placement integration is incomplete.[/b] The current build freezes, edits, and releases the preview back to Palworld; it does not replace Palworld's authoritative validation or directly spawn completed structures.
+[*]The companion key-guide UI is not yet reliable on every current Palworld/UE4SS setup.
+[*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
+[*]Dedicated-server and non-host multiplayer behavior has not been validated. Install it only on clients that need the controls.
+[*]Construction-preview bindings can change with Palworld updates. Check the UE4SS log if no preview is selected.
+[*]Mods that replace the construction UI or claim the same input bindings may conflict.
+[/list]
+
+[b]Back up important saves and test this beta in a disposable world.[/b]
+
+[h2]Troubleshooting[/h2]
+[b]Nothing happens when I press Middle Mouse[/b]
+
+Enter build mode and make a construction preview visible. Confirm that the UE4SS log reports the active InstallChecker target when you press Middle Mouse.
+
+[b]The keypad controls do not respond[/b]
+
+Confirm Num Lock is enabled and check the UE4SS log for messages beginning with [code][PerfectPlacement][/code].
+
+[b]The guide UI is missing[/b]
+
+The Lua controls may still be available. Confirm that the Logic Mod installed correctly and report the relevant UE4SS log section.
+
+When reporting a problem, include the Palworld revision, UE4SS version, installed mod list, reproduction steps, and relevant UE4SS log lines.
+
+[h2]Removal[/h2]
+Disable Perfect Placement in [b]Options → Mod Management[/b], apply the change, restart the game, and unsubscribe from the Workshop item.
+
+[h2]Credits[/h2]
+Created by [b]virtualbjörn[/b]. Performance improvements in 0.1.1 incorporate the initial cache patch supplied by Nexus community contributor [b]DoubleGx0[/b].

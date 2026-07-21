@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.1.2",
     [switch]$KeepStage
 )
 
@@ -11,7 +11,7 @@ $stageRoot = Join-Path $releaseRoot "Stage"
 $distRoot = Join-Path $releaseRoot "Dist"
 $zipPath = Join-Path $distRoot "PerfectPlacement-$Version.zip"
 $luaSource = Join-Path $repoRoot "PerfectPlacement"
-$pakSource = Join-Path $repoRoot "PerfectPlacementBlueprint\PalworldModdingKit\Saved\StagedBuilds\Windows\Pal\Content\Paks\PerfectPlacement.pak"
+$pakSource = Join-Path $repoRoot "PerfectPlacementBlueprint\PalworldModdingKit\Saved\StagedBuilds\Windows\Pal\Content\Paks\pakchunk1-Windows.pak"
 $luaDestination = Join-Path $stageRoot "Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement"
 $pakDestination = Join-Path $stageRoot "Pal\Content\Paks\LogicMods"
 
