@@ -1,4 +1,4 @@
-+PERFECT PLACEMENT 0.1.2
++PERFECT PLACEMENT 0.1.3
 =======================
 
 REQUIREMENT
@@ -32,8 +32,10 @@ Shift + middle mouse
                    Copy targeted build piece
 
 Vertical movement is limited to 25 cm below and 650 cm above the initially frozen position.
+Numpad 1/3 vertical movement works with NumLock either on or off.
 
 Mouse bindings are ignored unless Palworld has an active construction preview.
+Middle mouse still freezes or releases the preview while Ctrl or Alt is held for Palworld build controls.
 Normal middle-mouse Pal commands remain unaffected.
 
 Gamepad placement controls are not supported in this release.

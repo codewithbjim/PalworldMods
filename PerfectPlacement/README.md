@@ -38,9 +38,12 @@ Palworld's normal controls.
 | Rotate yaw | `Numpad 7/9` | Configure rotation step | Configure rotation step |
 | Reset to locked transform | `Numpad 5` | — | — |
 
+Numpad 1/3 vertical movement works with NumLock either on or off.
+
 Additional controls:
 
 - `Numpad -` and `Numpad +`: decrease or increase the movement step
+- Middle-click still locks or releases a preview while Palworld's `Ctrl` or `Alt` build modifier is held
 - Middle mouse: lock or release the selected preview
 - `Shift+Middle mouse`: copy the build piece under the cursor
 

@@ -7,6 +7,8 @@ local MOD = "PerfectPlacement"
 -- UE4SS versions even when a build exposes different symbolic Key names.
 local VK = {
     MIDDLE_MOUSE = 0x04,
+    PAGE_DOWN = 0x22,
+    END_KEY = 0x23,
     NUMPAD_1 = 0x61,
     NUMPAD_2 = 0x62,
     NUMPAD_3 = 0x63,
@@ -1557,6 +1559,9 @@ local function register_chord(key, modifiers, callback)
 end
 
 local SHIFT = { ModifierKey.SHIFT }
+local CONTROL = { ModifierKey.CONTROL }
+local ALT = { ModifierKey.ALT }
+local CONTROL_ALT = { ModifierKey.CONTROL, ModifierKey.ALT }
 local NONE = {}
 
 -- Numeric keypad controls avoid Palworld's build UI and snap bindings.
@@ -1566,6 +1571,11 @@ register_chord(VK.NUMPAD_8, NONE, function() move_preview(1, 0, 0) end)
 register_chord(VK.NUMPAD_2, NONE, function() move_preview(-1, 0, 0) end)
 register_chord(VK.NUMPAD_3, NONE, function() move_preview(0, 0, 1) end)
 register_chord(VK.NUMPAD_1, NONE, function() move_preview(0, 0, -1) end)
+-- On Windows, these same physical keypad keys report navigation-key virtual
+-- codes while NumLock is off. Register both forms so vertical editing works
+-- regardless of the user's NumLock state.
+register_chord(VK.PAGE_DOWN, NONE, function() move_preview(0, 0, 1) end)
+register_chord(VK.END_KEY, NONE, function() move_preview(0, 0, -1) end)
 register_chord(VK.NUMPAD_5, NONE, reset_preview_transform)
 register_chord(VK.NUMPAD_7, NONE, function() rotate_preview(-1) end)
 register_chord(VK.NUMPAD_9, NONE, function() rotate_preview(1) end)
@@ -1592,12 +1602,19 @@ local function toggle_preview_lock()
     end
 end
 register_chord(VK.MIDDLE_MOUSE, NONE, toggle_preview_lock)
+-- Palworld uses Ctrl and Alt for contextual build-piece controls while the
+-- preview is still active. UE4SS matches modifier chords explicitly, so plain
+-- MMB does not fire while either modifier is held unless each combination is
+-- registered separately.
+register_chord(VK.MIDDLE_MOUSE, CONTROL, toggle_preview_lock)
+register_chord(VK.MIDDLE_MOUSE, ALT, toggle_preview_lock)
+register_chord(VK.MIDDLE_MOUSE, CONTROL_ALT, toggle_preview_lock)
 register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
 
 -- Start the shared lifecycle/UI monitor immediately so the unfrozen guide can
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.2")
+log("Loaded Perfect Placement 0.1.3")
 log("Companion key-guide UI bridge revision 14 loaded.")
 log("Open build mode, show a preview, then middle-click to lock it.")

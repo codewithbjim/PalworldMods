@@ -27,6 +27,11 @@ foreach ($required in @(
 New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
 $scriptsDestination = Join-Path $destinationRoot "Scripts"
 $logicModsDestination = Join-Path $destinationRoot "LogicMods"
+foreach ($payloadDirectory in @($scriptsDestination, $logicModsDestination)) {
+    if (Test-Path -LiteralPath $payloadDirectory) {
+        Remove-Item -LiteralPath $payloadDirectory -Recurse -Force
+    }
+}
 New-Item -ItemType Directory -Force -Path $scriptsDestination, $logicModsDestination | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $modRoot "Info.json") -Destination $destinationRoot -Force
@@ -59,6 +64,10 @@ foreach ($type in @("Lua", "LogicMods")) {
     if (-not ($manifest.InstallRule.Type -contains $type)) {
         throw "The staged package is missing the $type InstallRule."
     }
+}
+$logicModsRule = $manifest.InstallRule | Where-Object Type -eq "LogicMods"
+if ($logicModsRule.Targets.Count -ne 1 -or $logicModsRule.Targets[0] -ne "./LogicMods/PerfectPlacement.pak") {
+    throw "The LogicMods InstallRule must target the PAK file directly to avoid a nested LogicMods directory."
 }
 
 Write-Host "Staged Workshop package at $destinationRoot"

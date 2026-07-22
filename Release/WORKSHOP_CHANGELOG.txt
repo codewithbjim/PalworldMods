@@ -1,4 +1,12 @@
-Version 0.1.2 — Input handling hotfix
+Version 0.1.3 — Workshop packaging and vertical input hotfix
+
+Fixes
+- Install PerfectPlacement.pak directly into Pal/Content/Paks/LogicMods instead of the incorrect nested LogicMods/LogicMods path.
+- Make Numpad 1/3 vertical movement work with NumLock either on or off.
+- Allow middle-click to freeze or release a preview while Palworld's Ctrl or Alt build modifier is held.
+- Remove stale payload directories during package staging while preserving Workshop uploader metadata.
+
+Previous 0.1.2 notes
 
 Features
 - Freeze and release a live construction preview while walking around it.
