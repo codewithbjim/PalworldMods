@@ -1,10 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- Allow middle-click to freeze or release a preview while Palworld's Ctrl or Alt build modifier is held.
+
 ## 0.1.3
 
 - Fix the Workshop `LogicMods` install rule so `PerfectPlacement.pak` is copied directly to `Pal/Content/Paks/LogicMods` instead of a nested `LogicMods/LogicMods` directory.
 - Make Numpad 1/3 vertical movement work when NumLock is either on or off.
-- Allow middle-click to freeze or release a preview while Palworld's Ctrl or Alt build modifier is held.
 - Clean stale `Scripts` and `LogicMods` payload directories when rebuilding a Workshop package while preserving its uploader metadata.
 
 ## 0.1.2

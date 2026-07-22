@@ -1615,6 +1615,6 @@ register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.3")
+log("Loaded Perfect Placement 0.1.4")
 log("Companion key-guide UI bridge revision 14 loaded.")
 log("Open build mode, show a preview, then middle-click to lock it.")
