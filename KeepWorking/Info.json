@@ -1,0 +1,20 @@
+{
+  "ModName": "Keep Working",
+  "PackageName": "KeepWorking",
+  "Version": "0.1.0",
+  "Author": "virtualbjörn",
+  "Description": "Keeps toggle-based manual work active while Palworld is unfocused or an in-game window is open, without UObject polling.",
+  "Dependencies": null,
+  "Tags": [
+    "Gameplay",
+    "Quality of Life"
+  ],
+  "InstallRule": [
+    {
+      "Type": "Lua",
+      "Targets": [
+        "./"
+      ]
+    }
+  ]
+}
