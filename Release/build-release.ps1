@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.4",
+    [string]$Version = "0.1.5-crashfix.1",
     [switch]$KeepStage
 )
 
@@ -18,8 +18,11 @@ $pakDestination = Join-Path $stageRoot "Pal\Content\Paks\LogicMods"
 foreach ($required in @(
     (Join-Path $luaSource "Info.json"),
     (Join-Path $luaSource "enabled.txt"),
+    (Join-Path $luaSource "PerfectPlacement.modconfig.json"),
     (Join-Path $luaSource "Scripts\main.lua"),
     (Join-Path $luaSource "Scripts\config.lua"),
+    (Join-Path $luaSource "Scripts\keybindings.lua"),
+    (Join-Path $luaSource "Scripts\modconfig.lua"),
     $pakSource,
     (Join-Path $releaseRoot "README.txt"),
     (Join-Path $releaseRoot "CHANGELOG.md")
@@ -41,6 +44,7 @@ New-Item -ItemType Directory -Force -Path $luaDestination, $pakDestination, $dis
 
 Copy-Item -LiteralPath (Join-Path $luaSource "enabled.txt") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Info.json") -Destination $luaDestination
+Copy-Item -LiteralPath (Join-Path $luaSource "PerfectPlacement.modconfig.json") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "README.md") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Scripts") -Destination $luaDestination -Recurse
 Copy-Item -LiteralPath $pakSource -Destination (Join-Path $pakDestination "PerfectPlacement.pak")

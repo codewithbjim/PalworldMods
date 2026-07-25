@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.5-crashfix.1
+
+Input and freeze-lifecycle stability hotfix for the 0.1.5 release line.
+
+- Serialize configured keyboard and mouse actions onto the game thread.
+- Ignore Freeze, Unfreeze, movement, rotation, reset, step, and copy inputs
+  while the placement transition is settling.
+- Discard queued inputs captured before or during a placement transition.
+- Validate the builder component, install checker, and preview actor before
+  applying a transform.
+- Retain delayed transition callbacks until UE4SS executes them.
+- Keep lifecycle polling from touching placement objects during Freeze and
+  Unfreeze.
+- Package every Mod Config Menu runtime file in Nexus and Workshop builds.
+
 ## 0.1.5
 
 - Add Mod Config Menu support for configurable placement-control key chords.

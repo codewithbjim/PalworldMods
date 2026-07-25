@@ -1,6 +1,30 @@
+Version 0.1.5-crashfix.1 — Freeze and input stability hotfix
+
+- Serializes configured keyboard and mouse controls onto the game thread.
+- Blocks all placement controls while Freeze or Unfreeze is settling.
+- Discards stale queued input from an earlier placement transition.
+- Validates the live builder, checker, and preview before every transform.
+- Retains delayed transition callbacks until UE4SS executes them.
+- Prevents lifecycle polling from touching objects during a transition.
+- Includes all Mod Config Menu runtime files in packaged builds.
+
+Previous 0.1.5 notes
+
+Version 0.1.5 — Mod Config Menu support
+
+Features and fixes
+- Add Mod Config Menu support for configurable placement-control key chords.
+- Render configured controls with Palworld's stock keyboard and mouse keycaps.
+- Support any combination of Ctrl, Alt, and Shift modifiers.
+- Reload saved bindings and recover the placement UI after reopening a world.
+- Read UTF-16LE configuration files written by Mod Config Menu.
+- Ignore movement-step input when no frozen preview is active.
+- Standardize player-facing terminology on Freeze and Unfreeze.
+
+Previous 0.1.4 notes
+
 Version 0.1.4 — Build modifier input hotfix
 
-Fixes
 - Allow middle-click to freeze or release a preview while Palworld's Ctrl or Alt build modifier is held.
 
 Previous 0.1.3 notes

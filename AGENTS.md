@@ -1,0 +1,21 @@
+# Repository instructions
+
+## Release history
+
+Every published release must have an annotated Git tag so its exact source can
+be recovered later for maintenance or a forked update.
+
+- Create the tag only after the release commit contains the exact files and
+  version that were shipped.
+- Use `<package-name>-v<version>` for new tags in this multi-mod repository,
+  for example `perfect-placement-v0.1.5-crashfix.1`.
+- Do not move, replace, or reuse a published release tag.
+- Verify the tag resolves to the intended release commit before publishing.
+- Push the release commit and its tag to the remote as part of the release
+  workflow.
+- When making a maintenance update for an older release line, create the branch
+  from its release tag rather than reconstructing the release from changelog
+  notes or a newer commit.
+
+Treat a release as incomplete until its annotated tag has been verified and
+pushed.

@@ -8,7 +8,9 @@ local MOD = "PerfectPlacement"
 local State = {
     SEARCHING = "searching",
     READY = "ready",
+    FREEZING = "freezing",
     EDITING = "editing",
+    UNFREEZING = "unfreezing",
 }
 
 local state = State.SEARCHING
@@ -44,7 +46,8 @@ local rotation_pivot = nil
 local rotation_pivot_local_offset = nil
 local preview_relative_location = nil
 local preview_relative_rotation = nil
-local last_lock_toggle_time = -1000.0
+local freeze_transition_generation = 0
+local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
@@ -56,9 +59,104 @@ local keycap_texture_cache = {}
 local LIFECYCLE_INTERVAL_MS = 100
 local IDLE_UI_REFRESH_TICKS = 5
 local BUILDER_FALLBACK_RETRY_TICKS = 10
+local FREEZE_TRANSITION_SETTLE_MS = 500
+local retained_async_callbacks = {}
+local retained_async_callback_serial = 0
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
+end
+
+local function retain_async_callback(callback, label)
+    retained_async_callback_serial = retained_async_callback_serial + 1
+    local callback_id = retained_async_callback_serial
+    local retained_callback
+    retained_callback = function(...)
+        local ok, error_message = pcall(callback, ...)
+        retained_async_callbacks[callback_id] = nil
+        if not ok then
+            log(string.format(
+                "%s failed: %s",
+                label or "Asynchronous callback",
+                tostring(error_message)
+            ))
+        end
+    end
+    retained_async_callbacks[callback_id] = retained_callback
+    return retained_callback, callback_id
+end
+
+local function execute_in_game_thread_retained(callback, label)
+    local retained_callback, callback_id =
+        retain_async_callback(callback, label)
+    local ok, error_message = pcall(
+        ExecuteInGameThread,
+        retained_callback
+    )
+    if not ok then
+        retained_async_callbacks[callback_id] = nil
+        log(string.format(
+            "Could not queue %s: %s",
+            label or "game-thread callback",
+            tostring(error_message)
+        ))
+        return false
+    end
+    return true
+end
+
+local function execute_in_game_thread_with_retained_delay(
+    delay_ms,
+    callback,
+    label
+)
+    local delayed_callback, callback_id =
+        retain_async_callback(function()
+            execute_in_game_thread_retained(callback, label)
+        end, label)
+    local ok, error_message = pcall(
+        ExecuteWithDelay,
+        delay_ms,
+        delayed_callback
+    )
+    if not ok then
+        retained_async_callbacks[callback_id] = nil
+        log(string.format(
+            "Could not queue %s: %s",
+            label or "delayed game-thread callback",
+            tostring(error_message)
+        ))
+        return false
+    end
+    return true
+end
+
+local function begin_freeze_transition(next_state)
+    freeze_transition_generation = freeze_transition_generation + 1
+    freeze_transition_input_locked = true
+    state = next_state
+    return freeze_transition_generation
+end
+
+local function complete_freeze_transition(transition_id, stable_state)
+    if transition_id ~= freeze_transition_generation then
+        return
+    end
+    state = stable_state
+    freeze_transition_input_locked = false
+end
+
+local function settle_freeze_transition(transition_id, stable_state)
+    local queued = execute_in_game_thread_with_retained_delay(
+        FREEZE_TRANSITION_SETTLE_MS,
+        function()
+            complete_freeze_transition(transition_id, stable_state)
+        end,
+        "Freeze transition settle callback"
+    )
+    if not queued then
+        complete_freeze_transition(transition_id, stable_state)
+    end
 end
 
 local function load_resolved_bindings()
@@ -660,7 +758,12 @@ local function read_preview_transform()
 end
 
 local function apply_preview_transform()
-    if state ~= State.EDITING or not is_valid(transform_actor) then
+    if freeze_transition_input_locked
+        or state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(transform_actor)
+        or not is_valid(preview_actor)
+    then
         return false
     end
     if desired_location == nil or desired_rotation == nil then
@@ -915,6 +1018,9 @@ local function start_lifecycle_monitor()
     lifecycle_monitor_started = true
     LoopAsync(LIFECYCLE_INTERVAL_MS, function()
         lifecycle_monitor_last_tick = os.clock()
+        if state == State.FREEZING or state == State.UNFREEZING then
+            return
+        end
         -- Frozen previews need responsive safety checks. Outside editing, do
         -- not enqueue game-thread work until the 2 Hz guide refresh is due.
         if state ~= State.EDITING then
@@ -928,6 +1034,9 @@ local function start_lifecycle_monitor()
         end
 
         ExecuteInGameThread(function()
+            if state == State.FREEZING or state == State.UNFREEZING then
+                return
+            end
             if state == State.EDITING then
                 local should_release, reason = should_release_locked_preview()
                 if should_release then
@@ -1367,8 +1476,10 @@ local function begin_editing()
     -- context here so MMB is a cheap no-op during normal gameplay.
     local active_component, active_checker, active_preview = find_active_build_context(false)
     if active_component == nil then
-        return
+        return false
     end
+    local previous_state = state
+    local transition_id = begin_freeze_transition(State.FREEZING)
 
     builder_component = active_component
     unfrozen_ui_builder_component = nil
@@ -1395,7 +1506,22 @@ local function begin_editing()
     end
 
     if not read_preview_transform() then
-        return
+        if is_valid(preview_root_component)
+            and preview_root_previous_mobility ~= nil
+        then
+            pcall(function()
+                preview_root_component:SetMobility(
+                    preview_root_previous_mobility
+                )
+            end)
+        end
+        builder_component = nil
+        transform_actor = nil
+        preview_actor = nil
+        preview_root_component = nil
+        preview_root_previous_mobility = nil
+        complete_freeze_transition(transition_id, previous_state)
+        return false
     end
     local preview_transform_ok, preview_location, preview_rotation = pcall(function()
         return preview_actor:K2_GetActorLocation(), preview_actor:K2_GetActorRotation()
@@ -1512,13 +1638,15 @@ local function begin_editing()
         Config.rotation.normal
     ))
     refresh_locked_validity()
+    settle_freeze_transition(transition_id, State.EDITING)
+    return true
 end
 
 release_preview = function(reason)
     if state ~= State.EDITING then
-        return
+        return false
     end
-    state = State.READY
+    local transition_id = begin_freeze_transition(State.UNFREEZING)
     lifecycle_ui_refresh_ticks = 0
     building_mode_exit_checks = 0
     local is_manual_unfreeze = reason == "manual"
@@ -1558,10 +1686,20 @@ release_preview = function(reason)
     desired_location = nil
     desired_rotation = nil
     log("Preview released to Palworld placement control.")
+    settle_freeze_transition(transition_id, State.READY)
+    return true
 end
 
 local function move_preview(forward_amount, right_amount, up_amount, distance_override)
-    if state ~= State.EDITING or desired_location == nil then
+    if freeze_transition_input_locked
+        or state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(transform_actor)
+        or not is_valid(preview_actor)
+        or desired_location == nil
+        or desired_rotation == nil
+    then
+        verbose("Move input ignored while the frozen preview is unavailable or settling.")
         return
     end
 
@@ -1672,7 +1810,15 @@ local function move_preview(forward_amount, right_amount, up_amount, distance_ov
 end
 
 local function rotate_preview(yaw_amount, degrees_override)
-    if state ~= State.EDITING or desired_rotation == nil then
+    if freeze_transition_input_locked
+        or state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(transform_actor)
+        or not is_valid(preview_actor)
+        or desired_location == nil
+        or desired_rotation == nil
+    then
+        verbose("Rotate input ignored while the frozen preview is unavailable or settling.")
         return
     end
     desired_rotation.Yaw = desired_rotation.Yaw
@@ -1694,8 +1840,15 @@ local function rotate_preview(yaw_amount, degrees_override)
 end
 
 local function reset_preview_transform()
-    if state ~= State.EDITING or locked_origin_location == nil
-        or locked_origin_rotation == nil then
+    if freeze_transition_input_locked
+        or state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(transform_actor)
+        or not is_valid(preview_actor)
+        or locked_origin_location == nil
+        or locked_origin_rotation == nil
+    then
+        verbose("Reset input ignored while the frozen preview is unavailable or settling.")
         return
     end
 
@@ -1724,11 +1877,14 @@ local function reset_preview_transform()
 end
 
 local function change_move_step(multiplier)
-    if state ~= State.EDITING
+    if freeze_transition_input_locked
+        or state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(transform_actor)
         or not is_valid(preview_actor)
         or desired_location == nil
     then
-        verbose("Move-step input ignored: no frozen preview is active.")
+        verbose("Move-step input ignored while the frozen preview is unavailable or settling.")
         return
     end
     current_move_step = math.max(
@@ -1749,6 +1905,13 @@ local function actor_from_hit_result(hit_result)
 end
 
 local function copy_looked_at_build_piece()
+    if freeze_transition_input_locked
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+    then
+        verbose("Eyedropper ignored while placement state settles.")
+        return
+    end
     if state == State.EDITING then
         log("Eyedropper ignored while the preview is frozen.")
         return
@@ -1867,10 +2030,26 @@ end
 
 local function register_chord(key, modifiers, callback)
     local ok, error_message = pcall(function()
+        local queued_callback = function()
+            local queued_generation = freeze_transition_generation
+            local queued_during_transition =
+                freeze_transition_input_locked
+                or state == State.FREEZING
+                or state == State.UNFREEZING
+            execute_in_game_thread_retained(function()
+                if queued_during_transition
+                    or queued_generation ~= freeze_transition_generation
+                then
+                    verbose("Discarded stale queued input after a placement transition.")
+                    return
+                end
+                callback()
+            end, "Input game-thread callback")
+        end
         if modifiers == nil or #modifiers == 0 then
-            RegisterKeyBind(key, callback)
+            RegisterKeyBind(key, queued_callback)
         else
-            RegisterKeyBind(key, modifiers, callback)
+            RegisterKeyBind(key, modifiers, queued_callback)
         end
     end)
     if not ok then
@@ -2000,12 +2179,13 @@ local function configured_chord_is_claimed(key, modifiers, except_action)
 end
 
 local function toggle_preview_freeze()
-    local now = os.clock()
-    if now - last_lock_toggle_time < 0.3 then
-        log("Duplicate freeze toggle ignored.")
+    if freeze_transition_input_locked
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+    then
+        verbose("Freeze toggle ignored while placement state settles.")
         return
     end
-    last_lock_toggle_time = now
     if state == State.EDITING then
         log("Manual unfreeze requested.")
         release_preview("manual")
@@ -2110,6 +2290,6 @@ end
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.5")
+log("Loaded Perfect Placement 0.1.5-crashfix.1")
 log("Companion key-guide UI bridge revision 22 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

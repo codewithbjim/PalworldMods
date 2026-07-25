@@ -2,7 +2,7 @@
   "ModName": "Perfect Placement",
   "PackageName": "PerfectPlacement",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.1.5",
+  "Version": "0.1.5-crashfix.1",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",

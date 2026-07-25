@@ -1,7 +1,7 @@
 {
   "meta": {
     "game": false,
-    "vers": "0.1.5",
+    "vers": "0.1.5-crashfix.1",
     "auth": "virtualbjörn",
     "desc": "Freeze and precisely transform Palworld building previews."
   },
