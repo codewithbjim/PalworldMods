@@ -1,4 +1,4 @@
-Version 0.2.0-beta.1 — Major update: experimental gamepad support
+Version 0.2.0-beta.2 — Major update: experimental gamepad support
 
 Features and fixes
 - Add experimental gamepad controls for freezing, copying, moving, rotating, changing the movement step, resetting, and unfreezing a construction preview.

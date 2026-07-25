@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.2.0-beta.1
+PERFECT PLACEMENT 0.2.0-beta.2
 =======================
 
 REQUIREMENT

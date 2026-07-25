@@ -84,7 +84,7 @@ Controller chords are configured under `gamepad.bindings` in
 triggers. The controller guide resolves Palworld's stock keyguide textures at
 runtime.
 
-> **Experimental:** The author does not have a gamepad, so 0.2.0-beta.1 has not been
+> **Experimental:** The author does not have a gamepad, so 0.2.0-beta.2 has not been
 > tested on physical controller hardware. Controller users are invited to test
 > in a disposable world and report the controller model, Steam Input status,
 > configured chord, reproduction steps, and relevant UE4SS log lines.

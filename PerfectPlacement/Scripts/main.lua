@@ -3210,6 +3210,6 @@ ensure_auto_unfreeze_hooks()
 request_lifecycle_recovery(LIFECYCLE_INITIAL_RECOVERY_CHECKS)
 start_gamepad_monitor()
 
-log("Loaded Perfect Placement 0.2.0-beta.1")
+log("Loaded Perfect Placement 0.2.0-beta.2")
 log("Companion key-guide UI bridge revision 29 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

@@ -77,7 +77,7 @@ Unfrozen controls intentionally remain limited to `L3` and
 `L3 + D-pad Down` to avoid consuming Palworld's normal building controls.
 
 > [!WARNING]
-> Gamepad support in 0.2.0-beta.1 is experimental. The author does not have a gamepad,
+> Gamepad support in 0.2.0-beta.2 is experimental. The author does not have a gamepad,
 > so the controller path has not been tested on physical hardware. Test it in a
 > disposable world and report the controller model, Steam Input status,
 > configured chord, reproduction steps, and relevant UE4SS log lines.
