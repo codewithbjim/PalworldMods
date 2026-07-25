@@ -14,7 +14,9 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 [*][b]Controlled rotation.[/b] Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
 [*][b]Instant reset.[/b] Return the preview to the exact position and rotation it had when frozen.
 [*][b]Eyedropper.[/b] Copy the build piece under the cursor into the active preview.
-[*][b]Native guide UI.[/b] The on-screen keyboard and mouse controls stay visible while a live construction preview is available.
+[*][b]Configurable controls.[/b] Configure Freeze, Copy, and all eleven adjustment actions through DarnMenu, including mouse buttons and Ctrl/Alt/Shift chords.
+[*][b]Experimental gamepad controls.[/b] Freeze, copy, move, rotate, change step size, reset, and unfreeze with configurable controller chords.
+[*][b]Palworld keycap UI.[/b] The on-screen guides use Palworld's stock keyboard, mouse, and controller keycaps and reflect the configured bindings.
 [*][b]Scoped behavior.[/b] Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
 [/list]
 
@@ -24,6 +26,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 [list]
 [*]Palworld on Windows
 [*]A Palworld-compatible UE4SS installation
+[*]DarnMenu
 [/list]
 
 [b]Perfect Placement contains both a UE4SS Lua mod and a Logic Mod .pak. Install both parts.[/b]
@@ -48,7 +51,7 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 [code]PerfectPlacement : 1[/code]
 
 [line]
-[size=5][b]Keyboard and mouse controls[/b][/size]
+[size=5][b]Keyboard and mouse defaults[/b][/size]
 
 [list]
 [*][b]Freeze / unfreeze preview:[/b] Middle mouse
@@ -62,7 +65,32 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 
 The key guide appears only while a live construction preview is available.
 Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.
-Gamepad placement controls are not supported in this release.
+Perfect Placement appears under [b]Escape > Mod Options[/b] for Freeze, Copy,
+and all eleven adjustment bindings. DarnMenu renders complete chords with
+Palworld's stock keyguide textures, captures mouse buttons 1-5, and provides
+keycap toggles for any combination of Ctrl, Alt, and Shift.
+
+[size=5][b]Experimental gamepad defaults[/b][/size]
+
+[list]
+[*][b]Freeze / unfreeze preview:[/b] L3
+[*][b]Copy targeted build piece while unfrozen:[/b] L3 + D-pad Down
+[*][b]Move left / right while frozen:[/b] D-pad Left / Right
+[*][b]Move forward / back while frozen:[/b] D-pad Up / Down
+[*][b]Raise / lower while frozen:[/b] LT + D-pad Up / Down
+[*][b]Rotate left / right while frozen:[/b] LB / RB
+[*][b]Decrease / increase movement step while frozen:[/b] LT + D-pad Left / Right
+[*][b]Reset to frozen transform:[/b] R3
+[/list]
+
+Controller chords are configured under gamepad.bindings in Scripts/config.lua.
+Frozen D-pad actions may use LT, RT, or both triggers. The controller guide
+resolves Palworld's stock keyguide textures at runtime.
+
+[b]Experimental:[/b] The author does not have a gamepad, so 0.2.0-beta.1 has not been
+tested on physical controller hardware. Controller users are invited to test
+in a disposable world and report the controller model, Steam Input status,
+configured chord, reproduction steps, and relevant UE4SS log lines.
 
 [line]
 [size=5][b]Notes and limitations[/b][/size]
@@ -71,7 +99,9 @@ Gamepad placement controls are not supported in this release.
 [*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 [*]Install the mod on each client that wants to use the placement controls.
 [*]Test new mod versions in a disposable world before using an important save.
-[*]Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
+[*]Gamepad support is experimental and may require controller-specific fixes.
+[*]Bindings may become intermittent when another mod or UE4SS's built-in Keybinds mod registers the same chord. Check all UE4SS and mod keybinds, then remap one of the overlapping actions.
+[*]DarnMenu supports Ctrl, Alt, and Shift modifier toggles, but primary-input capture does not include arrows, Space, Enter, Tab, Escape, Backspace, punctuation keys, or mouse-wheel scrolling.
 [/list]
 
 [line]
@@ -83,7 +113,7 @@ Confirm UE4SS loaded PerfectPlacement and that [b]PerfectPlacement.pak[/b] is in
 
 [b]The guide appears but the controls do not respond[/b]
 
-Check the UE4SS console or log for [b][PerfectPlacement][/b] errors. For keyboard controls, confirm Num Lock is enabled.
+Check the UE4SS console or log for [b][PerfectPlacement][/b] errors and look for a conflicting chord in UE4SS or another installed mod.
 
 [b]The guide is missing or incomplete[/b]
 

@@ -1,3 +1,49 @@
+Version 0.2.0-beta.1 — Major update: experimental gamepad support
+
+Features and fixes
+- Add experimental gamepad controls for freezing, copying, moving, rotating, changing the movement step, resetting, and unfreezing a construction preview.
+- Add configurable controller chords, including D-pad directions combined with LT, RT, or both triggers.
+- Add dedicated unfrozen and frozen controller guides using Palworld's stock keyguide textures.
+- Keep unfrozen controller input limited to L3 and L3 + D-pad Down so normal Palworld building controls remain available.
+- Expand DarnMenu support to Freeze, Copy, and all eleven adjustment bindings.
+- Capture left, right, middle, and side mouse buttons through DarnMenu and render complete chords with Palworld's stock keyguide textures.
+- Add Ctrl, Alt, and Shift keycap toggles to every DarnMenu binding, including Copy's default Shift + Middle mouse chord.
+- Load saved DarnMenu bindings and placement-control keycaps after restarting Palworld.
+- Automatically release frozen previews before menus and unrelated Palworld UI actions.
+- Hide the placement guide when construction UI closes and restore it when an active preview resumes.
+- Replace steady-state unfrozen lifecycle polling with bounded, event-driven recovery checks.
+- Retain asynchronous UE4SS callbacks and contain callback errors so guide updates can recover safely.
+
+Experimental testing notice
+- Gamepad support has not been tested on physical controller hardware by the author and requires community testing.
+- Reports should include the controller model, Steam Input status, configured chord, reproduction steps, and relevant UE4SS log lines.
+
+Known DarnMenu limitation
+- DarnMenu supports Ctrl, Alt, and Shift modifier toggles, but primary-input capture does not include arrows, Space, Enter, Tab, Escape, Backspace, punctuation keys, or mouse-wheel scrolling.
+
+Previous 0.1.5 notes
+
+Version 0.1.5 — Configurable key chords and keycap UI
+
+Features and fixes
+- Add DarnMenu support under Escape > Mod Options for the eleven keyboard adjustment bindings.
+- Preserve Mod Config Menu/config.lua Freeze and Copy chords because DarnMenu cannot capture mouse buttons or modifiers.
+- Add Mod Config Menu support for placement controls.
+- Support multi-key modifier chords with Ctrl, Alt, and Shift.
+- Render configured bindings with Palworld's existing keycap textures.
+- Refresh configured bindings and placement-control keycaps after reopening a world.
+- Read Mod Config Menu files saved as UTF-8 or UTF-16.
+- Ignore step-size controls when no valid frozen build preview is active.
+- Use Freeze and Unfreeze terminology throughout the mod and UI.
+
+Known issue
+- Mod Config Menu currently does not map or show symbol keys and mouse bindings correctly. Use letter, number, function, navigation, or numpad keys until the upstream issue is fixed.
+
+Compatibility note
+- Perfect Placement bindings may become intermittent when the same chord is registered by another mod or by UE4SS's built-in Keybinds mod. Check all UE4SS and mod keybinds for conflicts, then remap one of the overlapping actions.
+
+Previous 0.1.4 notes
+
 Version 0.1.4 — Build modifier input hotfix
 
 Fixes

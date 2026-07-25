@@ -15,22 +15,26 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [*][b]Camera-aware controls[/b] that remain aligned to the piece's own axes.
 [*][b]Reset instantly[/b] to the transform captured when the preview was frozen.
 [*][b]Eyedropper[/b] to copy the targeted build piece into the active preview.
+[*][b]Configurable controls[/b] through DarnMenu for Freeze, Copy, and all eleven adjustment actions, including mouse buttons and Ctrl/Alt/Shift chords.
+[*][b]Experimental gamepad controls[/b] for freezing, copying, moving, rotating, changing the movement step, resetting, and unfreezing.
+[*][b]Palworld keycap UI[/b] that reflects the configured keyboard, mouse, and controller bindings.
 [/list]
 
 [h2]Requirements[/h2]
 [list]
 [*]Palworld 1.0 for Windows through Steam
 [*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] is a hard requirement for the Steam Workshop version.[/b] It must be subscribed to and enabled through Palworld's Mod Management screen.
-[*]Keyboard and mouse; gamepad placement controls are not supported yet
+[*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3769456391]DarnMenu[/url] is required for the in-game Mod Options page.[/b]
+[*]Keyboard and mouse, or a gamepad for the experimental controller controls
 [/list]
 
 The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palworld's official mod loader installs both components from this single subscription.
 
 [h2]Enable the mod[/h2]
 [list=1]
-[*]Subscribe to Perfect Placement and [url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url].
+[*]Subscribe to Perfect Placement, [url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url], and [url=https://steamcommunity.com/workshop/filedetails/?id=3769456391]DarnMenu[/url].
 [*]Launch Palworld and open [b]Options → Mod Management[/b].
-[*]Enable [b]UE4SS Experimental[/b] and [b]Perfect Placement[/b]. Both are required.
+[*]Enable [b]UE4SS Experimental[/b], [b]DarnMenu[/b], and [b]Perfect Placement[/b].
 [*]Apply the changes and restart Palworld when prompted.
 [*]Test first in a disposable world or a backup of your save.
 [/list]
@@ -47,16 +51,43 @@ The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palwor
 [*][b]Copy targeted build piece:[/b] Shift + Middle mouse
 [/list]
 
-Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.
+Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Numpad 1/3 vertical movement works with Num Lock either on or off.
+
+Perfect Placement appears under [b]Escape > Mod Options[/b] for Freeze, Copy,
+and all eleven adjustment bindings. DarnMenu renders complete chords with
+Palworld's stock keyguide textures, captures mouse buttons 1-5, and provides
+keycap toggles for any combination of Ctrl, Alt, and Shift.
+
+[h2]Experimental gamepad controls[/h2]
+[list]
+[*][b]Freeze / unfreeze preview:[/b] L3
+[*][b]Copy targeted build piece while unfrozen:[/b] L3 + D-pad Down
+[*][b]Move left / right while frozen:[/b] D-pad Left / Right
+[*][b]Move forward / back while frozen:[/b] D-pad Up / Down
+[*][b]Raise / lower while frozen:[/b] LT + D-pad Up / Down
+[*][b]Rotate left / right while frozen:[/b] LB / RB
+[*][b]Decrease / increase movement step while frozen:[/b] LT + D-pad Left / Right
+[*][b]Reset to frozen transform:[/b] R3
+[/list]
+
+Controller chords are configured under gamepad.bindings in config.lua. Frozen
+D-pad actions may use LT, RT, or both triggers. The guide uses Palworld's stock
+controller keyguide textures at runtime.
+
+[b]Gamepad support has not been tested on physical controller hardware by the
+author and requires community testing.[/b] Please report the controller model,
+Steam Input status, configured chord, reproduction steps, and relevant UE4SS
+log lines.
 
 [h2]Important beta limitations[/h2]
 [list]
 [*][b]Final placement integration is incomplete.[/b] The current build freezes, edits, and releases the preview back to Palworld; it does not replace Palworld's authoritative validation or directly spawn completed structures.
-[*]The companion key-guide UI is not yet reliable on every current Palworld/UE4SS setup.
+[*]Gamepad support is experimental and may require controller-specific fixes.
 [*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 [*]Dedicated-server and non-host multiplayer behavior has not been validated. Install it only on clients that need the controls.
 [*]Construction-preview bindings can change with Palworld updates. Check the UE4SS log if no preview is selected.
-[*]Mods that replace the construction UI or claim the same input bindings may conflict.
+[*]Bindings may become intermittent when another mod or UE4SS's built-in Keybinds mod registers the same chord. Check all UE4SS and mod keybinds, then remap one of the overlapping actions.
+[*]DarnMenu supports Ctrl, Alt, and Shift modifier toggles, but primary-input capture does not include arrows, Space, Enter, Tab, Escape, Backspace, punctuation keys, or mouse-wheel scrolling.
 [/list]
 
 [b]Back up important saves and test this beta in a disposable world.[/b]
@@ -66,9 +97,9 @@ Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1
 
 Enter build mode and make a construction preview visible. Confirm that the UE4SS log reports the active InstallChecker target when you press Middle Mouse.
 
-[b]The keypad controls do not respond[/b]
+[b]The configured controls do not respond[/b]
 
-Confirm Num Lock is enabled and check the UE4SS log for messages beginning with [code][PerfectPlacement][/code].
+Check the UE4SS log for messages beginning with [code][PerfectPlacement][/code] and look for a conflicting chord in UE4SS or another installed mod.
 
 [b]The guide UI is missing[/b]
 
