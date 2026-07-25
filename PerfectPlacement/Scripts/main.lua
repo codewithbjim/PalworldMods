@@ -1,26 +1,9 @@
 local Config = require("config")
+local Keybindings = require("keybindings")
+local DarnMenu = require("darnmenu")
 local UEHelpers = require("UEHelpers")
 
 local MOD = "PerfectPlacement"
-
--- Windows virtual-key values are used deliberately. They are stable across
--- UE4SS versions even when a build exposes different symbolic Key names.
-local VK = {
-    MIDDLE_MOUSE = 0x04,
-    PAGE_DOWN = 0x22,
-    END_KEY = 0x23,
-    NUMPAD_1 = 0x61,
-    NUMPAD_2 = 0x62,
-    NUMPAD_3 = 0x63,
-    NUMPAD_4 = 0x64,
-    NUMPAD_5 = 0x65,
-    NUMPAD_6 = 0x66,
-    NUMPAD_7 = 0x67,
-    NUMPAD_8 = 0x68,
-    NUMPAD_9 = 0x69,
-    NUMPAD_ADD = 0x6B,
-    NUMPAD_SUBTRACT = 0x6D,
-}
 
 local State = {
     SEARCHING = "searching",
@@ -37,21 +20,34 @@ local desired_location = nil
 local desired_rotation = nil
 local current_move_step = Config.movement.normal
 local transform_loop_started = false
+local transform_loop_callback = nil
+local transform_game_thread_callback = nil
+local transform_check_pending = false
+local transform_loop_error_was_logged = false
 local preview_tick_was_enabled = nil
 local builder_component = nil
 local cached_builder_component = nil
 local builder_tick_was_enabled = nil
 local lifecycle_monitor_started = false
-local lifecycle_ui_refresh_ticks = 0
+local lifecycle_recovery_checks_remaining = 0
+local lifecycle_check_pending = false
+local lifecycle_monitor_loop_callback = nil
+local lifecycle_game_thread_callback = nil
+local lifecycle_monitor_error_was_logged = false
+local lifecycle_suppression_idle_ticks = 0
 local builder_fallback_scan_cooldown = 0
 local construction_guide_mode = nil
 local building_mode_exit_checks = 0
 local unfrozen_ui_builder_component = nil
 local unfrozen_ui_preview_visible = nil
+local unfrozen_ui_suppressed_preview_name = nil
+local unfrozen_ui_suppression_saw_inactive = false
 local notification_generation = 0
 local locked_preview_name = nil
 local release_preview
 local update_construction_hotkey_guide
+local ensure_auto_unfreeze_hooks
+local start_lifecycle_monitor
 local locked_origin_location = nil
 local locked_origin_rotation = nil
 local locked_origin_pivot = nil
@@ -65,18 +61,348 @@ local keyguide_hook_registered = false
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
 local ui_host_missing_was_logged = false
+local keycap_ui_host = nil
+local resolved_bindings = nil
+local keycap_texture_cache = {}
+local gamepad_monitor_started = false
+local gamepad_serial_host_name = nil
+local gamepad_last_serials = {}
+local active_gamepad_physical_serials = nil
+local gamepad_monitor_loop_callback = nil
+local gamepad_game_thread_callback = nil
+local gamepad_poll_pending = false
+local gamepad_monitor_error_was_logged = false
+local resolved_gamepad_bindings = nil
+local resolved_gamepad_chord_actions = nil
+local auto_unfreeze_hooked_paths = {}
+local construction_ui_notify_callback = nil
+local ui_host_notify_callback = nil
+local ui_host_refresh_generation = 0
+local ui_host_refresh_pending = false
+local retained_async_callbacks = {}
+local retained_async_callback_serial = 0
 
 local LIFECYCLE_INTERVAL_MS = 100
-local IDLE_UI_REFRESH_TICKS = 5
+local LIFECYCLE_INITIAL_RECOVERY_CHECKS = 100
+local LIFECYCLE_EVENT_RECOVERY_CHECKS = 20
+local LIFECYCLE_SUPPRESSION_FALLBACK_TICKS = 10
 local BUILDER_FALLBACK_RETRY_TICKS = 10
+local PAL_BUILDING_FUNCTION_ROOT =
+    "/Game/Pal/Blueprint/UI/BuildMenu/WBP_PalBuilding"
+    .. ".WBP_PalBuilding_C:"
+local PAL_INPUT_LISTENER_FUNCTION_ROOT =
+    "/Game/Pal/Blueprint/UI/WBP_PalHUD_InGame_InputListener"
+    .. ".WBP_PalHUD_InGame_InputListener_C:"
+local PAL_INGAME_CONSTRUCTION_CLASS_PATH =
+    "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/"
+    .. "WBP_IngameConstruction.WBP_IngameConstruction_C"
+local PAL_INGAME_CONSTRUCTION_FUNCTION_ROOT =
+    PAL_INGAME_CONSTRUCTION_CLASS_PATH .. ":"
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
 end
 
+local function retain_async_callback(callback, label)
+    retained_async_callback_serial = retained_async_callback_serial + 1
+    local callback_id = retained_async_callback_serial
+    local retained_callback
+    retained_callback = function(...)
+        local ok, error_message = pcall(callback, ...)
+        retained_async_callbacks[callback_id] = nil
+        if not ok then
+            log(string.format(
+                "%s failed: %s",
+                label or "Asynchronous callback",
+                tostring(error_message)
+            ))
+        end
+    end
+    retained_async_callbacks[callback_id] = retained_callback
+    return retained_callback, callback_id
+end
+
+local function execute_in_game_thread_retained(callback, label)
+    local retained_callback, callback_id =
+        retain_async_callback(callback, label)
+    local ok, error_message = pcall(
+        ExecuteInGameThread,
+        retained_callback
+    )
+    if not ok then
+        retained_async_callbacks[callback_id] = nil
+        log(string.format(
+            "Could not queue %s: %s",
+            label or "game-thread callback",
+            tostring(error_message)
+        ))
+        return false
+    end
+    return true
+end
+
+local function execute_with_retained_delay(delay_ms, callback, label)
+    local retained_callback, callback_id =
+        retain_async_callback(callback, label)
+    local ok, error_message = pcall(
+        ExecuteWithDelay,
+        delay_ms,
+        retained_callback
+    )
+    if not ok then
+        retained_async_callbacks[callback_id] = nil
+        log(string.format(
+            "Could not queue %s: %s",
+            label or "delayed callback",
+            tostring(error_message)
+        ))
+        return false
+    end
+    return true
+end
+
+local function load_resolved_bindings()
+    DarnMenu.register(log)
+
+    local configured_bindings = {}
+    for _, action in ipairs(Keybindings.action_order) do
+        local configured = Config.bindings ~= nil and Config.bindings[action] or nil
+        if configured == nil and action == "toggle_freeze" and Config.bindings ~= nil then
+            configured = Config.bindings.toggle_lock
+        end
+        configured_bindings[action] = configured
+    end
+
+    local darnmenu_bindings = DarnMenu.load(Keybindings.action_order, log)
+    if darnmenu_bindings ~= nil then
+        for action, binding in pairs(darnmenu_bindings) do
+            configured_bindings[action] = binding
+        end
+    end
+    return Keybindings.resolve(configured_bindings, log)
+end
+resolved_bindings = load_resolved_bindings()
+
+local GAMEPAD_STATE_ACTION_ORDER = {
+    unfrozen = {
+        "toggle_freeze",
+        "copy_piece",
+    },
+    frozen = {
+        "move_left",
+        "move_right",
+        "move_forward",
+        "move_back",
+        "move_up",
+        "move_down",
+        "rotate_left",
+        "rotate_right",
+        "step_down",
+        "step_up",
+        "reset",
+        "toggle_freeze",
+    },
+}
+
+local GAMEPAD_MODIFIER_ORDER = {
+    L3 = 1,
+    LT = 2,
+    RT = 3,
+}
+
+local GAMEPAD_SUPPORTED_CHORDS = {
+    unfrozen = {
+        L3 = true,
+        ["L3+DPAD_DOWN"] = true,
+    },
+    frozen = {
+        DPAD_UP = true,
+        DPAD_DOWN = true,
+        DPAD_LEFT = true,
+        DPAD_RIGHT = true,
+        ["LT+DPAD_UP"] = true,
+        ["LT+DPAD_DOWN"] = true,
+        ["LT+DPAD_LEFT"] = true,
+        ["LT+DPAD_RIGHT"] = true,
+        ["RT+DPAD_UP"] = true,
+        ["RT+DPAD_DOWN"] = true,
+        ["RT+DPAD_LEFT"] = true,
+        ["RT+DPAD_RIGHT"] = true,
+        ["LT+RT+DPAD_UP"] = true,
+        ["LT+RT+DPAD_DOWN"] = true,
+        ["LT+RT+DPAD_LEFT"] = true,
+        ["LT+RT+DPAD_RIGHT"] = true,
+        LB = true,
+        RB = true,
+        R3 = true,
+        L3 = true,
+    },
+}
+
+local function normalize_gamepad_token(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local token = string.upper(value)
+    token = string.gsub(token, "[%s%-]+", "_")
+    if token == "DPADUP" then
+        return "DPAD_UP"
+    elseif token == "DPADDOWN" then
+        return "DPAD_DOWN"
+    elseif token == "DPADLEFT" then
+        return "DPAD_LEFT"
+    elseif token == "DPADRIGHT" then
+        return "DPAD_RIGHT"
+    end
+    return token
+end
+
+local function normalize_gamepad_binding(binding)
+    local key = binding
+    local modifiers = {}
+    if type(binding) == "table" then
+        if binding.disabled then
+            return nil, "binding is disabled"
+        end
+        key = binding.key
+        if type(binding.modifiers) == "table" then
+            for _, modifier in ipairs(binding.modifiers) do
+                modifiers[#modifiers + 1] = modifier
+            end
+        end
+    end
+
+    key = normalize_gamepad_token(key)
+    if key == nil or key == "" then
+        return nil, "missing key"
+    end
+
+    local normalized_modifiers = {}
+    local seen = {}
+    for _, modifier in ipairs(modifiers) do
+        local normalized = normalize_gamepad_token(modifier)
+        if GAMEPAD_MODIFIER_ORDER[normalized] == nil then
+            return nil, "unsupported modifier " .. tostring(modifier)
+        end
+        if not seen[normalized] then
+            seen[normalized] = true
+            normalized_modifiers[#normalized_modifiers + 1] = normalized
+        end
+    end
+    table.sort(normalized_modifiers, function(left, right)
+        return GAMEPAD_MODIFIER_ORDER[left] < GAMEPAD_MODIFIER_ORDER[right]
+    end)
+
+    local chord_parts = {}
+    for _, modifier in ipairs(normalized_modifiers) do
+        chord_parts[#chord_parts + 1] = modifier
+    end
+    chord_parts[#chord_parts + 1] = key
+    return {
+        key = key,
+        modifiers = normalized_modifiers,
+        chord = table.concat(chord_parts, "+"),
+    }
+end
+
+local function configured_gamepad_action(action)
+    local gamepad = Config.gamepad or {}
+    if gamepad.invert_forward_back then
+        if action == "move_forward" then
+            return "move_back"
+        elseif action == "move_back" then
+            return "move_forward"
+        end
+    end
+    if gamepad.invert_height then
+        if action == "move_up" then
+            return "move_down"
+        elseif action == "move_down" then
+            return "move_up"
+        end
+    end
+    if gamepad.swap_rotate_buttons then
+        if action == "rotate_left" then
+            return "rotate_right"
+        elseif action == "rotate_right" then
+            return "rotate_left"
+        end
+    end
+    return action
+end
+
+local function load_resolved_gamepad_bindings()
+    local gamepad = Config.gamepad or {}
+    local configured_states = gamepad.bindings or {}
+    local resolved = {
+        unfrozen = {},
+        frozen = {},
+    }
+    local chord_actions = {
+        unfrozen = {},
+        frozen = {},
+    }
+
+    for state_name, action_order in pairs(GAMEPAD_STATE_ACTION_ORDER) do
+        local configured = configured_states[state_name] or {}
+        local supported = GAMEPAD_SUPPORTED_CHORDS[state_name]
+        for _, action in ipairs(action_order) do
+            local binding, binding_error =
+                normalize_gamepad_binding(configured[action])
+            if binding == nil then
+                log(string.format(
+                    "Gamepad binding %s.%s ignored: %s.",
+                    state_name,
+                    action,
+                    binding_error
+                ))
+            elseif not supported[binding.chord] then
+                log(string.format(
+                    "Gamepad binding %s.%s ignored: chord %s is not captured in %s mode.",
+                    state_name,
+                    action,
+                    binding.chord,
+                    state_name
+                ))
+            elseif chord_actions[state_name][binding.chord] ~= nil then
+                log(string.format(
+                    "Gamepad binding %s.%s ignored: chord %s is already assigned to %s.",
+                    state_name,
+                    action,
+                    binding.chord,
+                    chord_actions[state_name][binding.chord]
+                ))
+            else
+                local effective_action = configured_gamepad_action(action)
+                resolved[state_name][effective_action] = binding
+                chord_actions[state_name][binding.chord] = effective_action
+            end
+        end
+    end
+    return resolved, chord_actions
+end
+
+resolved_gamepad_bindings, resolved_gamepad_chord_actions =
+    load_resolved_gamepad_bindings()
+
 local function verbose(message)
     if Config.diagnostics.verbose then
         log(message)
+    end
+end
+
+local function request_lifecycle_recovery(check_count)
+    local requested = math.max(1, math.floor(
+        tonumber(check_count) or LIFECYCLE_EVENT_RECOVERY_CHECKS
+    ))
+    lifecycle_recovery_checks_remaining = math.max(
+        lifecycle_recovery_checks_remaining,
+        requested
+    )
+    if start_lifecycle_monitor ~= nil
+        and not lifecycle_monitor_started
+    then
+        start_lifecycle_monitor()
     end
 end
 
@@ -103,6 +429,498 @@ local function full_name(object)
         return tostring(value)
     end
     return "<name unavailable>"
+end
+
+local KEYCAP_IMAGE_SLOTS = {
+    move_left = { "Num4Icon" },
+    move_right = { "Num6Icon" },
+    move_forward = { "Num8Icon" },
+    move_back = { "Num2Icon" },
+    move_up = { "Num3Icon" },
+    move_down = { "Num1Icon" },
+    reset = { "Num5Icon" },
+    rotate_left = { "Num7Icon" },
+    rotate_right = { "Num9Icon" },
+    step_down = { "NumMinusIcon" },
+    step_up = { "NumPlusIcon" },
+    toggle_freeze = {
+        "FreezeMouseWheelButtonIcon",
+        "UnfreezeMouseWheelButtonIcon",
+    },
+    copy_piece = { "CopyMouseWheelButtonIcon" },
+}
+
+-- Preferred companion-widget contract. Each child is an instance of
+-- WBP_PerfectPlacement_KeyChord and exposes:
+-- SetChord(CtrlTexture, AltTexture, ShiftTexture, PrimaryTexture,
+--          ShowCtrl, ShowAlt, ShowShift).
+local CHORD_WIDGET_SLOTS = {
+    move_left = { "MoveLeftChord" },
+    move_right = { "MoveRightChord" },
+    move_forward = { "MoveForwardChord" },
+    move_back = { "MoveBackwardChord" },
+    move_up = { "MoveUpChord" },
+    move_down = { "MoveDownChord" },
+    reset = { "ResetChord" },
+    rotate_left = { "RotateLeftChord" },
+    rotate_right = { "RotateRightChord" },
+    step_down = { "StepDownChord" },
+    step_up = { "StepUpChord" },
+    toggle_freeze = { "FreezeChord", "UnfreezeChord" },
+    copy_piece = { "CopyChord" },
+}
+
+local GAMEPAD_KEYGUIDE_ROOT = "/Game/Pal/Texture/UI/KeyGuide/"
+
+local function gamepad_keyguide_asset(asset_name)
+    local texture_path = GAMEPAD_KEYGUIDE_ROOT .. asset_name
+    return {
+        texture_path = texture_path,
+        texture_object_path = texture_path .. "." .. asset_name,
+    }
+end
+
+local GAMEPAD_KEYCAP_ASSETS = {
+    DPAD_UP = "T_KeyGuide_CrossU",
+    DPAD_DOWN = "T_KeyGuide_CrossD",
+    DPAD_LEFT = "T_KeyGuide_CrossL",
+    DPAD_RIGHT = "T_KeyGuide_CrossR",
+    LB = "T_KeyGuide_L1",
+    LT = "T_KeyGuide_L2",
+    L3 = "T_KeyGuide_L3",
+    RB = "T_KeyGuide_R1",
+    RT = "T_KeyGuide_R2",
+    R3 = "T_KeyGuide_R3",
+}
+
+-- Preferred gamepad contract. Each parent property is an instance of
+-- WBP_PerfectPlacement_GamepadChord. Lua updates its named child widgets
+-- directly because cooked Blueprint function arguments are not reliable in
+-- the current Palworld/UE4SS combination.
+local GAMEPAD_CHORD_WIDGET_SLOTS = {
+    unfrozen = {
+        toggle_freeze = "GP_UnfrozenToggleFreezeChord",
+        copy_piece = "GP_UnfrozenCopyChord",
+    },
+    frozen = {
+        move_left = "GP_FrozenMoveLeftChord",
+        move_right = "GP_FrozenMoveRightChord",
+        move_forward = "GP_FrozenMoveForwardChord",
+        move_back = "GP_FrozenMoveBackChord",
+        move_up = "GP_FrozenMoveUpChord",
+        move_down = "GP_FrozenMoveDownChord",
+        rotate_left = "GP_FrozenRotateLeftChord",
+        rotate_right = "GP_FrozenRotateRightChord",
+        step_down = "GP_FrozenStepDownChord",
+        step_up = "GP_FrozenStepUpChord",
+        reset = "GP_FrozenResetChord",
+        toggle_freeze = "GP_FrozenToggleFreezeChord",
+    },
+}
+
+local function load_keycap_texture(asset)
+    if asset == nil then
+        return nil
+    end
+
+    local cached = keycap_texture_cache[asset.texture_object_path]
+    if is_valid(cached) then
+        return cached
+    end
+
+    local load_ok, loaded = pcall(function()
+        -- LoadAsset needs the full UObject path. Passing only the package path
+        -- makes UE4SS return a UPackage and logs "could be a package", which
+        -- leaves the UMG Image brush blank.
+        return LoadAsset(asset.texture_object_path)
+    end)
+    if load_ok and is_valid(loaded) then
+        keycap_texture_cache[asset.texture_object_path] = loaded
+        return loaded
+    end
+
+    local find_ok, found = pcall(function()
+        return StaticFindObject(asset.texture_object_path)
+    end)
+    if find_ok and is_valid(found) then
+        keycap_texture_cache[asset.texture_object_path] = found
+        return found
+    end
+
+    log("Could not load Palworld keycap: " .. asset.texture_path)
+    return nil
+end
+
+local function set_keycap_image(host, property_name, texture, hide_on_failure)
+    local image_ok, image = pcall(function()
+        return host[property_name]
+    end)
+    if not image_ok or not is_valid(image) then
+        log("Companion UI keycap image is missing: " .. property_name)
+        return false
+    end
+
+    if not is_valid(texture) then
+        if hide_on_failure then
+            pcall(function()
+                image:SetVisibility(1)
+            end)
+        end
+        return false
+    end
+
+    local set_ok, set_error = pcall(function()
+        image:SetBrushFromTexture(texture, false)
+        image:SetVisibility(0)
+    end)
+    if not set_ok then
+        log(string.format(
+            "Could not update keycap image %s: %s",
+            property_name,
+            tostring(set_error)
+        ))
+        return false
+    end
+    return true
+end
+
+local function set_gamepad_chord_widget(host, property_name, binding)
+    local widget_ok, widget = pcall(function()
+        return host[property_name]
+    end)
+    if not widget_ok or not is_valid(widget) then
+        log("Companion gamepad chord widget is missing: " .. property_name)
+        return false
+    end
+
+    local direct_ok, direct_error = pcall(function()
+        local modifier1_box = widget.Modifier1Box
+        local modifier1_icon = widget.Modifier1Icon
+        local modifier1_separator = widget.Modifier1Separator
+        local modifier2_box = widget.Modifier2Box
+        local modifier2_icon = widget.Modifier2Icon
+        local modifier2_separator = widget.Modifier2Separator
+        local primary_box = widget.PrimaryBox
+        local primary_icon = widget.PrimaryIcon
+
+        if not is_valid(modifier1_box)
+            or not is_valid(modifier1_icon)
+            or not is_valid(modifier1_separator)
+            or not is_valid(modifier2_box)
+            or not is_valid(modifier2_icon)
+            or not is_valid(modifier2_separator)
+            or not is_valid(primary_box)
+            or not is_valid(primary_icon)
+        then
+            error("one or more gamepad chord child widgets are missing")
+        end
+
+        for _, keycap_box in ipairs({
+            modifier1_box,
+            modifier2_box,
+            primary_box,
+        }) do
+            keycap_box:SetWidthOverride(32.0)
+            keycap_box:SetHeightOverride(32.0)
+        end
+
+        local modifier_count =
+            binding ~= nil and #binding.modifiers or 0
+        local modifier1_texture = nil
+        local modifier2_texture = nil
+        local primary_texture = nil
+
+        if modifier_count >= 1 then
+            local asset_name = GAMEPAD_KEYCAP_ASSETS[binding.modifiers[1]]
+            if asset_name ~= nil then
+                modifier1_texture =
+                    load_keycap_texture(gamepad_keyguide_asset(asset_name))
+            end
+        end
+        if modifier_count >= 2 then
+            local asset_name = GAMEPAD_KEYCAP_ASSETS[binding.modifiers[2]]
+            if asset_name ~= nil then
+                modifier2_texture =
+                    load_keycap_texture(gamepad_keyguide_asset(asset_name))
+            end
+        end
+        if binding ~= nil then
+            local asset_name = GAMEPAD_KEYCAP_ASSETS[binding.key]
+            if asset_name ~= nil then
+                primary_texture =
+                    load_keycap_texture(gamepad_keyguide_asset(asset_name))
+            end
+        end
+
+        local show_modifier1 = is_valid(modifier1_texture)
+        local show_modifier2 = is_valid(modifier2_texture)
+        local show_primary = is_valid(primary_texture)
+
+        if show_modifier1 then
+            modifier1_icon:SetBrushFromTexture(modifier1_texture, false)
+        end
+        if show_modifier2 then
+            modifier2_icon:SetBrushFromTexture(modifier2_texture, false)
+        end
+        if show_primary then
+            primary_icon:SetBrushFromTexture(primary_texture, false)
+        end
+
+        modifier1_box:SetVisibility(show_modifier1 and 0 or 1)
+        modifier1_separator:SetVisibility(show_modifier1 and 0 or 1)
+        modifier2_box:SetVisibility(show_modifier2 and 0 or 1)
+        modifier2_separator:SetVisibility(show_modifier2 and 0 or 1)
+        primary_box:SetVisibility(show_primary and 0 or 1)
+    end)
+    if not direct_ok then
+        log(string.format(
+            "Could not update gamepad chord widget %s: %s",
+            property_name,
+            tostring(direct_error)
+        ))
+        return false
+    end
+    return true
+end
+
+local function apply_gamepad_keycaps(host)
+    local applied = 0
+    for state_name, slots in pairs(GAMEPAD_CHORD_WIDGET_SLOTS) do
+        local state_bindings = resolved_gamepad_bindings[state_name] or {}
+        for action, property_name in pairs(slots) do
+            if set_gamepad_chord_widget(
+                host,
+                property_name,
+                state_bindings[action]
+            ) then
+                applied = applied + 1
+            end
+        end
+    end
+    return applied
+end
+
+local function apply_gamepad_widget_config(host)
+    if not is_valid(host) then
+        return
+    end
+    local ui_config = Config.ui or {}
+    local gamepad = Config.gamepad or {}
+    local property_name = ui_config.gamepad_enabled_property
+        or "GamepadEnabled"
+    -- This property is part of the new Blueprint contract. Keep the assignment
+    -- optional so the Lua mod remains compatible with an older companion pak
+    -- while the widget is being rebuilt.
+    pcall(function()
+        host[property_name] = gamepad.enabled ~= false
+    end)
+end
+
+local function has_modifier(binding, expected)
+    if binding == nil or binding.disabled then
+        return false
+    end
+    for _, modifier in ipairs(binding.modifiers) do
+        if modifier == expected then
+            return true
+        end
+    end
+    return false
+end
+
+local function set_chord_widget(
+    host,
+    property_name,
+    binding,
+    primary_texture,
+    modifier_textures
+)
+    local widget_ok, widget = pcall(function()
+        return host[property_name]
+    end)
+    if not widget_ok or not is_valid(widget) then
+        return false
+    end
+
+    -- UE4SS can locate and invoke the Blueprint SetChord function, but on the
+    -- current Palworld build its Texture2D/Boolean arguments do not reach the
+    -- graph reliably. Update the named child widgets directly instead.
+    local direct_ok = pcall(function()
+        local ctrl_icon = widget.CtrlIcon
+        local alt_icon = widget.AltIcon
+        local shift_icon = widget.ShiftIcon
+        local primary_icon = widget.PrimaryIcon
+        local ctrl_box = widget.CtrlBox
+        local alt_box = widget.AltBox
+        local shift_box = widget.ShiftBox
+        local primary_box = widget.PrimaryBox
+        local ctrl_separator = widget.CtrlSeparator
+        local alt_separator = widget.AltSeparator
+        local shift_separator = widget.ShiftSeparator
+
+        if not is_valid(ctrl_icon)
+            or not is_valid(alt_icon)
+            or not is_valid(shift_icon)
+            or not is_valid(primary_icon)
+            or not is_valid(ctrl_box)
+            or not is_valid(alt_box)
+            or not is_valid(shift_box)
+            or not is_valid(primary_box)
+            or not is_valid(ctrl_separator)
+            or not is_valid(alt_separator)
+            or not is_valid(shift_separator)
+        then
+            error("one or more chord child widgets are missing")
+        end
+
+        -- Keep Match Size disabled and let the square SizeBox control the
+        -- displayed dimensions. Matching the 40x40 source brush inside a
+        -- smaller slot can distort the rendered keycap.
+        ctrl_icon:SetBrushFromTexture(modifier_textures.CONTROL, false)
+        alt_icon:SetBrushFromTexture(modifier_textures.ALT, false)
+        shift_icon:SetBrushFromTexture(modifier_textures.SHIFT, false)
+        primary_icon:SetBrushFromTexture(primary_texture, false)
+        for _, keycap_box in ipairs({
+            ctrl_box,
+            alt_box,
+            shift_box,
+            primary_box,
+        }) do
+            keycap_box:SetWidthOverride(32.0)
+            keycap_box:SetHeightOverride(32.0)
+        end
+
+        ctrl_box:SetVisibility(has_modifier(binding, "CONTROL") and 0 or 1)
+        alt_box:SetVisibility(has_modifier(binding, "ALT") and 0 or 1)
+        shift_box:SetVisibility(has_modifier(binding, "SHIFT") and 0 or 1)
+        ctrl_separator:SetVisibility(has_modifier(binding, "CONTROL") and 0 or 1)
+        alt_separator:SetVisibility(has_modifier(binding, "ALT") and 0 or 1)
+        shift_separator:SetVisibility(has_modifier(binding, "SHIFT") and 0 or 1)
+        primary_box:SetVisibility(
+            binding ~= nil
+                and not binding.disabled
+                and is_valid(primary_texture)
+                and 0
+                or 1
+        )
+    end)
+    if direct_ok then
+        return true
+    end
+
+    local callback = widget.SetChord
+    if callback == nil then
+        log("Companion chord widget is missing SetChord: " .. property_name)
+        return false
+    end
+
+    local set_ok, set_error = pcall(function()
+        callback(
+            widget,
+            modifier_textures.CONTROL,
+            modifier_textures.ALT,
+            modifier_textures.SHIFT,
+            primary_texture,
+            has_modifier(binding, "CONTROL"),
+            has_modifier(binding, "ALT"),
+            has_modifier(binding, "SHIFT")
+        )
+    end)
+    if not set_ok then
+        log(string.format(
+            "Could not update chord widget %s: %s",
+            property_name,
+            tostring(set_error)
+        ))
+        return false
+    end
+    return true
+end
+
+local function apply_configured_keycaps(host)
+    local ui_config = Config.ui or {}
+    if not ui_config.use_palworld_keycaps or not is_valid(host) then
+        return
+    end
+    if is_valid(keycap_ui_host) and full_name(keycap_ui_host) == full_name(host) then
+        return
+    end
+
+    local modifier_textures = {}
+    for _, modifier in ipairs(Keybindings.modifier_order) do
+        modifier_textures[modifier] = load_keycap_texture(
+            Keybindings.get_modifier_asset(modifier)
+        )
+    end
+
+    local chord_widgets_updated = 0
+    local chord_widget_actions = {}
+    for _, action in ipairs(Keybindings.action_order) do
+        local binding = resolved_bindings[action]
+        local texture = nil
+        if binding ~= nil and not binding.disabled then
+            texture = load_keycap_texture(binding.key_info)
+        end
+
+        local action_uses_chord_widget = false
+        for _, property_name in ipairs(CHORD_WIDGET_SLOTS[action] or {}) do
+            if set_chord_widget(
+                host,
+                property_name,
+                binding,
+                texture,
+                modifier_textures
+            ) then
+                action_uses_chord_widget = true
+                chord_widgets_updated = chord_widgets_updated + 1
+            end
+        end
+
+        if not action_uses_chord_widget then
+            for _, property_name in ipairs(KEYCAP_IMAGE_SLOTS[action] or {}) do
+                set_keycap_image(
+                    host,
+                    property_name,
+                    texture,
+                    binding == nil or binding.disabled or not binding.is_default
+                )
+            end
+        else
+            chord_widget_actions[action] = true
+        end
+    end
+
+    local copy_binding = resolved_bindings.copy_piece
+    if not chord_widget_actions.copy_piece then
+        local modifier = copy_binding ~= nil and copy_binding.modifiers[1] or nil
+        local modifier_texture = modifier_textures[modifier]
+        set_keycap_image(
+            host,
+            "LShiftIcon",
+            modifier_texture,
+            modifier == nil or modifier_texture == nil
+        )
+        if copy_binding ~= nil and #copy_binding.modifiers > 1 then
+            log("Legacy companion UI can show only the first Copy modifier.")
+        end
+    end
+
+    local gamepad_keycaps_updated = apply_gamepad_keycaps(host)
+    keycap_ui_host = host
+    if chord_widgets_updated > 0 then
+        log(string.format(
+            "Configured Palworld key chords applied to %d companion widgets; "
+                .. "%d stock gamepad keycaps applied.",
+            chord_widgets_updated,
+            gamepad_keycaps_updated
+        ))
+    else
+        log(string.format(
+            "Configured Palworld keycaps applied through the legacy companion UI; "
+                .. "%d stock gamepad keycaps applied.",
+            gamepad_keycaps_updated
+        ))
+    end
 end
 
 local function contains_any(value, fragments)
@@ -159,6 +977,9 @@ local function safe_find_all_of(class_name)
 end
 
 local function find_perfect_placement_ui_host()
+    if ui_host_refresh_pending then
+        return nil
+    end
     if is_valid(perfect_placement_ui_host) then
         return perfect_placement_ui_host
     end
@@ -171,6 +992,8 @@ local function find_perfect_placement_ui_host()
     if ok and is_valid(host) then
         perfect_placement_ui_host = host
         ui_host_missing_was_logged = false
+        apply_gamepad_widget_config(host)
+        apply_configured_keycaps(host)
         log("Companion UI host found: " .. full_name(host))
         return host
     end
@@ -198,6 +1021,7 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
 
     local ui_config = Config.ui or {}
     local ok, error_message = pcall(function()
+        apply_gamepad_widget_config(host)
         local move_step_property = ui_config.move_step_property or "MoveStepCm"
         host[move_step_property] = current_move_step
 
@@ -334,7 +1158,7 @@ local function read_preview_transform()
         Roll = rotation.Roll,
     }
     log(string.format(
-        "Locked transform source %s at (%.1f, %.1f, %.1f)",
+        "Frozen transform source %s at (%.1f, %.1f, %.1f)",
         full_name(transform_actor),
         desired_location.X,
         desired_location.Y,
@@ -403,13 +1227,47 @@ local function start_transform_loop()
     end
     transform_loop_started = true
 
-    LoopAsync(Config.transform_refresh_ms, function()
-        if state == State.EDITING then
-            ExecuteInGameThread(function()
-                apply_preview_transform()
-            end)
+    transform_game_thread_callback =
+        transform_game_thread_callback or function()
+            local apply_ok, apply_error =
+                pcall(apply_preview_transform)
+            transform_check_pending = false
+            if not apply_ok then
+                if not transform_loop_error_was_logged then
+                    log("Transform loop recovered from an error: "
+                        .. tostring(apply_error))
+                    transform_loop_error_was_logged = true
+                end
+            else
+                transform_loop_error_was_logged = false
+            end
         end
-    end)
+    transform_loop_callback = transform_loop_callback or function()
+        if state ~= State.EDITING then
+            if transform_check_pending then
+                return
+            end
+            transform_loop_started = false
+            return true
+        end
+        if transform_check_pending then
+            return
+        end
+        transform_check_pending = true
+        local queue_ok, queue_error = pcall(
+            ExecuteInGameThread,
+            transform_game_thread_callback
+        )
+        if not queue_ok then
+            transform_check_pending = false
+            if not transform_loop_error_was_logged then
+                log("Could not queue the transform loop: "
+                    .. tostring(queue_error))
+                transform_loop_error_was_logged = true
+            end
+        end
+    end
+    LoopAsync(Config.transform_refresh_ms, transform_loop_callback)
 end
 
 local function set_preview_tick_enabled(enabled)
@@ -545,6 +1403,7 @@ local function should_release_locked_preview()
     if state ~= State.EDITING then
         return false, nil
     end
+
     if not is_valid(preview_actor) then
         return true, "preview object was destroyed"
     end
@@ -592,80 +1451,219 @@ local function should_release_locked_preview()
     return false, nil
 end
 
-local function start_lifecycle_monitor()
+local function construction_resume_hooks_ready()
+    local safety = Config.auto_unfreeze or {}
+    for _, function_name in ipairs(
+        safety.construction_resume_functions or {}
+    ) do
+        local function_path =
+            PAL_INGAME_CONSTRUCTION_FUNCTION_ROOT .. function_name
+        if not auto_unfreeze_hooked_paths[function_path] then
+            return false
+        end
+    end
+    return true
+end
+
+local function process_lifecycle_check()
+    if state == State.EDITING then
+        if lifecycle_recovery_checks_remaining > 0 then
+            if update_construction_hotkey_guide(
+                true,
+                false,
+                false
+            ) then
+                lifecycle_recovery_checks_remaining = 0
+            end
+        end
+        local should_release, reason = should_release_locked_preview()
+        if should_release then
+            log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
+            release_preview(reason)
+        end
+        return
+    end
+
+    if not is_valid(unfrozen_ui_builder_component) then
+        unfrozen_ui_builder_component = nil
+        local allow_global_scan = builder_fallback_scan_cooldown <= 0
+        local candidate = find_builder_component(allow_global_scan)
+        if is_valid(candidate) then
+            unfrozen_ui_builder_component = candidate
+            unfrozen_ui_preview_visible = nil
+        elseif allow_global_scan then
+            -- Recovery windows retry direct helpers every check. Expensive
+            -- global scans retain their own backoff.
+            builder_fallback_scan_cooldown =
+                BUILDER_FALLBACK_RETRY_TICKS
+        elseif builder_fallback_scan_cooldown > 0 then
+            builder_fallback_scan_cooldown =
+                builder_fallback_scan_cooldown - 1
+        end
+    end
+
+    if not is_valid(unfrozen_ui_builder_component) then
+        return
+    end
+    local hooks_ready = ensure_auto_unfreeze_hooks()
+
+    local status_ok, in_building_mode, has_preview, active_preview =
+        pcall(function()
+            local in_mode =
+                unfrozen_ui_builder_component:IsInBuildingMode()
+            local checker =
+                unfrozen_ui_builder_component.InstallChecker
+            local target = nil
+            if is_valid(checker) then
+                target = checker.TargetBuildObject
+            end
+            return in_mode, is_valid(target), target
+        end)
+
+    local should_show = status_ok
+        and in_building_mode
+        and has_preview
+    if unfrozen_ui_suppressed_preview_name ~= nil then
+        if not should_show then
+            if construction_resume_hooks_ready() then
+                unfrozen_ui_suppressed_preview_name = nil
+                unfrozen_ui_suppression_saw_inactive = false
+            else
+                unfrozen_ui_suppression_saw_inactive = true
+            end
+            should_show = false
+        elseif unfrozen_ui_suppression_saw_inactive then
+            unfrozen_ui_suppressed_preview_name = nil
+            unfrozen_ui_suppression_saw_inactive = false
+        elseif is_valid(active_preview) then
+            local active_preview_name = full_name(active_preview)
+            if unfrozen_ui_suppressed_preview_name ~= "<unknown>"
+                and active_preview_name
+                    ~= unfrozen_ui_suppressed_preview_name
+            then
+                unfrozen_ui_suppressed_preview_name = nil
+                unfrozen_ui_suppression_saw_inactive = false
+            else
+                should_show = false
+            end
+        else
+            should_show = false
+        end
+    end
+    local ui_converged = true
+    if should_show ~= unfrozen_ui_preview_visible then
+        if not should_show and unfrozen_ui_preview_visible == nil then
+            -- The companion widget and Palworld's construction guide both
+            -- start hidden. Treat the first idle observation as converged
+            -- instead of resolving Blueprint functions while their widgets
+            -- are still completing construction during a world transition.
+            unfrozen_ui_preview_visible = false
+        else
+            local ui_updated = update_construction_hotkey_guide(
+                false,
+                false,
+                not should_show
+            )
+            if ui_updated then
+                unfrozen_ui_preview_visible = should_show
+            else
+                unfrozen_ui_preview_visible = nil
+                ui_converged = false
+            end
+        end
+    end
+
+    if not status_ok then
+        if cached_builder_component == unfrozen_ui_builder_component then
+            cached_builder_component = nil
+        end
+        unfrozen_ui_builder_component = nil
+        unfrozen_ui_preview_visible = nil
+        builder_fallback_scan_cooldown = 0
+    elseif unfrozen_ui_suppressed_preview_name == nil
+        and hooks_ready
+        and ui_converged
+    then
+        -- Hooks now own stable unfrozen visibility. Once state has converged,
+        -- stop scheduling game-thread checks until an explicit event wakes
+        -- recovery again.
+        lifecycle_recovery_checks_remaining = 0
+    end
+end
+
+start_lifecycle_monitor = function()
     if lifecycle_monitor_started then
         return
     end
     lifecycle_monitor_started = true
-    LoopAsync(LIFECYCLE_INTERVAL_MS, function()
-        -- Frozen previews need responsive safety checks. Outside editing, do
-        -- not enqueue game-thread work until the 2 Hz guide refresh is due.
-        if state ~= State.EDITING then
-            lifecycle_ui_refresh_ticks = lifecycle_ui_refresh_ticks + 1
-            if lifecycle_ui_refresh_ticks < IDLE_UI_REFRESH_TICKS then
-                return
+
+    lifecycle_game_thread_callback =
+        lifecycle_game_thread_callback or function()
+            local check_ok, check_error =
+                pcall(process_lifecycle_check)
+            lifecycle_check_pending = false
+            if not check_ok then
+                if not lifecycle_monitor_error_was_logged then
+                    log("Lifecycle monitor recovered from an error: "
+                        .. tostring(check_error))
+                    lifecycle_monitor_error_was_logged = true
+                end
+                request_lifecycle_recovery(
+                    LIFECYCLE_EVENT_RECOVERY_CHECKS
+                )
+            else
+                lifecycle_monitor_error_was_logged = false
             end
-            lifecycle_ui_refresh_ticks = 0
-        else
-            lifecycle_ui_refresh_ticks = 0
         end
 
-        ExecuteInGameThread(function()
-            if state == State.EDITING then
-                local should_release, reason = should_release_locked_preview()
-                if should_release then
-                    log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
-                    release_preview(reason)
-                end
+    lifecycle_monitor_loop_callback =
+        lifecycle_monitor_loop_callback or function()
+            if lifecycle_check_pending then
                 return
             end
-
-            if not is_valid(unfrozen_ui_builder_component) then
-                unfrozen_ui_builder_component = nil
-                local allow_global_scan = builder_fallback_scan_cooldown <= 0
-                local candidate = find_builder_component(allow_global_scan)
-                if is_valid(candidate) then
-                    unfrozen_ui_builder_component = candidate
-                    unfrozen_ui_preview_visible = nil
-                elseif allow_global_scan then
-                    -- Direct helpers are retried every idle refresh. A failed
-                    -- full UObject scan is backed off for roughly five seconds.
-                    builder_fallback_scan_cooldown = BUILDER_FALLBACK_RETRY_TICKS
-                elseif builder_fallback_scan_cooldown > 0 then
-                    builder_fallback_scan_cooldown = builder_fallback_scan_cooldown - 1
+            if state ~= State.EDITING then
+                if lifecycle_recovery_checks_remaining > 0 then
+                    lifecycle_recovery_checks_remaining =
+                        lifecycle_recovery_checks_remaining - 1
+                    lifecycle_suppression_idle_ticks = 0
+                elseif unfrozen_ui_suppressed_preview_name ~= nil then
+                    lifecycle_suppression_idle_ticks =
+                        lifecycle_suppression_idle_ticks + 1
+                    if lifecycle_suppression_idle_ticks
+                        < LIFECYCLE_SUPPRESSION_FALLBACK_TICKS
+                    then
+                        return
+                    end
+                    lifecycle_suppression_idle_ticks = 0
+                else
+                    lifecycle_suppression_idle_ticks = 0
+                    lifecycle_monitor_started = false
+                    return true
                 end
             end
 
-            if not is_valid(unfrozen_ui_builder_component) then
-                return
-            end
-
-            local status_ok, in_building_mode, has_preview = pcall(function()
-                local in_mode = unfrozen_ui_builder_component:IsInBuildingMode()
-                local checker = unfrozen_ui_builder_component.InstallChecker
-                local target = nil
-                if is_valid(checker) then
-                    target = checker.TargetBuildObject
+            lifecycle_check_pending = true
+            local queue_ok, queue_error = pcall(
+                ExecuteInGameThread,
+                lifecycle_game_thread_callback
+            )
+            if not queue_ok then
+                lifecycle_check_pending = false
+                if not lifecycle_monitor_error_was_logged then
+                    log("Could not queue the lifecycle monitor: "
+                        .. tostring(queue_error))
+                    lifecycle_monitor_error_was_logged = true
                 end
-                return in_mode, is_valid(target)
-            end)
-
-            local should_show = status_ok and in_building_mode and has_preview
-            if should_show ~= unfrozen_ui_preview_visible then
-                unfrozen_ui_preview_visible = should_show
-                update_construction_hotkey_guide(false, false, not should_show)
+                request_lifecycle_recovery(
+                    LIFECYCLE_EVENT_RECOVERY_CHECKS
+                )
             end
+        end
 
-            if not status_ok then
-                if cached_builder_component == unfrozen_ui_builder_component then
-                    cached_builder_component = nil
-                end
-                unfrozen_ui_builder_component = nil
-                unfrozen_ui_preview_visible = nil
-                builder_fallback_scan_cooldown = 0
-            end
-        end)
-    end)
+    LoopAsync(
+        LIFECYCLE_INTERVAL_MS,
+        lifecycle_monitor_loop_callback
+    )
 end
 
 local function refresh_locked_validity()
@@ -688,7 +1686,7 @@ local function refresh_locked_validity()
     end
     last_preview_overlap_state = is_placeable
     log(string.format(
-        "Locked preview is %s (operation result: %s).",
+        "Frozen preview is %s (operation result: %s).",
         is_placeable and "placeable" or "not placeable",
         operation_text
     ))
@@ -876,14 +1874,14 @@ local function apply_locked_keyguide(construction)
     local row_ok, row_error = setup_text_keyguide_row(
         construction,
         "WBP_Ingameconstruction_KeyGuide_6",
-        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unlock"
+        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unfreeze"
     )
     if row_ok then
-        log("Locked construction key guide applied as a compact text row.")
+        log("Frozen construction key guide applied as a compact text row.")
         return
     end
     log("WBP_Ingameconstruction_KeyGuide_6 text setup failed: " .. tostring(row_error))
-    log("Locked construction key guide was not changed because text setup failed.")
+    log("Frozen construction key guide was not changed because text setup failed.")
 end
 
 local function hide_locked_keyguide(construction)
@@ -946,6 +1944,178 @@ local function ensure_keyguide_hook()
     return true
 end
 
+local function hide_unfrozen_guide_for_action(action_name)
+    local active_component, _, active_preview =
+        find_active_build_context(false)
+    if not is_valid(active_preview)
+        and unfrozen_ui_preview_visible ~= true
+    then
+        return
+    end
+
+    unfrozen_ui_suppression_saw_inactive = false
+    if is_valid(active_preview) then
+        unfrozen_ui_suppressed_preview_name = full_name(active_preview)
+    else
+        unfrozen_ui_suppressed_preview_name = "<unknown>"
+    end
+    if is_valid(active_component) then
+        unfrozen_ui_builder_component = active_component
+    end
+    request_lifecycle_recovery(LIFECYCLE_EVENT_RECOVERY_CHECKS)
+    if update_perfect_placement_ui(false, false, true) then
+        unfrozen_ui_preview_visible = false
+    else
+        unfrozen_ui_preview_visible = nil
+    end
+    verbose("Hid the unfrozen guide before Palworld action: "
+        .. tostring(action_name) .. ".")
+end
+
+local function resume_unfrozen_guide_from_construction(action_name)
+    if state == State.EDITING then
+        return
+    end
+    request_lifecycle_recovery(LIFECYCLE_EVENT_RECOVERY_CHECKS)
+    local hooks_ready = ensure_auto_unfreeze_hooks()
+
+    local active_component, _, active_preview =
+        find_active_build_context(false)
+    if not is_valid(active_component) or not is_valid(active_preview) then
+        return
+    end
+
+    unfrozen_ui_suppressed_preview_name = nil
+    unfrozen_ui_suppression_saw_inactive = false
+    unfrozen_ui_builder_component = active_component
+    if update_perfect_placement_ui(false, false, false) then
+        unfrozen_ui_preview_visible = true
+        if hooks_ready then
+            lifecycle_recovery_checks_remaining = 0
+        end
+    else
+        unfrozen_ui_preview_visible = nil
+    end
+    verbose("Restored the unfrozen guide after Palworld construction event: "
+        .. tostring(action_name) .. ".")
+end
+
+ensure_auto_unfreeze_hooks = function()
+    local safety = Config.auto_unfreeze or {}
+    if safety.enabled == false then
+        return true
+    end
+    local all_hooks_registered = true
+
+    local function register_action_hook(function_path, action_name)
+        if auto_unfreeze_hooked_paths[function_path] then
+            return true
+        end
+        local captured_action_name = action_name
+        local hook_ok, pre_id, post_id = pcall(function()
+            return RegisterHook(function_path, function()
+                local action_ok, action_error = pcall(function()
+                    if state == State.EDITING
+                        and release_preview ~= nil
+                    then
+                        log("Auto-unfreezing before Palworld action: "
+                            .. captured_action_name .. ".")
+                        release_preview(
+                            "Palworld action: " .. captured_action_name
+                        )
+                    else
+                        hide_unfrozen_guide_for_action(
+                            captured_action_name
+                        )
+                    end
+                end)
+                if not action_ok then
+                    log("Palworld action pre-hook failed for "
+                        .. captured_action_name .. ": "
+                        .. tostring(action_error))
+                end
+            end, function()
+                local post_ok, post_error = pcall(function()
+                    ensure_auto_unfreeze_hooks()
+                    request_lifecycle_recovery(
+                        LIFECYCLE_EVENT_RECOVERY_CHECKS
+                    )
+                end)
+                if not post_ok then
+                    log("Palworld action post-hook failed for "
+                        .. captured_action_name .. ": "
+                        .. tostring(post_error))
+                end
+            end)
+        end)
+        if hook_ok and (pre_id ~= nil or post_id ~= nil) then
+            auto_unfreeze_hooked_paths[function_path] = true
+            return true
+        end
+        verbose("Auto-unfreeze hook is not loaded yet: "
+            .. function_path)
+        return false
+    end
+
+    local function register_resume_hook(function_path, action_name)
+        if auto_unfreeze_hooked_paths[function_path] then
+            return true
+        end
+        local captured_action_name = action_name
+        local hook_ok, pre_id, post_id = pcall(function()
+            return RegisterHook(function_path, function()
+            end, function()
+                local resume_ok, resume_error = pcall(
+                    resume_unfrozen_guide_from_construction,
+                    captured_action_name
+                )
+                if not resume_ok then
+                    log("Construction resume post-hook failed for "
+                        .. captured_action_name .. ": "
+                        .. tostring(resume_error))
+                end
+            end)
+        end)
+        if hook_ok and (pre_id ~= nil or post_id ~= nil) then
+            auto_unfreeze_hooked_paths[function_path] = true
+            return true
+        end
+        verbose("Construction resume hook is not loaded yet: "
+            .. function_path)
+        return false
+    end
+
+    for _, function_name in ipairs(safety.building_action_functions or {}) do
+        if not register_action_hook(
+            PAL_BUILDING_FUNCTION_ROOT .. function_name,
+            function_name
+        ) then
+            all_hooks_registered = false
+        end
+    end
+    for _, function_name in ipairs(
+        safety.input_listener_action_functions or {}
+    ) do
+        if not register_action_hook(
+            PAL_INPUT_LISTENER_FUNCTION_ROOT .. function_name,
+            function_name
+        ) then
+            all_hooks_registered = false
+        end
+    end
+    for _, function_name in ipairs(
+        safety.construction_resume_functions or {}
+    ) do
+        if not register_resume_hook(
+            PAL_INGAME_CONSTRUCTION_FUNCTION_ROOT .. function_name,
+            function_name
+        ) then
+            all_hooks_registered = false
+        end
+    end
+    return all_hooks_registered
+end
+
 update_construction_hotkey_guide = function(is_locked, show_transition_toast, hide_all)
     local companion_ui_updated = update_perfect_placement_ui(
         is_locked,
@@ -966,7 +2136,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
 
         -- The companion widget supplies Perfect Placement's own controls, but
         -- the stock Rotate and Axis Alignment rows still need to be suppressed
-        -- while their inputs are unavailable during a locked preview.
+        -- while their inputs are unavailable during a frozen preview.
         if companion_ui_updated then
             return
         end
@@ -984,7 +2154,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
         end
         if is_valid(model) then
             -- Rebuild through Palworld's own function. The Blueprint post-hook
-            -- applies the locked text while the widget context is guaranteed live.
+            -- applies the frozen text while the widget context is guaranteed live.
             construction:SetupKeyGuide(model)
             -- Also reapply directly for UE4SS builds that do not invoke the
             -- Blueprint post-hook for calls originating from Lua.
@@ -998,6 +2168,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
     if not ok then
         log("Could not refresh construction hotkey guide: " .. tostring(error_message))
     end
+    return companion_ui_updated
 end
 
 local function show_preview_notification(message, color)
@@ -1027,8 +2198,8 @@ local function show_preview_notification(message, color)
         end
         toast:AnmEvent_In()
 
-        ExecuteWithDelay(1800, function()
-            ExecuteInGameThread(function()
+        execute_with_retained_delay(1800, function()
+            execute_in_game_thread_retained(function()
                 if generation ~= notification_generation then
                     return
                 end
@@ -1037,8 +2208,8 @@ local function show_preview_notification(message, color)
                         toast:AnmEvent_Out()
                     end
                 end)
-            end)
-        end)
+            end, "Preview notification game-thread callback")
+        end, "Preview notification delay callback")
     end)
     if not ok then
         log("Could not show preview status notification: " .. tostring(error_message))
@@ -1054,6 +2225,9 @@ local function begin_editing()
     end
 
     builder_component = active_component
+    ensure_auto_unfreeze_hooks()
+    unfrozen_ui_suppressed_preview_name = nil
+    unfrozen_ui_suppression_saw_inactive = false
     unfrozen_ui_builder_component = nil
     unfrozen_ui_preview_visible = nil
     transform_actor = active_checker
@@ -1167,7 +2341,7 @@ local function begin_editing()
     end)
     preview_tick_was_enabled = tick_query_ok and tick_enabled or true
     if set_preview_tick_enabled(false) then
-        log("Preview actor tick suspended for locked editing.")
+        log("Preview actor tick suspended for frozen editing.")
     end
 
     if builder_component ~= nil then
@@ -1176,21 +2350,22 @@ local function begin_editing()
         end)
         builder_tick_was_enabled = builder_tick_query_ok and builder_tick_enabled or true
         if set_builder_tick_enabled(false) then
-            log("Player builder component tick suspended for locked editing.")
+            log("Player builder component tick suspended for frozen editing.")
         end
     else
         log("Could not find the local player's BuilderComponent.")
     end
 
     state = State.EDITING
-    lifecycle_ui_refresh_ticks = 0
+    lifecycle_recovery_checks_remaining = 0
+    transform_check_pending = false
     building_mode_exit_checks = 0
     locked_preview_name = full_name(preview_actor)
     update_construction_hotkey_guide(true)
     start_transform_loop()
     start_lifecycle_monitor()
     log(string.format(
-        "Preview locked. Move step %.1f cm; rotation step %.1f degrees.",
+        "Preview frozen. Move step %.1f cm; rotation step %.1f degrees.",
         current_move_step,
         Config.rotation.normal
     ))
@@ -1202,23 +2377,59 @@ release_preview = function(reason)
         return
     end
     state = State.READY
-    lifecycle_ui_refresh_ticks = 0
+    transform_check_pending = false
     building_mode_exit_checks = 0
     local is_manual_unfreeze = reason == "manual"
     local no_active_preview = reason == "preview object was destroyed"
         or reason == "Palworld cleared the build preview"
+    local builder_became_invalid =
+        reason == "builder component became invalid"
     local left_construction = reason == "Palworld exited building mode"
-        or reason == "builder component became invalid"
+        or builder_became_invalid
+    local menu_or_other_action = string.find(
+        tostring(reason),
+        "Palworld action:",
+        1,
+        true
+    ) == 1
+    if menu_or_other_action then
+        request_lifecycle_recovery(LIFECYCLE_EVENT_RECOVERY_CHECKS)
+        unfrozen_ui_suppression_saw_inactive = false
+        if locked_preview_name ~= nil then
+            unfrozen_ui_suppressed_preview_name = locked_preview_name
+        elseif is_valid(preview_actor) then
+            unfrozen_ui_suppressed_preview_name = full_name(preview_actor)
+        else
+            unfrozen_ui_suppressed_preview_name = "<unknown>"
+        end
+    else
+        lifecycle_recovery_checks_remaining = 0
+        unfrozen_ui_suppressed_preview_name = nil
+        unfrozen_ui_suppression_saw_inactive = false
+    end
     unfrozen_ui_builder_component = builder_component
-    unfrozen_ui_preview_visible = not (left_construction or no_active_preview)
-    update_construction_hotkey_guide(
+    local should_show_unfrozen =
+        not (left_construction or no_active_preview or menu_or_other_action)
+    local ui_updated = update_construction_hotkey_guide(
         false,
         is_manual_unfreeze,
-        left_construction or no_active_preview
+        left_construction or no_active_preview or menu_or_other_action
     )
-    set_preview_tick_enabled(preview_tick_was_enabled ~= false)
+    if ui_updated then
+        unfrozen_ui_preview_visible = should_show_unfrozen
+    else
+        unfrozen_ui_preview_visible = nil
+        request_lifecycle_recovery(
+            LIFECYCLE_EVENT_RECOVERY_CHECKS
+        )
+    end
+    if not no_active_preview then
+        set_preview_tick_enabled(preview_tick_was_enabled ~= false)
+    end
     preview_tick_was_enabled = nil
-    set_builder_tick_enabled(builder_tick_was_enabled ~= false)
+    if not builder_became_invalid then
+        set_builder_tick_enabled(builder_tick_was_enabled ~= false)
+    end
     builder_tick_was_enabled = nil
     builder_component = nil
     transform_actor = nil
@@ -1402,11 +2613,18 @@ local function reset_preview_transform()
 
     if apply_preview_transform() then
         refresh_locked_validity()
-        log("Preview reset to its original locked transform.")
+        log("Preview reset to its original frozen transform.")
     end
 end
 
 local function change_move_step(multiplier)
+    if state ~= State.EDITING
+        or not is_valid(preview_actor)
+        or desired_location == nil
+    then
+        verbose("Move-step input ignored: no frozen preview is active.")
+        return
+    end
     current_move_step = math.max(
         Config.movement.minimum,
         math.min(Config.movement.maximum, current_move_step * multiplier)
@@ -1426,10 +2644,10 @@ end
 
 local function copy_looked_at_build_piece()
     if state == State.EDITING then
-        log("Eyedropper ignored while the preview is locked.")
+        log("Eyedropper ignored while the preview is frozen.")
         return
     end
-    ExecuteInGameThread(function()
+    execute_in_game_thread_retained(function()
         local ok, error_message = pcall(function()
             local component, active_checker, active_preview = find_active_build_context(false)
             if component == nil then
@@ -1496,8 +2714,8 @@ local function copy_looked_at_build_piece()
                 building_model:FinishBuilding()
                 -- FinishBuilding creates the menu-side selection model. Handoff
                 -- on the next async tick to minimize or eliminate visible menu flash.
-                ExecuteWithDelay(1, function()
-                    ExecuteInGameThread(function()
+                execute_with_retained_delay(1, function()
+                    execute_in_game_thread_retained(function()
                         local delayed_ok, delayed_error = pcall(function()
                             if not is_valid(target) then
                                 error("copied source actor became invalid")
@@ -1519,8 +2737,8 @@ local function copy_looked_at_build_piece()
                         if not delayed_ok then
                             log("Could not start copied build preview: " .. tostring(delayed_error))
                         end
-                    end)
-                end)
+                    end, "Copied preview game-thread callback")
+                end, "Copied preview delay callback")
             else
                 local ui_model = FindFirstOf("PalUIBuildModel")
                 if not is_valid(ui_model) then
@@ -1538,7 +2756,7 @@ local function copy_looked_at_build_piece()
         if not ok then
             log("Could not copy looked-at build piece: " .. tostring(error_message))
         end
-    end)
+    end, "Eyedropper game-thread callback")
 end
 
 local function register_chord(key, modifiers, callback)
@@ -1558,63 +2776,440 @@ local function register_chord(key, modifiers, callback)
     end
 end
 
-local SHIFT = { ModifierKey.SHIFT }
-local CONTROL = { ModifierKey.CONTROL }
-local ALT = { ModifierKey.ALT }
-local CONTROL_ALT = { ModifierKey.CONTROL, ModifierKey.ALT }
-local NONE = {}
+local MODIFIER_VALUES = {
+    SHIFT = ModifierKey.SHIFT,
+    CONTROL = ModifierKey.CONTROL,
+    ALT = ModifierKey.ALT,
+}
+
+local function same_modifier_names(left, right)
+    if #left ~= #right then
+        return false
+    end
+    for index, value in ipairs(left) do
+        if value ~= right[index] then
+            return false
+        end
+    end
+    return true
+end
+
+local action_callbacks = {}
+local action_numlock_alternates = {}
+local registered_action_chords = {}
+
+local GAMEPAD_PHYSICAL_SERIALS = {
+    { state = "unfrozen", chord = "L3", property = "GamepadUnfrozenL3Serial" },
+    {
+        state = "unfrozen",
+        chord = "L3+DPAD_DOWN",
+        property = "GamepadUnfrozenL3DPadDownSerial",
+    },
+
+    { state = "frozen", chord = "DPAD_UP", property = "GamepadFrozenDPadUpSerial" },
+    { state = "frozen", chord = "DPAD_DOWN", property = "GamepadFrozenDPadDownSerial" },
+    { state = "frozen", chord = "DPAD_LEFT", property = "GamepadFrozenDPadLeftSerial" },
+    { state = "frozen", chord = "DPAD_RIGHT", property = "GamepadFrozenDPadRightSerial" },
+    { state = "frozen", chord = "LT+DPAD_UP", property = "GamepadFrozenLTDPadUpSerial" },
+    { state = "frozen", chord = "LT+DPAD_DOWN", property = "GamepadFrozenLTDPadDownSerial" },
+    { state = "frozen", chord = "LT+DPAD_LEFT", property = "GamepadFrozenLTDPadLeftSerial" },
+    { state = "frozen", chord = "LT+DPAD_RIGHT", property = "GamepadFrozenLTDPadRightSerial" },
+    { state = "frozen", chord = "RT+DPAD_UP", property = "GamepadFrozenRTDPadUpSerial" },
+    { state = "frozen", chord = "RT+DPAD_DOWN", property = "GamepadFrozenRTDPadDownSerial" },
+    { state = "frozen", chord = "RT+DPAD_LEFT", property = "GamepadFrozenRTDPadLeftSerial" },
+    { state = "frozen", chord = "RT+DPAD_RIGHT", property = "GamepadFrozenRTDPadRightSerial" },
+    { state = "frozen", chord = "LT+RT+DPAD_UP", property = "GamepadFrozenLTRTDPadUpSerial" },
+    { state = "frozen", chord = "LT+RT+DPAD_DOWN", property = "GamepadFrozenLTRTDPadDownSerial" },
+    { state = "frozen", chord = "LT+RT+DPAD_LEFT", property = "GamepadFrozenLTRTDPadLeftSerial" },
+    { state = "frozen", chord = "LT+RT+DPAD_RIGHT", property = "GamepadFrozenLTRTDPadRightSerial" },
+    { state = "frozen", chord = "LB", property = "GamepadFrozenLBSerial" },
+    { state = "frozen", chord = "RB", property = "GamepadFrozenRBSerial" },
+    { state = "frozen", chord = "R3", property = "GamepadFrozenR3Serial" },
+    { state = "frozen", chord = "L3", property = "GamepadFrozenL3Serial" },
+}
+
+local function get_active_gamepad_physical_serials()
+    if active_gamepad_physical_serials ~= nil then
+        return active_gamepad_physical_serials
+    end
+
+    active_gamepad_physical_serials = {}
+    local index = 1
+    while index <= #GAMEPAD_PHYSICAL_SERIALS do
+        local physical_input = GAMEPAD_PHYSICAL_SERIALS[index]
+        local state_actions =
+            resolved_gamepad_chord_actions[physical_input.state] or {}
+        if state_actions[physical_input.chord] ~= nil then
+            active_gamepad_physical_serials[
+                #active_gamepad_physical_serials + 1
+            ] = physical_input
+        end
+        index = index + 1
+    end
+    return active_gamepad_physical_serials
+end
+
+local function read_gamepad_serial(host, property_name)
+    local ok, value = pcall(function()
+        return host[property_name]
+    end)
+    if not ok or value == nil then
+        return nil
+    end
+    return tonumber(value)
+end
+
+local function initialize_gamepad_serials(host)
+    gamepad_last_serials = {}
+    gamepad_serial_host_name = full_name(host)
+    local physical_inputs = get_active_gamepad_physical_serials()
+    local index = 1
+    while index <= #physical_inputs do
+        local physical_input = physical_inputs[index]
+        local value = read_gamepad_serial(host, physical_input.property)
+        if value ~= nil then
+            gamepad_last_serials[physical_input.property] = value
+        end
+        index = index + 1
+    end
+end
+
+local function process_gamepad_actions()
+    local gamepad = Config.gamepad or {}
+    if gamepad.enabled == false then
+        return
+    end
+
+    local host = find_perfect_placement_ui_host()
+    if not is_valid(host) then
+        gamepad_serial_host_name = nil
+        gamepad_last_serials = {}
+        return
+    end
+
+    if gamepad_serial_host_name == nil then
+        initialize_gamepad_serials(host)
+        return
+    end
+
+    local maximum_actions = math.max(
+        1,
+        math.floor(tonumber(gamepad.maximum_actions_per_poll) or 32)
+    )
+    local physical_inputs = get_active_gamepad_physical_serials()
+    local index = 1
+    while index <= #physical_inputs do
+        local physical_input = physical_inputs[index]
+        local property_name = physical_input.property
+        local current = read_gamepad_serial(host, property_name)
+        if current ~= nil then
+            local previous = gamepad_last_serials[property_name]
+            gamepad_last_serials[property_name] = current
+            if previous ~= nil and current > previous then
+                local state_actions =
+                    resolved_gamepad_chord_actions[physical_input.state] or {}
+                local action = state_actions[physical_input.chord]
+                local callback = action_callbacks[action]
+                local count = math.floor(math.min(
+                    current - previous,
+                    maximum_actions
+                ))
+                if action ~= nil and callback ~= nil then
+                    local action_index = 1
+                    while action_index <= count do
+                        callback()
+                        action_index = action_index + 1
+                    end
+                end
+            end
+        end
+        index = index + 1
+    end
+end
+
+local function start_gamepad_monitor()
+    local gamepad = Config.gamepad or {}
+    if gamepad_monitor_started or gamepad.enabled == false then
+        return
+    end
+    gamepad_monitor_started = true
+
+    local interval_ms = math.max(
+        10,
+        tonumber(gamepad.poll_interval_ms) or 50
+    )
+    gamepad_game_thread_callback = gamepad_game_thread_callback or function()
+        local process_ok, process_error = pcall(process_gamepad_actions)
+        gamepad_poll_pending = false
+        if not process_ok then
+            if not gamepad_monitor_error_was_logged then
+                log("Gamepad monitor recovered from an error: "
+                    .. tostring(process_error))
+                gamepad_monitor_error_was_logged = true
+            end
+            gamepad_serial_host_name = nil
+            gamepad_last_serials = {}
+        else
+            gamepad_monitor_error_was_logged = false
+        end
+    end
+    gamepad_monitor_loop_callback = gamepad_monitor_loop_callback or function()
+        if gamepad_poll_pending then
+            return
+        end
+        gamepad_poll_pending = true
+        local queue_ok, queue_error = pcall(
+            ExecuteInGameThread,
+            gamepad_game_thread_callback
+        )
+        if not queue_ok then
+            gamepad_poll_pending = false
+            if not gamepad_monitor_error_was_logged then
+                log("Could not queue the gamepad monitor: "
+                    .. tostring(queue_error))
+                gamepad_monitor_error_was_logged = true
+            end
+        end
+    end
+    LoopAsync(interval_ms, gamepad_monitor_loop_callback)
+end
+
+local function binding_uses_virtual_key(binding, virtual_key)
+    return binding.key_info.virtual_key == virtual_key
+        or binding.key_info.alternate_virtual_key == virtual_key
+end
+
+local function register_current_action_binding(action)
+    local binding = resolved_bindings[action]
+    if binding == nil or binding.disabled then
+        log("Skipping disabled binding: " .. action)
+        return nil
+    end
+
+    local modifiers = {}
+    for _, modifier_name in ipairs(binding.modifiers) do
+        modifiers[#modifiers + 1] = MODIFIER_VALUES[modifier_name]
+    end
+
+    local virtual_keys = { binding.key_info.virtual_key }
+    if action_numlock_alternates[action]
+        and binding.key_info.alternate_virtual_key ~= nil
+    then
+        virtual_keys[#virtual_keys + 1] = binding.key_info.alternate_virtual_key
+    end
+
+    registered_action_chords[action] = registered_action_chords[action] or {}
+    for _, virtual_key in ipairs(virtual_keys) do
+        local registration_signature = tostring(virtual_key)
+            .. ":"
+            .. table.concat(binding.modifiers, "+")
+        if not registered_action_chords[action][registration_signature] then
+            local captured_virtual_key = virtual_key
+            local captured_modifiers = {}
+            for index, value in ipairs(binding.modifiers) do
+                captured_modifiers[index] = value
+            end
+            register_chord(captured_virtual_key, modifiers, function()
+                local current = resolved_bindings[action]
+                if current ~= nil
+                    and not current.disabled
+                    and binding_uses_virtual_key(current, captured_virtual_key)
+                    and same_modifier_names(
+                        current.modifiers,
+                        captured_modifiers
+                    )
+                then
+                    action_callbacks[action]()
+                end
+            end)
+            registered_action_chords[action][registration_signature] = true
+        end
+    end
+    return binding
+end
+
+local function register_action(action, callback, include_numlock_alternate)
+    action_callbacks[action] = callback
+    action_numlock_alternates[action] = include_numlock_alternate == true
+    return register_current_action_binding(action)
+end
 
 -- Numeric keypad controls avoid Palworld's build UI and snap bindings.
-register_chord(VK.NUMPAD_4, NONE, function() move_preview(0, -1, 0) end)
-register_chord(VK.NUMPAD_6, NONE, function() move_preview(0, 1, 0) end)
-register_chord(VK.NUMPAD_8, NONE, function() move_preview(1, 0, 0) end)
-register_chord(VK.NUMPAD_2, NONE, function() move_preview(-1, 0, 0) end)
-register_chord(VK.NUMPAD_3, NONE, function() move_preview(0, 0, 1) end)
-register_chord(VK.NUMPAD_1, NONE, function() move_preview(0, 0, -1) end)
+register_action("move_left", function() move_preview(0, -1, 0) end)
+register_action("move_right", function() move_preview(0, 1, 0) end)
+register_action("move_forward", function() move_preview(1, 0, 0) end)
+register_action("move_back", function() move_preview(-1, 0, 0) end)
+register_action("move_up", function() move_preview(0, 0, 1) end, true)
+register_action("move_down", function() move_preview(0, 0, -1) end, true)
 -- On Windows, these same physical keypad keys report navigation-key virtual
--- codes while NumLock is off. Register both forms so vertical editing works
--- regardless of the user's NumLock state.
-register_chord(VK.PAGE_DOWN, NONE, function() move_preview(0, 0, 1) end)
-register_chord(VK.END_KEY, NONE, function() move_preview(0, 0, -1) end)
-register_chord(VK.NUMPAD_5, NONE, reset_preview_transform)
-register_chord(VK.NUMPAD_7, NONE, function() rotate_preview(-1) end)
-register_chord(VK.NUMPAD_9, NONE, function() rotate_preview(1) end)
+-- codes while NumLock is off. The alternate metadata keeps that behavior when
+-- the configured vertical keys remain on Numpad 1/3.
+register_action("reset", reset_preview_transform)
+register_action("rotate_left", function() rotate_preview(-1) end)
+register_action("rotate_right", function() rotate_preview(1) end)
 
-register_chord(VK.NUMPAD_SUBTRACT, NONE, function()
+register_action("step_down", function()
     change_move_step(1.0 / Config.movement.step_scale)
 end)
-register_chord(VK.NUMPAD_ADD, NONE, function()
+register_action("step_up", function()
     change_move_step(Config.movement.step_scale)
 end)
 
-local function toggle_preview_lock()
+local function configured_chord_is_claimed(key, modifiers, except_action)
+    for action, binding in pairs(resolved_bindings) do
+        if action ~= except_action
+            and binding ~= nil
+            and not binding.disabled
+            and binding.key == key
+            and same_modifier_names(binding.modifiers, modifiers)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function toggle_preview_freeze()
     local now = os.clock()
     if now - last_lock_toggle_time < 0.3 then
-        log("Duplicate lock toggle ignored.")
+        log("Duplicate freeze toggle ignored.")
         return
     end
     last_lock_toggle_time = now
     if state == State.EDITING then
-        log("Manual unlock requested.")
+        log("Manual unfreeze requested.")
         release_preview("manual")
     else
         begin_editing()
     end
 end
-register_chord(VK.MIDDLE_MOUSE, NONE, toggle_preview_lock)
+register_action("toggle_freeze", toggle_preview_freeze)
 -- Palworld uses Ctrl and Alt for contextual build-piece controls while the
 -- preview is still active. UE4SS matches modifier chords explicitly, so plain
 -- MMB does not fire while either modifier is held unless each combination is
 -- registered separately.
-register_chord(VK.MIDDLE_MOUSE, CONTROL, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, ALT, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, CONTROL_ALT, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
+local function register_supplemental_freeze_chord(
+    modifier_names,
+    modifier_values
+)
+    register_chord(0x04, modifier_values, function()
+        local current = resolved_bindings.toggle_freeze
+        if current ~= nil
+            and not current.disabled
+            and current.key == "MIDDLE_MOUSE"
+            and #current.modifiers == 0
+            and not configured_chord_is_claimed(
+                current.key,
+                modifier_names,
+                "toggle_freeze"
+            )
+        then
+            toggle_preview_freeze()
+        end
+    end)
+end
+register_supplemental_freeze_chord(
+    { "CONTROL" },
+    { ModifierKey.CONTROL }
+)
+register_supplemental_freeze_chord(
+    { "ALT" },
+    { ModifierKey.ALT }
+)
+register_supplemental_freeze_chord(
+    { "CONTROL", "ALT" },
+    { ModifierKey.CONTROL, ModifierKey.ALT }
+)
+register_action("copy_piece", copy_looked_at_build_piece)
 
--- Start the shared lifecycle/UI monitor immediately so the unfrozen guide can
--- appear before the player uses Perfect Placement for the first time.
-start_lifecycle_monitor()
+local UI_HOST_CLASS_PATH =
+    "/Game/Mods/PerfectPlacement/WBP_PerfectPlacement_KeyGuide"
+    .. ".WBP_PerfectPlacement_KeyGuide_C"
 
-log("Loaded Perfect Placement 0.1.4")
-log("Companion key-guide UI bridge revision 14 loaded.")
-log("Open build mode, show a preview, then middle-click to lock it.")
+construction_ui_notify_callback = function()
+    local notify_ok, notify_error = pcall(function()
+        ensure_auto_unfreeze_hooks()
+        request_lifecycle_recovery(
+            LIFECYCLE_EVENT_RECOVERY_CHECKS
+        )
+    end)
+    if not notify_ok then
+        log("Construction UI notification failed: "
+            .. tostring(notify_error))
+    end
+end
+local construction_notify_ok, construction_notify_error = pcall(
+    NotifyOnNewObject,
+    PAL_INGAME_CONSTRUCTION_CLASS_PATH,
+    construction_ui_notify_callback
+)
+if not construction_notify_ok then
+    log("Could not register construction UI lifecycle notification: "
+        .. tostring(construction_notify_error))
+end
+
+ui_host_notify_callback = function()
+    -- Never retain the NotifyOnNewObject UObject across the construction
+    -- delay. It may be destroyed by another map transition before the delayed
+    -- callback runs, and even IsValid() cannot safely recover from an expired
+    -- UE4SS remote wrapper.
+    ui_host_refresh_generation = ui_host_refresh_generation + 1
+    local generation = ui_host_refresh_generation
+    ui_host_refresh_pending = true
+    perfect_placement_ui_host = nil
+    keycap_ui_host = nil
+    active_gamepad_physical_serials = nil
+    gamepad_serial_host_name = nil
+    gamepad_last_serials = {}
+    ui_host_missing_was_logged = false
+    cached_builder_component = nil
+    unfrozen_ui_builder_component = nil
+    unfrozen_ui_preview_visible = nil
+    builder_fallback_scan_cooldown = 0
+
+    local delay_queued = execute_with_retained_delay(250, function()
+        local game_thread_queued = execute_in_game_thread_retained(function()
+            if generation ~= ui_host_refresh_generation then
+                return
+            end
+
+            ui_host_refresh_pending = false
+            request_lifecycle_recovery(
+                LIFECYCLE_INITIAL_RECOVERY_CHECKS
+            )
+            find_perfect_placement_ui_host()
+        end, "Companion UI refresh game-thread callback")
+        if not game_thread_queued
+            and generation == ui_host_refresh_generation
+        then
+            ui_host_refresh_pending = false
+        end
+    end, "Companion UI refresh delay callback")
+    if not delay_queued and generation == ui_host_refresh_generation then
+        ui_host_refresh_pending = false
+    end
+end
+local ui_notify_ok, ui_notify_error = pcall(
+    NotifyOnNewObject,
+    UI_HOST_CLASS_PATH,
+    ui_host_notify_callback
+)
+if not ui_notify_ok then
+    log("Could not register companion UI lifecycle notification: "
+        .. tostring(ui_notify_error))
+end
+
+-- Register whichever Palworld UI functions are already loaded. Native
+-- construction-object notifications retry registration when placement UI is
+-- created later.
+ensure_auto_unfreeze_hooks()
+
+-- The lifecycle loop terminates after stable unfrozen state converges. Hooks
+-- and object notifications restart it for recovery; frozen previews keep it
+-- active for safety checks.
+request_lifecycle_recovery(LIFECYCLE_INITIAL_RECOVERY_CHECKS)
+start_gamepad_monitor()
+
+log("Loaded Perfect Placement 0.2.0-beta.1")
+log("Companion key-guide UI bridge revision 29 loaded.")
+log("Open build mode, show a preview, then middle-click to freeze it.")
