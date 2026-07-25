@@ -1,26 +1,9 @@
 local Config = require("config")
+local Keybindings = require("keybindings")
+local ModConfig = require("modconfig")
 local UEHelpers = require("UEHelpers")
 
 local MOD = "PerfectPlacement"
-
--- Windows virtual-key values are used deliberately. They are stable across
--- UE4SS versions even when a build exposes different symbolic Key names.
-local VK = {
-    MIDDLE_MOUSE = 0x04,
-    PAGE_DOWN = 0x22,
-    END_KEY = 0x23,
-    NUMPAD_1 = 0x61,
-    NUMPAD_2 = 0x62,
-    NUMPAD_3 = 0x63,
-    NUMPAD_4 = 0x64,
-    NUMPAD_5 = 0x65,
-    NUMPAD_6 = 0x66,
-    NUMPAD_7 = 0x67,
-    NUMPAD_8 = 0x68,
-    NUMPAD_9 = 0x69,
-    NUMPAD_ADD = 0x6B,
-    NUMPAD_SUBTRACT = 0x6D,
-}
 
 local State = {
     SEARCHING = "searching",
@@ -42,6 +25,7 @@ local builder_component = nil
 local cached_builder_component = nil
 local builder_tick_was_enabled = nil
 local lifecycle_monitor_started = false
+local lifecycle_monitor_last_tick = -1000.0
 local lifecycle_ui_refresh_ticks = 0
 local builder_fallback_scan_cooldown = 0
 local construction_guide_mode = nil
@@ -65,6 +49,9 @@ local keyguide_hook_registered = false
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
 local ui_host_missing_was_logged = false
+local keycap_ui_host = nil
+local resolved_bindings = nil
+local keycap_texture_cache = {}
 
 local LIFECYCLE_INTERVAL_MS = 100
 local IDLE_UI_REFRESH_TICKS = 5
@@ -73,6 +60,30 @@ local BUILDER_FALLBACK_RETRY_TICKS = 10
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
 end
+
+local function load_resolved_bindings()
+    local configured_bindings = {}
+    for _, action in ipairs(Keybindings.action_order) do
+        local configured = Config.bindings ~= nil and Config.bindings[action] or nil
+        if configured == nil and action == "toggle_freeze" and Config.bindings ~= nil then
+            configured = Config.bindings.toggle_lock
+        end
+        configured_bindings[action] = configured
+    end
+
+    local mcm_bindings = ModConfig.load(
+        "PerfectPlacement.modconfig.json",
+        Keybindings.action_order,
+        log
+    )
+    if mcm_bindings ~= nil then
+        for action, binding in pairs(mcm_bindings) do
+            configured_bindings[action] = binding
+        end
+    end
+    return Keybindings.resolve(configured_bindings, log)
+end
+resolved_bindings = load_resolved_bindings()
 
 local function verbose(message)
     if Config.diagnostics.verbose then
@@ -103,6 +114,310 @@ local function full_name(object)
         return tostring(value)
     end
     return "<name unavailable>"
+end
+
+local KEYCAP_IMAGE_SLOTS = {
+    move_left = { "Num4Icon" },
+    move_right = { "Num6Icon" },
+    move_forward = { "Num8Icon" },
+    move_back = { "Num2Icon" },
+    move_up = { "Num3Icon" },
+    move_down = { "Num1Icon" },
+    reset = { "Num5Icon" },
+    rotate_left = { "Num7Icon" },
+    rotate_right = { "Num9Icon" },
+    step_down = { "NumMinusIcon" },
+    step_up = { "NumPlusIcon" },
+    toggle_freeze = {
+        "FreezeMouseWheelButtonIcon",
+        "UnfreezeMouseWheelButtonIcon",
+    },
+    copy_piece = { "CopyMouseWheelButtonIcon" },
+}
+
+-- Preferred companion-widget contract. Each child is an instance of
+-- WBP_PerfectPlacement_KeyChord and exposes:
+-- SetChord(CtrlTexture, AltTexture, ShiftTexture, PrimaryTexture,
+--          ShowCtrl, ShowAlt, ShowShift).
+local CHORD_WIDGET_SLOTS = {
+    move_left = { "MoveLeftChord" },
+    move_right = { "MoveRightChord" },
+    move_forward = { "MoveForwardChord" },
+    move_back = { "MoveBackwardChord" },
+    move_up = { "MoveUpChord" },
+    move_down = { "MoveDownChord" },
+    reset = { "ResetChord" },
+    rotate_left = { "RotateLeftChord" },
+    rotate_right = { "RotateRightChord" },
+    step_down = { "StepDownChord" },
+    step_up = { "StepUpChord" },
+    toggle_freeze = { "FreezeChord", "UnfreezeChord" },
+    copy_piece = { "CopyChord" },
+}
+
+local function load_keycap_texture(asset)
+    if asset == nil then
+        return nil
+    end
+
+    local cached = keycap_texture_cache[asset.texture_object_path]
+    if is_valid(cached) then
+        return cached
+    end
+
+    local load_ok, loaded = pcall(function()
+        -- LoadAsset needs the full UObject path. Passing only the package path
+        -- makes UE4SS return a UPackage and logs "could be a package", which
+        -- leaves the UMG Image brush blank.
+        return LoadAsset(asset.texture_object_path)
+    end)
+    if load_ok and is_valid(loaded) then
+        keycap_texture_cache[asset.texture_object_path] = loaded
+        return loaded
+    end
+
+    local find_ok, found = pcall(function()
+        return StaticFindObject(asset.texture_object_path)
+    end)
+    if find_ok and is_valid(found) then
+        keycap_texture_cache[asset.texture_object_path] = found
+        return found
+    end
+
+    log("Could not load Palworld keycap: " .. asset.texture_path)
+    return nil
+end
+
+local function set_keycap_image(host, property_name, texture, hide_on_failure)
+    local image_ok, image = pcall(function()
+        return host[property_name]
+    end)
+    if not image_ok or not is_valid(image) then
+        log("Companion UI keycap image is missing: " .. property_name)
+        return false
+    end
+
+    if not is_valid(texture) then
+        if hide_on_failure then
+            pcall(function()
+                image:SetVisibility(1)
+            end)
+        end
+        return false
+    end
+
+    local set_ok, set_error = pcall(function()
+        image:SetBrushFromTexture(texture, false)
+        image:SetVisibility(0)
+    end)
+    if not set_ok then
+        log(string.format(
+            "Could not update keycap image %s: %s",
+            property_name,
+            tostring(set_error)
+        ))
+        return false
+    end
+    return true
+end
+
+local function has_modifier(binding, expected)
+    if binding == nil or binding.disabled then
+        return false
+    end
+    for _, modifier in ipairs(binding.modifiers) do
+        if modifier == expected then
+            return true
+        end
+    end
+    return false
+end
+
+local function set_chord_widget(
+    host,
+    property_name,
+    binding,
+    primary_texture,
+    modifier_textures
+)
+    local widget_ok, widget = pcall(function()
+        return host[property_name]
+    end)
+    if not widget_ok or not is_valid(widget) then
+        return false
+    end
+
+    -- UE4SS can locate and invoke the Blueprint SetChord function, but on the
+    -- current Palworld build its Texture2D/Boolean arguments do not reach the
+    -- graph reliably. Update the named child widgets directly instead.
+    local direct_ok = pcall(function()
+        local ctrl_icon = widget.CtrlIcon
+        local alt_icon = widget.AltIcon
+        local shift_icon = widget.ShiftIcon
+        local primary_icon = widget.PrimaryIcon
+        local ctrl_box = widget.CtrlBox
+        local alt_box = widget.AltBox
+        local shift_box = widget.ShiftBox
+        local primary_box = widget.PrimaryBox
+        local ctrl_separator = widget.CtrlSeparator
+        local alt_separator = widget.AltSeparator
+        local shift_separator = widget.ShiftSeparator
+
+        if not is_valid(ctrl_icon)
+            or not is_valid(alt_icon)
+            or not is_valid(shift_icon)
+            or not is_valid(primary_icon)
+            or not is_valid(ctrl_box)
+            or not is_valid(alt_box)
+            or not is_valid(shift_box)
+            or not is_valid(primary_box)
+            or not is_valid(ctrl_separator)
+            or not is_valid(alt_separator)
+            or not is_valid(shift_separator)
+        then
+            error("one or more chord child widgets are missing")
+        end
+
+        -- Palworld's stock keycaps are 40x40. Match the texture and enforce a
+        -- square SizeBox so HorizontalBox constraints cannot distort it.
+        ctrl_icon:SetBrushFromTexture(modifier_textures.CONTROL, true)
+        alt_icon:SetBrushFromTexture(modifier_textures.ALT, true)
+        shift_icon:SetBrushFromTexture(modifier_textures.SHIFT, true)
+        primary_icon:SetBrushFromTexture(primary_texture, true)
+        for _, keycap_box in ipairs({
+            ctrl_box,
+            alt_box,
+            shift_box,
+            primary_box,
+        }) do
+            keycap_box:SetWidthOverride(40.0)
+            keycap_box:SetHeightOverride(40.0)
+        end
+
+        ctrl_box:SetVisibility(has_modifier(binding, "CONTROL") and 0 or 1)
+        alt_box:SetVisibility(has_modifier(binding, "ALT") and 0 or 1)
+        shift_box:SetVisibility(has_modifier(binding, "SHIFT") and 0 or 1)
+        ctrl_separator:SetVisibility(has_modifier(binding, "CONTROL") and 0 or 1)
+        alt_separator:SetVisibility(has_modifier(binding, "ALT") and 0 or 1)
+        shift_separator:SetVisibility(has_modifier(binding, "SHIFT") and 0 or 1)
+        primary_box:SetVisibility(
+            binding ~= nil
+                and not binding.disabled
+                and is_valid(primary_texture)
+                and 0
+                or 1
+        )
+    end)
+    if direct_ok then
+        return true
+    end
+
+    local callback = widget.SetChord
+    if callback == nil then
+        log("Companion chord widget is missing SetChord: " .. property_name)
+        return false
+    end
+
+    local set_ok, set_error = pcall(function()
+        callback(
+            widget,
+            modifier_textures.CONTROL,
+            modifier_textures.ALT,
+            modifier_textures.SHIFT,
+            primary_texture,
+            has_modifier(binding, "CONTROL"),
+            has_modifier(binding, "ALT"),
+            has_modifier(binding, "SHIFT")
+        )
+    end)
+    if not set_ok then
+        log(string.format(
+            "Could not update chord widget %s: %s",
+            property_name,
+            tostring(set_error)
+        ))
+        return false
+    end
+    return true
+end
+
+local function apply_configured_keycaps(host)
+    local ui_config = Config.ui or {}
+    if not ui_config.use_palworld_keycaps or not is_valid(host) then
+        return
+    end
+    if is_valid(keycap_ui_host) and full_name(keycap_ui_host) == full_name(host) then
+        return
+    end
+
+    local modifier_textures = {}
+    for _, modifier in ipairs(Keybindings.modifier_order) do
+        modifier_textures[modifier] = load_keycap_texture(
+            Keybindings.get_modifier_asset(modifier)
+        )
+    end
+
+    local chord_widgets_updated = 0
+    local chord_widget_actions = {}
+    for _, action in ipairs(Keybindings.action_order) do
+        local binding = resolved_bindings[action]
+        local texture = nil
+        if binding ~= nil and not binding.disabled then
+            texture = load_keycap_texture(binding.key_info)
+        end
+
+        local action_uses_chord_widget = false
+        for _, property_name in ipairs(CHORD_WIDGET_SLOTS[action] or {}) do
+            if set_chord_widget(
+                host,
+                property_name,
+                binding,
+                texture,
+                modifier_textures
+            ) then
+                action_uses_chord_widget = true
+                chord_widgets_updated = chord_widgets_updated + 1
+            end
+        end
+
+        if not action_uses_chord_widget then
+            for _, property_name in ipairs(KEYCAP_IMAGE_SLOTS[action] or {}) do
+                set_keycap_image(
+                    host,
+                    property_name,
+                    texture,
+                    binding == nil or binding.disabled or not binding.is_default
+                )
+            end
+        else
+            chord_widget_actions[action] = true
+        end
+    end
+
+    local copy_binding = resolved_bindings.copy_piece
+    if not chord_widget_actions.copy_piece then
+        local modifier = copy_binding ~= nil and copy_binding.modifiers[1] or nil
+        local modifier_texture = modifier_textures[modifier]
+        set_keycap_image(
+            host,
+            "LShiftIcon",
+            modifier_texture,
+            modifier == nil or modifier_texture == nil
+        )
+        if copy_binding ~= nil and #copy_binding.modifiers > 1 then
+            log("Legacy companion UI can show only the first Copy modifier.")
+        end
+    end
+
+    keycap_ui_host = host
+    if chord_widgets_updated > 0 then
+        log(string.format(
+            "Configured Palworld key chords applied to %d companion widgets.",
+            chord_widgets_updated
+        ))
+    else
+        log("Configured Palworld keycaps applied through the legacy companion UI.")
+    end
 end
 
 local function contains_any(value, fragments)
@@ -171,6 +486,7 @@ local function find_perfect_placement_ui_host()
     if ok and is_valid(host) then
         perfect_placement_ui_host = host
         ui_host_missing_was_logged = false
+        apply_configured_keycaps(host)
         log("Companion UI host found: " .. full_name(host))
         return host
     end
@@ -334,7 +650,7 @@ local function read_preview_transform()
         Roll = rotation.Roll,
     }
     log(string.format(
-        "Locked transform source %s at (%.1f, %.1f, %.1f)",
+        "Frozen transform source %s at (%.1f, %.1f, %.1f)",
         full_name(transform_actor),
         desired_location.X,
         desired_location.Y,
@@ -598,6 +914,7 @@ local function start_lifecycle_monitor()
     end
     lifecycle_monitor_started = true
     LoopAsync(LIFECYCLE_INTERVAL_MS, function()
+        lifecycle_monitor_last_tick = os.clock()
         -- Frozen previews need responsive safety checks. Outside editing, do
         -- not enqueue game-thread work until the 2 Hz guide refresh is due.
         if state ~= State.EDITING then
@@ -688,7 +1005,7 @@ local function refresh_locked_validity()
     end
     last_preview_overlap_state = is_placeable
     log(string.format(
-        "Locked preview is %s (operation result: %s).",
+        "Frozen preview is %s (operation result: %s).",
         is_placeable and "placeable" or "not placeable",
         operation_text
     ))
@@ -876,14 +1193,14 @@ local function apply_locked_keyguide(construction)
     local row_ok, row_error = setup_text_keyguide_row(
         construction,
         "WBP_Ingameconstruction_KeyGuide_6",
-        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unlock"
+        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unfreeze"
     )
     if row_ok then
-        log("Locked construction key guide applied as a compact text row.")
+        log("Frozen construction key guide applied as a compact text row.")
         return
     end
     log("WBP_Ingameconstruction_KeyGuide_6 text setup failed: " .. tostring(row_error))
-    log("Locked construction key guide was not changed because text setup failed.")
+    log("Frozen construction key guide was not changed because text setup failed.")
 end
 
 local function hide_locked_keyguide(construction)
@@ -966,7 +1283,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
 
         -- The companion widget supplies Perfect Placement's own controls, but
         -- the stock Rotate and Axis Alignment rows still need to be suppressed
-        -- while their inputs are unavailable during a locked preview.
+        -- while their inputs are unavailable during a frozen preview.
         if companion_ui_updated then
             return
         end
@@ -984,7 +1301,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
         end
         if is_valid(model) then
             -- Rebuild through Palworld's own function. The Blueprint post-hook
-            -- applies the locked text while the widget context is guaranteed live.
+            -- applies the frozen text while the widget context is guaranteed live.
             construction:SetupKeyGuide(model)
             -- Also reapply directly for UE4SS builds that do not invoke the
             -- Blueprint post-hook for calls originating from Lua.
@@ -1167,7 +1484,7 @@ local function begin_editing()
     end)
     preview_tick_was_enabled = tick_query_ok and tick_enabled or true
     if set_preview_tick_enabled(false) then
-        log("Preview actor tick suspended for locked editing.")
+        log("Preview actor tick suspended for frozen editing.")
     end
 
     if builder_component ~= nil then
@@ -1176,7 +1493,7 @@ local function begin_editing()
         end)
         builder_tick_was_enabled = builder_tick_query_ok and builder_tick_enabled or true
         if set_builder_tick_enabled(false) then
-            log("Player builder component tick suspended for locked editing.")
+            log("Player builder component tick suspended for frozen editing.")
         end
     else
         log("Could not find the local player's BuilderComponent.")
@@ -1190,7 +1507,7 @@ local function begin_editing()
     start_transform_loop()
     start_lifecycle_monitor()
     log(string.format(
-        "Preview locked. Move step %.1f cm; rotation step %.1f degrees.",
+        "Preview frozen. Move step %.1f cm; rotation step %.1f degrees.",
         current_move_step,
         Config.rotation.normal
     ))
@@ -1402,11 +1719,18 @@ local function reset_preview_transform()
 
     if apply_preview_transform() then
         refresh_locked_validity()
-        log("Preview reset to its original locked transform.")
+        log("Preview reset to its original frozen transform.")
     end
 end
 
 local function change_move_step(multiplier)
+    if state ~= State.EDITING
+        or not is_valid(preview_actor)
+        or desired_location == nil
+    then
+        verbose("Move-step input ignored: no frozen preview is active.")
+        return
+    end
     current_move_step = math.max(
         Config.movement.minimum,
         math.min(Config.movement.maximum, current_move_step * multiplier)
@@ -1426,7 +1750,7 @@ end
 
 local function copy_looked_at_build_piece()
     if state == State.EDITING then
-        log("Eyedropper ignored while the preview is locked.")
+        log("Eyedropper ignored while the preview is frozen.")
         return
     end
     ExecuteInGameThread(function()
@@ -1558,63 +1882,234 @@ local function register_chord(key, modifiers, callback)
     end
 end
 
-local SHIFT = { ModifierKey.SHIFT }
-local CONTROL = { ModifierKey.CONTROL }
-local ALT = { ModifierKey.ALT }
-local CONTROL_ALT = { ModifierKey.CONTROL, ModifierKey.ALT }
-local NONE = {}
+local MODIFIER_VALUES = {
+    SHIFT = ModifierKey.SHIFT,
+    CONTROL = ModifierKey.CONTROL,
+    ALT = ModifierKey.ALT,
+}
+
+local function same_modifier_names(left, right)
+    if #left ~= #right then
+        return false
+    end
+    for index, value in ipairs(left) do
+        if value ~= right[index] then
+            return false
+        end
+    end
+    return true
+end
+
+local action_callbacks = {}
+local action_numlock_alternates = {}
+local registered_action_chords = {}
+
+local function binding_uses_virtual_key(binding, virtual_key)
+    return binding.key_info.virtual_key == virtual_key
+        or binding.key_info.alternate_virtual_key == virtual_key
+end
+
+local function register_current_action_binding(action)
+    local binding = resolved_bindings[action]
+    if binding == nil or binding.disabled then
+        log("Skipping disabled binding: " .. action)
+        return nil
+    end
+
+    local modifiers = {}
+    for _, modifier_name in ipairs(binding.modifiers) do
+        modifiers[#modifiers + 1] = MODIFIER_VALUES[modifier_name]
+    end
+
+    local virtual_keys = { binding.key_info.virtual_key }
+    if action_numlock_alternates[action]
+        and binding.key_info.alternate_virtual_key ~= nil
+    then
+        virtual_keys[#virtual_keys + 1] = binding.key_info.alternate_virtual_key
+    end
+
+    registered_action_chords[action] = registered_action_chords[action] or {}
+    for _, virtual_key in ipairs(virtual_keys) do
+        local registration_signature = tostring(virtual_key)
+            .. ":"
+            .. table.concat(binding.modifiers, "+")
+        if not registered_action_chords[action][registration_signature] then
+            local captured_virtual_key = virtual_key
+            local captured_modifiers = {}
+            for index, value in ipairs(binding.modifiers) do
+                captured_modifiers[index] = value
+            end
+            register_chord(captured_virtual_key, modifiers, function()
+                local current = resolved_bindings[action]
+                if current ~= nil
+                    and not current.disabled
+                    and binding_uses_virtual_key(current, captured_virtual_key)
+                    and same_modifier_names(
+                        current.modifiers,
+                        captured_modifiers
+                    )
+                then
+                    action_callbacks[action]()
+                end
+            end)
+            registered_action_chords[action][registration_signature] = true
+        end
+    end
+    return binding
+end
+
+local function register_action(action, callback, include_numlock_alternate)
+    action_callbacks[action] = callback
+    action_numlock_alternates[action] = include_numlock_alternate == true
+    return register_current_action_binding(action)
+end
 
 -- Numeric keypad controls avoid Palworld's build UI and snap bindings.
-register_chord(VK.NUMPAD_4, NONE, function() move_preview(0, -1, 0) end)
-register_chord(VK.NUMPAD_6, NONE, function() move_preview(0, 1, 0) end)
-register_chord(VK.NUMPAD_8, NONE, function() move_preview(1, 0, 0) end)
-register_chord(VK.NUMPAD_2, NONE, function() move_preview(-1, 0, 0) end)
-register_chord(VK.NUMPAD_3, NONE, function() move_preview(0, 0, 1) end)
-register_chord(VK.NUMPAD_1, NONE, function() move_preview(0, 0, -1) end)
+register_action("move_left", function() move_preview(0, -1, 0) end)
+register_action("move_right", function() move_preview(0, 1, 0) end)
+register_action("move_forward", function() move_preview(1, 0, 0) end)
+register_action("move_back", function() move_preview(-1, 0, 0) end)
+register_action("move_up", function() move_preview(0, 0, 1) end, true)
+register_action("move_down", function() move_preview(0, 0, -1) end, true)
 -- On Windows, these same physical keypad keys report navigation-key virtual
--- codes while NumLock is off. Register both forms so vertical editing works
--- regardless of the user's NumLock state.
-register_chord(VK.PAGE_DOWN, NONE, function() move_preview(0, 0, 1) end)
-register_chord(VK.END_KEY, NONE, function() move_preview(0, 0, -1) end)
-register_chord(VK.NUMPAD_5, NONE, reset_preview_transform)
-register_chord(VK.NUMPAD_7, NONE, function() rotate_preview(-1) end)
-register_chord(VK.NUMPAD_9, NONE, function() rotate_preview(1) end)
+-- codes while NumLock is off. The alternate metadata keeps that behavior when
+-- the configured vertical keys remain on Numpad 1/3.
+register_action("reset", reset_preview_transform)
+register_action("rotate_left", function() rotate_preview(-1) end)
+register_action("rotate_right", function() rotate_preview(1) end)
 
-register_chord(VK.NUMPAD_SUBTRACT, NONE, function()
+register_action("step_down", function()
     change_move_step(1.0 / Config.movement.step_scale)
 end)
-register_chord(VK.NUMPAD_ADD, NONE, function()
+register_action("step_up", function()
     change_move_step(Config.movement.step_scale)
 end)
 
-local function toggle_preview_lock()
+local function configured_chord_is_claimed(key, modifiers, except_action)
+    for action, binding in pairs(resolved_bindings) do
+        if action ~= except_action
+            and binding ~= nil
+            and not binding.disabled
+            and binding.key == key
+            and same_modifier_names(binding.modifiers, modifiers)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function toggle_preview_freeze()
     local now = os.clock()
     if now - last_lock_toggle_time < 0.3 then
-        log("Duplicate lock toggle ignored.")
+        log("Duplicate freeze toggle ignored.")
         return
     end
     last_lock_toggle_time = now
     if state == State.EDITING then
-        log("Manual unlock requested.")
+        log("Manual unfreeze requested.")
         release_preview("manual")
     else
         begin_editing()
     end
 end
-register_chord(VK.MIDDLE_MOUSE, NONE, toggle_preview_lock)
+register_action("toggle_freeze", toggle_preview_freeze)
 -- Palworld uses Ctrl and Alt for contextual build-piece controls while the
 -- preview is still active. UE4SS matches modifier chords explicitly, so plain
 -- MMB does not fire while either modifier is held unless each combination is
 -- registered separately.
-register_chord(VK.MIDDLE_MOUSE, CONTROL, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, ALT, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, CONTROL_ALT, toggle_preview_lock)
-register_chord(VK.MIDDLE_MOUSE, SHIFT, copy_looked_at_build_piece)
+local function register_supplemental_freeze_chord(
+    modifier_names,
+    modifier_values
+)
+    register_chord(0x04, modifier_values, function()
+        local current = resolved_bindings.toggle_freeze
+        if current ~= nil
+            and not current.disabled
+            and current.key == "MIDDLE_MOUSE"
+            and #current.modifiers == 0
+            and not configured_chord_is_claimed(
+                current.key,
+                modifier_names,
+                "toggle_freeze"
+            )
+        then
+            toggle_preview_freeze()
+        end
+    end)
+end
+register_supplemental_freeze_chord(
+    { "CONTROL" },
+    { ModifierKey.CONTROL }
+)
+register_supplemental_freeze_chord(
+    { "ALT" },
+    { ModifierKey.ALT }
+)
+register_supplemental_freeze_chord(
+    { "CONTROL", "ALT" },
+    { ModifierKey.CONTROL, ModifierKey.ALT }
+)
+register_action("copy_piece", copy_looked_at_build_piece)
+
+local function refresh_bindings_from_mcm(host)
+    resolved_bindings = load_resolved_bindings()
+    for _, action in ipairs(Keybindings.action_order) do
+        if action_callbacks[action] ~= nil then
+            register_current_action_binding(action)
+        end
+    end
+
+    keycap_ui_host = nil
+    if is_valid(host) then
+        apply_configured_keycaps(host)
+    end
+    log("Refreshed Mod Config Menu bindings for the new world.")
+end
+
+local UI_HOST_CLASS_PATH =
+    "/Game/Mods/PerfectPlacement/WBP_PerfectPlacement_KeyGuide"
+    .. ".WBP_PerfectPlacement_KeyGuide_C"
+
+local ui_notify_ok, ui_notify_error = pcall(
+    NotifyOnNewObject,
+    UI_HOST_CLASS_PATH,
+    function(host)
+        ExecuteWithDelay(250, function()
+            ExecuteInGameThread(function()
+                if not is_valid(host) then
+                    return
+                end
+
+                perfect_placement_ui_host = host
+                keycap_ui_host = nil
+                ui_host_missing_was_logged = false
+                cached_builder_component = nil
+                unfrozen_ui_builder_component = nil
+                unfrozen_ui_preview_visible = nil
+                builder_fallback_scan_cooldown = 0
+                lifecycle_ui_refresh_ticks = 0
+
+                refresh_bindings_from_mcm(host)
+
+                if os.clock() - lifecycle_monitor_last_tick > 1.0 then
+                    lifecycle_monitor_started = false
+                    start_lifecycle_monitor()
+                    log("Placement UI lifecycle monitor restarted for the new world.")
+                end
+            end)
+        end)
+    end
+)
+if not ui_notify_ok then
+    log("Could not register companion UI lifecycle notification: "
+        .. tostring(ui_notify_error))
+end
 
 -- Start the shared lifecycle/UI monitor immediately so the unfrozen guide can
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.4")
-log("Companion key-guide UI bridge revision 14 loaded.")
-log("Open build mode, show a preview, then middle-click to lock it.")
+log("Loaded Perfect Placement 0.1.5")
+log("Companion key-guide UI bridge revision 22 loaded.")
+log("Open build mode, show a preview, then middle-click to freeze it.")

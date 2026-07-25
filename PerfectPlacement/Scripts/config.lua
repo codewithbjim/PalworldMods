@@ -14,6 +14,7 @@ return {
         show_unfrozen_toast_function = "ShowUnfrozenToast",
         hide_toast_function = "HideToast",
         move_step_property = "MoveStepCm",
+        use_palworld_keycaps = true,
 
         -- Keep the old stock-widget experiment disabled. It is retained in
         -- main.lua only as an optional diagnostic fallback while the custom
@@ -38,8 +39,34 @@ return {
         coarse = 15.0,
     },
 
+    -- Fallback bindings used when PerfectPlacement.modconfig.json is absent or
+    -- invalid. Symbolic key names drive both UE4SS input registration and the
+    -- keycaps in the companion UI. Supported names include A-Z, 0-9, F1-F12,
+    -- navigation keys, common punctuation, NUMPAD_0 through NUMPAD_9, numpad
+    -- operators, LEFT_MOUSE, RIGHT_MOUSE, MIDDLE_MOUSE, MOUSE_BUTTON_4, and
+    -- MOUSE_BUTTON_5. Every action may use any combination of CONTROL, ALT,
+    -- and SHIFT; the UI shows modifiers in that order.
+    bindings = {
+        move_left = "NUMPAD_4",
+        move_right = "NUMPAD_6",
+        move_forward = "NUMPAD_8",
+        move_back = "NUMPAD_2",
+        move_up = "NUMPAD_3",
+        move_down = "NUMPAD_1",
+        reset = "NUMPAD_5",
+        rotate_left = "NUMPAD_7",
+        rotate_right = "NUMPAD_9",
+        step_down = "NUMPAD_SUBTRACT",
+        step_up = "NUMPAD_ADD",
+        toggle_freeze = "MIDDLE_MOUSE",
+        copy_piece = {
+            key = "MIDDLE_MOUSE",
+            modifiers = { "SHIFT" },
+        },
+    },
+
     -- When true, Perfect Placement periodically reapplies the stored transform.
-    -- This prevents Palworld's normal placement trace from pulling a locked
+    -- This prevents Palworld's normal placement trace from pulling a frozen
     -- preview back to the crosshair while the player walks around.
     -- The player BuilderComponent is suspended while editing, so continuous
     -- transform reapplication is unnecessary and can overload the game thread.

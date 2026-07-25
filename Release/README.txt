@@ -1,4 +1,4 @@
-+PERFECT PLACEMENT 0.1.4
+PERFECT PLACEMENT 0.1.5
 =======================
 
 REQUIREMENT
@@ -13,8 +13,11 @@ Allow folders to merge.
 Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\enabled.txt
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Info.json
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\PerfectPlacement.modconfig.json
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\main.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\config.lua
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\keybindings.lua
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\modconfig.lua
   Pal\Content\Paks\LogicMods\PerfectPlacement.pak
 
 If your UE4SS build uses mods.txt, add:
@@ -39,6 +42,20 @@ Middle mouse still freezes or releases the preview while Ctrl or Alt is held for
 Normal middle-mouse Pal commands remain unaffected.
 
 Gamepad placement controls are not supported in this release.
+
+MOD CONFIG MENU
+---------------
+Save key changes, then reopen your world or restart Palworld.
+
+Known MCM issue: symbol keys and mouse bindings are not always mapped or shown
+correctly by Mod Config Menu. Use letter, number, function, navigation, or
+numpad keys in MCM until that upstream issue is fixed.
+
+KEYBIND COMPATIBILITY
+---------------------
+Bindings may become intermittent when the same chord is registered by another
+mod or by UE4SS's built-in Keybinds mod. Check all UE4SS and mod keybinds for
+conflicts, then remap one of the overlapping actions.
 
 UNINSTALL
 ---------

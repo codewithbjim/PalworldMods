@@ -1,0 +1,261 @@
+{
+  "meta": {
+    "game": false,
+    "vers": "0.1.5",
+    "auth": "virtualbjörn",
+    "desc": "Freeze and precisely transform Palworld building previews."
+  },
+  "Bindings": {
+    "type": "object",
+    "desc": "Save changes, then reopen your world or restart Palworld.",
+    "data": {
+      "move_left": {
+        "type": "keybind",
+        "name": "Move Left",
+        "desc": "Move the frozen preview left.",
+        "init": {
+          "key": "NumPadFour",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadFour",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "move_right": {
+        "type": "keybind",
+        "name": "Move Right",
+        "desc": "Move the frozen preview right.",
+        "init": {
+          "key": "NumPadSix",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadSix",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "move_forward": {
+        "type": "keybind",
+        "name": "Move Forward",
+        "desc": "Move the frozen preview away from the camera.",
+        "init": {
+          "key": "NumPadEight",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadEight",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "move_back": {
+        "type": "keybind",
+        "name": "Move Back",
+        "desc": "Move the frozen preview toward the camera.",
+        "init": {
+          "key": "NumPadTwo",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadTwo",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "move_up": {
+        "type": "keybind",
+        "name": "Move Up",
+        "desc": "Raise the frozen preview.",
+        "init": {
+          "key": "NumPadThree",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadThree",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "move_down": {
+        "type": "keybind",
+        "name": "Move Down",
+        "desc": "Lower the frozen preview.",
+        "init": {
+          "key": "NumPadOne",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadOne",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "rotate_left": {
+        "type": "keybind",
+        "name": "Rotate Left",
+        "desc": "Rotate the frozen preview counter-clockwise.",
+        "init": {
+          "key": "NumPadSeven",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadSeven",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "rotate_right": {
+        "type": "keybind",
+        "name": "Rotate Right",
+        "desc": "Rotate the frozen preview clockwise.",
+        "init": {
+          "key": "NumPadNine",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadNine",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "reset": {
+        "type": "keybind",
+        "name": "Reset Transform",
+        "desc": "Restore the transform captured when the preview was frozen.",
+        "init": {
+          "key": "NumPadFive",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "NumPadFive",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "step_down": {
+        "type": "keybind",
+        "name": "Decrease Move Step",
+        "desc": "Decrease the movement increment.",
+        "init": {
+          "key": "Subtract",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "Subtract",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "step_up": {
+        "type": "keybind",
+        "name": "Increase Move Step",
+        "desc": "Increase the movement increment.",
+        "init": {
+          "key": "Add",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "Add",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "toggle_freeze": {
+        "type": "keybind",
+        "name": "Freeze or Unfreeze Preview",
+        "desc": "Freeze the selected preview or unfreeze the currently frozen preview.",
+        "init": {
+          "key": "MiddleMouseButton",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "MiddleMouseButton",
+          "bShift": false,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      },
+      "copy_piece": {
+        "type": "keybind",
+        "name": "Copy Build Piece",
+        "desc": "Copy the build piece under the cursor.",
+        "init": {
+          "key": "MiddleMouseButton",
+          "bShift": true,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        },
+        "live": {
+          "key": "MiddleMouseButton",
+          "bShift": true,
+          "bCtrl": false,
+          "bAlt": false,
+          "bCmd": false
+        }
+      }
+    }
+  }
+}
