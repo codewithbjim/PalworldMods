@@ -159,7 +159,6 @@ if ($DryRun) {
     Write-Host "  description : $(if ($Description) { "$($Description.Length) chars (from CHANGELOG.md)" } else { '<none>' })"
     Write-Host ""
     Write-Host "Re-run with -Publish to upload."
-    if (-not $KeepZip) { Remove-Item -LiteralPath $zipPath -Force }
     return
 }
 

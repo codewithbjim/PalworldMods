@@ -13,6 +13,8 @@ be recovered later for maintenance or a forked update.
 - Verify the tag resolves to the intended release commit before publishing.
 - Push the release commit and its tag to the remote as part of the release
   workflow.
+- Run `Release/Test-Release.ps1` against the final archive and complete
+  `Release/PRE_DEPLOY_CHECKLIST.md` before publishing.
 - When making a maintenance update for an older release line, create the branch
   from its release tag rather than reconstructing the release from changelog
   notes or a newer commit.
