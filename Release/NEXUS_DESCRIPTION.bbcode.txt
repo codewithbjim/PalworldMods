@@ -103,3 +103,8 @@ Pal/Content/Paks/LogicMods/PerfectPlacement.pak[/code]
 [size=5][b]Support and questions[/b][/size]
 
 Open an issue on the project repository and include the diagnostic information listed above.
+
+[line]
+[size=5][b]Support the project[/b][/size]
+
+If Perfect Placement has been useful and you would like to support continued development, you can leave a tip on [url=https://ko-fi.com/virtualbjorn]Ko-fi[/url].

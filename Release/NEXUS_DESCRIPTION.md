@@ -95,3 +95,10 @@ When reporting a problem, include your Palworld version, UE4SS version, installe
 ## Support and questions
 
 Open an issue on the project repository and include the diagnostic information listed above.
+
+---
+
+## Support the project
+
+If Perfect Placement has been useful and you would like to support continued
+development, you can leave a tip on [Ko-fi](https://ko-fi.com/virtualbjorn).
