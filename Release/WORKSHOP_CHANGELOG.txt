@@ -1,3 +1,14 @@
+Version 0.2.0-beta.3 — Freeze lifecycle reliability hotfix
+
+Fixes
+- Serialize keyboard, mouse, gamepad, transform, and lifecycle work on the game thread.
+- Ignore repeated freeze or unfreeze input while the current transition settles.
+- Wait for Palworld's replacement preview after opening the build menu or selecting another piece before restoring the unfrozen guide.
+- Restore the guide only after the replacement builder component and preview are active.
+- Replace long-lived repeating UE4SS timer callbacks with retained, self-rescheduling game-thread actions to prevent invalid engine-tick callback references.
+
+Previous 0.2.0-beta.2 notes
+
 Version 0.2.0-beta.2 — Major update: experimental gamepad support
 
 Features and fixes

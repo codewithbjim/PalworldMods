@@ -8,7 +8,10 @@ local MOD = "PerfectPlacement"
 local State = {
     SEARCHING = "searching",
     READY = "ready",
+    FREEZING = "freezing",
     EDITING = "editing",
+    UNFREEZING = "unfreezing",
+    WAITING_FOR_PREVIEW = "waiting_for_preview",
 }
 
 local state = State.SEARCHING
@@ -22,6 +25,7 @@ local current_move_step = Config.movement.normal
 local transform_loop_started = false
 local transform_loop_callback = nil
 local transform_game_thread_callback = nil
+local transform_direct_loop_callback = nil
 local transform_check_pending = false
 local transform_loop_error_was_logged = false
 local preview_tick_was_enabled = nil
@@ -33,6 +37,7 @@ local lifecycle_recovery_checks_remaining = 0
 local lifecycle_check_pending = false
 local lifecycle_monitor_loop_callback = nil
 local lifecycle_game_thread_callback = nil
+local lifecycle_direct_loop_callback = nil
 local lifecycle_monitor_error_was_logged = false
 local lifecycle_suppression_idle_ticks = 0
 local builder_fallback_scan_cooldown = 0
@@ -56,7 +61,8 @@ local rotation_pivot = nil
 local rotation_pivot_local_offset = nil
 local preview_relative_location = nil
 local preview_relative_rotation = nil
-local last_lock_toggle_time = -1000.0
+local freeze_transition_generation = 0
+local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
@@ -70,6 +76,7 @@ local gamepad_last_serials = {}
 local active_gamepad_physical_serials = nil
 local gamepad_monitor_loop_callback = nil
 local gamepad_game_thread_callback = nil
+local gamepad_direct_loop_callback = nil
 local gamepad_poll_pending = false
 local gamepad_monitor_error_was_logged = false
 local resolved_gamepad_bindings = nil
@@ -87,6 +94,7 @@ local LIFECYCLE_INITIAL_RECOVERY_CHECKS = 100
 local LIFECYCLE_EVENT_RECOVERY_CHECKS = 20
 local LIFECYCLE_SUPPRESSION_FALLBACK_TICKS = 10
 local BUILDER_FALLBACK_RETRY_TICKS = 10
+local FREEZE_TRANSITION_SETTLE_MS = 500
 local PAL_BUILDING_FUNCTION_ROOT =
     "/Game/Pal/Blueprint/UI/BuildMenu/WBP_PalBuilding"
     .. ".WBP_PalBuilding_C:"
@@ -159,6 +167,109 @@ local function execute_with_retained_delay(delay_ms, callback, label)
         return false
     end
     return true
+end
+
+local function execute_in_game_thread_with_retained_delay(
+    delay_ms,
+    callback,
+    label
+)
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        local retained_callback, callback_id =
+            retain_async_callback(callback, label)
+        local ok, error_message = pcall(
+            ExecuteInGameThreadWithDelay,
+            delay_ms,
+            retained_callback
+        )
+        if not ok then
+            retained_async_callbacks[callback_id] = nil
+            log(string.format(
+                "Could not queue %s: %s",
+                label or "delayed game-thread callback",
+                tostring(error_message)
+            ))
+            return false
+        end
+        return true
+    end
+
+    return execute_with_retained_delay(delay_ms, function()
+        execute_in_game_thread_retained(callback, label)
+    end, label)
+end
+
+local function start_repeating_game_thread_action(
+    delay_ms,
+    callback,
+    label
+)
+    if type(ExecuteInGameThreadWithDelay) ~= "function" then
+        return nil
+    end
+
+    local scheduled_callback
+    scheduled_callback = function()
+        local callback_ok, callback_error = pcall(callback)
+        if not callback_ok then
+            log(string.format(
+                "%s failed: %s",
+                label or "Repeating game-thread callback",
+                tostring(callback_error)
+            ))
+        end
+
+        if not execute_in_game_thread_with_retained_delay(
+            delay_ms,
+            scheduled_callback,
+            label
+        ) then
+            log(string.format(
+                "%s stopped because its next pass could not be queued.",
+                label or "Repeating game-thread callback"
+            ))
+        end
+    end
+
+    if not execute_in_game_thread_with_retained_delay(
+        delay_ms,
+        scheduled_callback,
+        label
+    ) then
+        return nil
+    end
+    return scheduled_callback
+end
+
+local function begin_freeze_transition(next_state)
+    freeze_transition_generation = freeze_transition_generation + 1
+    freeze_transition_input_locked = true
+    state = next_state
+    return freeze_transition_generation
+end
+
+local function complete_freeze_transition(transition_id, stable_state)
+    if transition_id ~= freeze_transition_generation then
+        return
+    end
+    state = stable_state
+    freeze_transition_input_locked = false
+end
+
+local function settle_freeze_transition(
+    transition_id,
+    stable_state
+)
+    local queued = execute_in_game_thread_with_retained_delay(
+        FREEZE_TRANSITION_SETTLE_MS,
+        function()
+            complete_freeze_transition(transition_id, stable_state)
+        end,
+        "Freeze transition settle callback"
+    )
+    if not queued then
+        complete_freeze_transition(transition_id, stable_state)
+    end
 end
 
 local function load_resolved_bindings()
@@ -1242,6 +1353,22 @@ local function start_transform_loop()
                 transform_loop_error_was_logged = false
             end
         end
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        transform_direct_loop_callback =
+            start_repeating_game_thread_action(
+                Config.transform_refresh_ms,
+                function()
+                if state == State.EDITING then
+                    transform_game_thread_callback()
+                end
+                end,
+                "Transform game-thread loop"
+            )
+        if transform_direct_loop_callback ~= nil then
+            return
+        end
+        log("Could not start the game-thread transform loop.")
+    end
     transform_loop_callback = transform_loop_callback or function()
         if state ~= State.EDITING then
             if transform_check_pending then
@@ -1451,21 +1578,10 @@ local function should_release_locked_preview()
     return false, nil
 end
 
-local function construction_resume_hooks_ready()
-    local safety = Config.auto_unfreeze or {}
-    for _, function_name in ipairs(
-        safety.construction_resume_functions or {}
-    ) do
-        local function_path =
-            PAL_INGAME_CONSTRUCTION_FUNCTION_ROOT .. function_name
-        if not auto_unfreeze_hooked_paths[function_path] then
-            return false
-        end
-    end
-    return true
-end
-
 local function process_lifecycle_check()
+    if state == State.FREEZING or state == State.UNFREEZING then
+        return
+    end
     if state == State.EDITING then
         if lifecycle_recovery_checks_remaining > 0 then
             if update_construction_hotkey_guide(
@@ -1525,12 +1641,10 @@ local function process_lifecycle_check()
         and has_preview
     if unfrozen_ui_suppressed_preview_name ~= nil then
         if not should_show then
-            if construction_resume_hooks_ready() then
-                unfrozen_ui_suppressed_preview_name = nil
-                unfrozen_ui_suppression_saw_inactive = false
-            else
-                unfrozen_ui_suppression_saw_inactive = true
-            end
+            -- A registered hook is not proof that Palworld has finished the
+            -- transition. Keep recovery alive until the old preview becomes
+            -- inactive and a valid replacement is observed.
+            unfrozen_ui_suppression_saw_inactive = true
             should_show = false
         elseif unfrozen_ui_suppression_saw_inactive then
             unfrozen_ui_suppressed_preview_name = nil
@@ -1571,6 +1685,18 @@ local function process_lifecycle_check()
                 ui_converged = false
             end
         end
+    end
+
+    if state == State.WAITING_FOR_PREVIEW
+        and should_show
+        and unfrozen_ui_suppressed_preview_name == nil
+        and unfrozen_ui_preview_visible == true
+    then
+        complete_freeze_transition(
+            freeze_transition_generation,
+            State.READY
+        )
+        verbose("Replacement preview settled; unfrozen controls are ready.")
     end
 
     if not status_ok then
@@ -1659,6 +1785,44 @@ start_lifecycle_monitor = function()
                 )
             end
         end
+
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        lifecycle_direct_loop_callback =
+            start_repeating_game_thread_action(
+                LIFECYCLE_INTERVAL_MS,
+                function()
+                if state ~= State.EDITING
+                    and state ~= State.FREEZING
+                    and state ~= State.UNFREEZING
+                then
+                    if lifecycle_recovery_checks_remaining > 0 then
+                        lifecycle_recovery_checks_remaining =
+                            lifecycle_recovery_checks_remaining - 1
+                        lifecycle_suppression_idle_ticks = 0
+                    elseif unfrozen_ui_suppressed_preview_name ~= nil
+                    then
+                        lifecycle_suppression_idle_ticks =
+                            lifecycle_suppression_idle_ticks + 1
+                        if lifecycle_suppression_idle_ticks
+                            < LIFECYCLE_SUPPRESSION_FALLBACK_TICKS
+                        then
+                            return
+                        end
+                        lifecycle_suppression_idle_ticks = 0
+                    else
+                        lifecycle_suppression_idle_ticks = 0
+                        return
+                    end
+                end
+                lifecycle_game_thread_callback()
+                end,
+                "Lifecycle game-thread loop"
+            )
+        if lifecycle_direct_loop_callback ~= nil then
+            return
+        end
+        log("Could not start the game-thread lifecycle loop.")
+    end
 
     LoopAsync(
         LIFECYCLE_INTERVAL_MS,
@@ -1973,7 +2137,10 @@ local function hide_unfrozen_guide_for_action(action_name)
 end
 
 local function resume_unfrozen_guide_from_construction(action_name)
-    if state == State.EDITING then
+    if state == State.EDITING
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+    then
         return
     end
     request_lifecycle_recovery(LIFECYCLE_EVENT_RECOVERY_CHECKS)
@@ -1990,6 +2157,12 @@ local function resume_unfrozen_guide_from_construction(action_name)
     unfrozen_ui_builder_component = active_component
     if update_perfect_placement_ui(false, false, false) then
         unfrozen_ui_preview_visible = true
+        if state == State.WAITING_FOR_PREVIEW then
+            complete_freeze_transition(
+                freeze_transition_generation,
+                State.READY
+            )
+        end
         if hooks_ready then
             lifecycle_recovery_checks_remaining = 0
         end
@@ -2198,18 +2371,16 @@ local function show_preview_notification(message, color)
         end
         toast:AnmEvent_In()
 
-        execute_with_retained_delay(1800, function()
-            execute_in_game_thread_retained(function()
-                if generation ~= notification_generation then
-                    return
+        execute_in_game_thread_with_retained_delay(1800, function()
+            if generation ~= notification_generation then
+                return
+            end
+            pcall(function()
+                if is_valid(toast) then
+                    toast:AnmEvent_Out()
                 end
-                pcall(function()
-                    if is_valid(toast) then
-                        toast:AnmEvent_Out()
-                    end
-                end)
-            end, "Preview notification game-thread callback")
-        end, "Preview notification delay callback")
+            end)
+        end, "Preview notification game-thread callback")
     end)
     if not ok then
         log("Could not show preview status notification: " .. tostring(error_message))
@@ -2221,8 +2392,10 @@ local function begin_editing()
     -- context here so MMB is a cheap no-op during normal gameplay.
     local active_component, active_checker, active_preview = find_active_build_context(false)
     if active_component == nil then
-        return
+        return false
     end
+    local previous_state = state
+    local transition_id = begin_freeze_transition(State.FREEZING)
 
     builder_component = active_component
     ensure_auto_unfreeze_hooks()
@@ -2252,7 +2425,22 @@ local function begin_editing()
     end
 
     if not read_preview_transform() then
-        return
+        if is_valid(preview_root_component)
+            and preview_root_previous_mobility ~= nil
+        then
+            pcall(function()
+                preview_root_component:SetMobility(
+                    preview_root_previous_mobility
+                )
+            end)
+        end
+        builder_component = nil
+        transform_actor = nil
+        preview_actor = nil
+        preview_root_component = nil
+        preview_root_previous_mobility = nil
+        complete_freeze_transition(transition_id, previous_state)
+        return false
     end
     local preview_transform_ok, preview_location, preview_rotation = pcall(function()
         return preview_actor:K2_GetActorLocation(), preview_actor:K2_GetActorRotation()
@@ -2370,13 +2558,15 @@ local function begin_editing()
         Config.rotation.normal
     ))
     refresh_locked_validity()
+    settle_freeze_transition(transition_id, State.EDITING)
+    return true
 end
 
 release_preview = function(reason)
     if state ~= State.EDITING then
-        return
+        return false
     end
-    state = State.READY
+    local transition_id = begin_freeze_transition(State.UNFREEZING)
     transform_check_pending = false
     building_mode_exit_checks = 0
     local is_manual_unfreeze = reason == "manual"
@@ -2392,7 +2582,12 @@ release_preview = function(reason)
         1,
         true
     ) == 1
-    if menu_or_other_action then
+    local preview_was_rebuilt =
+        reason == "Palworld replaced the selected build preview"
+        or reason == "Palworld committed the build preview"
+    local waiting_for_preview =
+        menu_or_other_action or preview_was_rebuilt
+    if waiting_for_preview then
         request_lifecycle_recovery(LIFECYCLE_EVENT_RECOVERY_CHECKS)
         unfrozen_ui_suppression_saw_inactive = false
         if locked_preview_name ~= nil then
@@ -2409,11 +2604,11 @@ release_preview = function(reason)
     end
     unfrozen_ui_builder_component = builder_component
     local should_show_unfrozen =
-        not (left_construction or no_active_preview or menu_or_other_action)
+        not (left_construction or no_active_preview or waiting_for_preview)
     local ui_updated = update_construction_hotkey_guide(
         false,
         is_manual_unfreeze,
-        left_construction or no_active_preview or menu_or_other_action
+        left_construction or no_active_preview or waiting_for_preview
     )
     if ui_updated then
         unfrozen_ui_preview_visible = should_show_unfrozen
@@ -2452,6 +2647,13 @@ release_preview = function(reason)
     desired_location = nil
     desired_rotation = nil
     log("Preview released to Palworld placement control.")
+    if waiting_for_preview then
+        state = State.WAITING_FOR_PREVIEW
+    else
+        state = State.READY
+        settle_freeze_transition(transition_id, State.READY)
+    end
+    return true
 end
 
 local function move_preview(forward_amount, right_amount, up_amount, distance_override)
@@ -2643,6 +2845,10 @@ local function actor_from_hit_result(hit_result)
 end
 
 local function copy_looked_at_build_piece()
+    if freeze_transition_input_locked then
+        verbose("Eyedropper ignored while placement state settles.")
+        return
+    end
     if state == State.EDITING then
         log("Eyedropper ignored while the preview is frozen.")
         return
@@ -2714,31 +2920,30 @@ local function copy_looked_at_build_piece()
                 building_model:FinishBuilding()
                 -- FinishBuilding creates the menu-side selection model. Handoff
                 -- on the next async tick to minimize or eliminate visible menu flash.
-                execute_with_retained_delay(1, function()
-                    execute_in_game_thread_retained(function()
-                        local delayed_ok, delayed_error = pcall(function()
-                            if not is_valid(target) then
-                                error("copied source actor became invalid")
-                            end
-                            local delayed_build_object_id = target.BuildObjectId
-                            local ui_model = FindFirstOf("PalUIBuildModel")
-                            if not is_valid(ui_model) then
-                                ui_model = FindFirstOf("BP_PalUIBuildModel_C")
-                            end
-                            if not is_valid(ui_model) then
-                                error("build-menu model did not become available")
-                            end
-                            ui_model:StartBuildObject(delayed_build_object_id)
-                            log(string.format(
-                                "Copied build preview started from %s.",
-                                full_name(target)
-                            ))
-                        end)
-                        if not delayed_ok then
-                            log("Could not start copied build preview: " .. tostring(delayed_error))
+                execute_in_game_thread_with_retained_delay(1, function()
+                    local delayed_ok, delayed_error = pcall(function()
+                        if not is_valid(target) then
+                            error("copied source actor became invalid")
                         end
-                    end, "Copied preview game-thread callback")
-                end, "Copied preview delay callback")
+                        local delayed_build_object_id = target.BuildObjectId
+                        local ui_model = FindFirstOf("PalUIBuildModel")
+                        if not is_valid(ui_model) then
+                            ui_model = FindFirstOf("BP_PalUIBuildModel_C")
+                        end
+                        if not is_valid(ui_model) then
+                            error("build-menu model did not become available")
+                        end
+                        ui_model:StartBuildObject(delayed_build_object_id)
+                        log(string.format(
+                            "Copied build preview started from %s.",
+                            full_name(target)
+                        ))
+                    end)
+                    if not delayed_ok then
+                        log("Could not start copied build preview: "
+                            .. tostring(delayed_error))
+                    end
+                end, "Copied preview game-thread callback")
             else
                 local ui_model = FindFirstOf("PalUIBuildModel")
                 if not is_valid(ui_model) then
@@ -2761,10 +2966,20 @@ end
 
 local function register_chord(key, modifiers, callback)
     local ok, error_message = pcall(function()
+        local queued_callback = function()
+            local queue_ok, queue_error = pcall(
+                ExecuteInGameThread,
+                callback
+            )
+            if not queue_ok then
+                log("Could not queue input callback: "
+                    .. tostring(queue_error))
+            end
+        end
         if modifiers == nil or #modifiers == 0 then
-            RegisterKeyBind(key, callback)
+            RegisterKeyBind(key, queued_callback)
         else
-            RegisterKeyBind(key, modifiers, callback)
+            RegisterKeyBind(key, modifiers, queued_callback)
         end
     end)
     if not ok then
@@ -2971,6 +3186,20 @@ local function start_gamepad_monitor()
             end
         end
     end
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        gamepad_direct_loop_callback =
+            start_repeating_game_thread_action(
+                interval_ms,
+                function()
+                gamepad_game_thread_callback()
+                end,
+                "Gamepad game-thread loop"
+            )
+        if gamepad_direct_loop_callback ~= nil then
+            return
+        end
+        log("Could not start the game-thread gamepad loop.")
+    end
     LoopAsync(interval_ms, gamepad_monitor_loop_callback)
 end
 
@@ -3070,12 +3299,14 @@ local function configured_chord_is_claimed(key, modifiers, except_action)
 end
 
 local function toggle_preview_freeze()
-    local now = os.clock()
-    if now - last_lock_toggle_time < 0.3 then
-        log("Duplicate freeze toggle ignored.")
+    if freeze_transition_input_locked
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+        or state == State.WAITING_FOR_PREVIEW
+    then
+        verbose("Freeze toggle ignored while placement state settles.")
         return
     end
-    last_lock_toggle_time = now
     if state == State.EDITING then
         log("Manual unfreeze requested.")
         release_preview("manual")
@@ -3167,8 +3398,9 @@ ui_host_notify_callback = function()
     unfrozen_ui_preview_visible = nil
     builder_fallback_scan_cooldown = 0
 
-    local delay_queued = execute_with_retained_delay(250, function()
-        local game_thread_queued = execute_in_game_thread_retained(function()
+    local delay_queued = execute_in_game_thread_with_retained_delay(
+        250,
+        function()
             if generation ~= ui_host_refresh_generation then
                 return
             end
@@ -3178,13 +3410,9 @@ ui_host_notify_callback = function()
                 LIFECYCLE_INITIAL_RECOVERY_CHECKS
             )
             find_perfect_placement_ui_host()
-        end, "Companion UI refresh game-thread callback")
-        if not game_thread_queued
-            and generation == ui_host_refresh_generation
-        then
-            ui_host_refresh_pending = false
-        end
-    end, "Companion UI refresh delay callback")
+        end,
+        "Companion UI refresh game-thread callback"
+    )
     if not delay_queued and generation == ui_host_refresh_generation then
         ui_host_refresh_pending = false
     end
@@ -3204,12 +3432,12 @@ end
 -- created later.
 ensure_auto_unfreeze_hooks()
 
--- The lifecycle loop terminates after stable unfrozen state converges. Hooks
--- and object notifications restart it for recovery; frozen previews keep it
--- active for safety checks.
+-- The game-thread lifecycle loop stays registered but becomes a cheap no-op
+-- after stable unfrozen state converges. Hooks and object notifications wake
+-- recovery; frozen previews keep safety checks active.
 request_lifecycle_recovery(LIFECYCLE_INITIAL_RECOVERY_CHECKS)
 start_gamepad_monitor()
 
-log("Loaded Perfect Placement 0.2.0-beta.2")
+log("Loaded Perfect Placement 0.2.0-beta.3")
 log("Companion key-guide UI bridge revision 29 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")
