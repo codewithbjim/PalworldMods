@@ -80,8 +80,8 @@ release is blocked if any required item fails or cannot be explained.
       and every control uses the native keychord editor.
 - [ ] Confirm changes are written to
       `Mods/shared/PerfectPlacement_user.lua` and apply after relaunch.
-- [ ] Change each movement/rotation setting, relaunch, and confirm the guide
-      and transform controls use the saved values.
+- [ ] Change each exposed movement setting, relaunch, and confirm the guide and
+      transform controls use the saved values.
 - [ ] Verify DarnMenu rejects out-of-range numeric values and Perfect Placement
       rejects invalid values placed into the shared file by hand.
 - [ ] Set movement minimum above maximum by hand and confirm both limits safely

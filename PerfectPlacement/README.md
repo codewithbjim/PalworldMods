@@ -57,8 +57,8 @@ to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying a
 binding change because UE4SS cannot unregister startup keybinds safely.
 
 The same page exposes the starting, minimum, and maximum movement steps; the
-step multiplier; vertical movement limits; rotation increment; Palworld keycap
-icons; and verbose diagnostic logging. These settings are validated both by
+step multiplier; vertical movement limits; Palworld keycap icons; and verbose
+diagnostic logging. These settings are validated both by
 DarnMenu and again when Perfect Placement loads the shared file.
 
 If DarnMenu is unavailable or no binding has been saved, Perfect Placement uses

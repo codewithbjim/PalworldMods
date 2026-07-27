@@ -53,7 +53,7 @@ Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1
 [h2]Configure controls[/h2]
 Open [b]ESC → Mod Options → Perfect Placement[/b] to edit key chords through DarnMenu. Apply changes and restart Palworld. If DarnMenu is unavailable, Perfect Placement falls back to its built-in bindings.
 
-The same page configures movement steps and limits, rotation increment, Palworld keycap icons, and verbose diagnostic logging.
+The same page configures movement steps and limits, Palworld keycap icons, and verbose diagnostic logging.
 
 [h2]Important beta limitations[/h2]
 [list]

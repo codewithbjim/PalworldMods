@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 6
+local SCHEMA_VERSION = 7
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -29,7 +29,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 6,
+  schemaVersion = 7,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -56,7 +56,6 @@ return {
     movement_step_scale = 10,
     movement_maximum_below_cm = 25.0,
     movement_maximum_above_cm = 650.0,
-    rotation_step_degrees = 5.0,
     use_palworld_keycaps = true,
     verbose_logging = false,
   },
@@ -100,10 +99,6 @@ return {
       { path = "movement_maximum_above_cm", label = "Maximum movement above origin",
         kind = "number", min = 0, max = 5000, step = 10, note = "centimeters" },
     }},
-    { title = "Rotation settings", options = {
-      { path = "rotation_step_degrees", label = "Rotation step", kind = "number",
-        min = 0.1, max = 180, step = 0.1, note = "degrees" },
-    }},
     { title = "Interface", options = {
       { path = "use_palworld_keycaps", label = "Use Palworld keycap icons",
         kind = "bool" },
@@ -140,10 +135,6 @@ local SETTING_SPECS = {
     movement_maximum_above_cm = {
         section = "movement", field = "maximum_above_initial_cm", kind = "number",
         minimum = 0.0, maximum = 5000.0,
-    },
-    rotation_step_degrees = {
-        section = "rotation", field = "normal", kind = "number",
-        minimum = 0.1, maximum = 180.0,
     },
     use_palworld_keycaps = {
         section = "ui", field = "use_palworld_keycaps", kind = "boolean",

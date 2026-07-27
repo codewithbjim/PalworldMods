@@ -60,8 +60,8 @@ Assert-ReleaseCondition ($manifest.Version -eq $Version) `
 Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
     "Info.json must declare the DarnMenu dependency."
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*6') `
-    "DarnMenu schema version 6 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*7') `
+    "DarnMenu schema version 7 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
