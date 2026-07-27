@@ -38,9 +38,6 @@ Numpad -/+         Decrease / increase movement step
 Numpad 5           Reset to the frozen transform
 Shift + middle mouse
                    Copy targeted build piece
-Ctrl + Shift + middle mouse
-                   Copy targeted build piece and freeze the replacement preview
-                   at that piece's position and rotation
 
 Vertical movement is limited to 25 cm below and 650 cm above the initially frozen position.
 Numpad 1/3 vertical movement works with NumLock either on or off.

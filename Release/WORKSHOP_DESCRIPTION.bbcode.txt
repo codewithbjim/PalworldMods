@@ -15,7 +15,6 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [*][b]Camera-aware controls[/b] that remain aligned to the piece's own axes.
 [*][b]Reset instantly[/b] to the transform captured when the preview was frozen.
 [*][b]Eyedropper[/b] to copy the targeted build piece into the active preview.
-[*][b]Copy and freeze[/b] to copy the targeted piece and freeze its replacement preview at the same position and rotation.
 [/list]
 
 [h2]Requirements[/h2]
@@ -47,7 +46,6 @@ The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palwor
 [*][b]Decrease/increase movement step:[/b] Numpad - / +
 [*][b]Reset to frozen transform:[/b] Numpad 5
 [*][b]Copy targeted build piece:[/b] Shift + Middle mouse
-[*][b]Copy and freeze to targeted piece:[/b] Ctrl + Shift + Middle mouse
 [/list]
 
 Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.

@@ -8,8 +8,7 @@ and provide precise camera-relative transform controls before final placement.
 
 The mod resolves the active placement preview directly through the local
 player's builder component. Its controls can freeze, move, rotate, reset, copy,
-copy-and-freeze to an existing piece, and release that preview. Final placement
-remains under Palworld's control.
+and release that preview. Final placement remains under Palworld's control.
 
 ## Installation for development
 
@@ -47,15 +46,9 @@ Additional controls:
 - Middle-click still freezes or unfreezes a preview while Palworld's `Ctrl` or `Alt` build modifier is held
 - Middle mouse: freeze or unfreeze the selected preview
 - `Shift+Middle mouse`: copy the build piece under the cursor
-- `Ctrl+Shift+Middle mouse`: copy the build piece under the cursor, place the
-  replacement preview at that piece's location and rotation, and freeze it
 
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation
 increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
-
-Copy-and-freeze waits for Palworld to finish creating the replacement preview
-before locking it. Because the copied preview initially overlaps the existing
-piece, Palworld may mark it invalid until it is moved clear.
 
 With DarnMenu 1.6.2 or newer installed, Perfect Placement appears under
 **ESC → Mod Options**. Its native key-chord controls support a primary key plus
@@ -76,10 +69,8 @@ The companion guide resolves its displayed controls to Palworld's stock keycap
 textures. Invalid, conflicting, or unsupported bindings fall back to their
 defaults and are reported in the UE4SS log. Every action supports any
 combination of `Ctrl`, `Alt`, and `Shift`; displayed modifiers use that order
-before the primary key. The companion guide does not yet include a separate
-copy-and-freeze row, so use DarnMenu or this control list to review that
-binding. Stock keycaps are also available for left, right, and middle mouse
-buttons plus mouse buttons 4 and 5.
+before the primary key. Stock keycaps are also available for left, right, and
+middle mouse buttons plus mouse buttons 4 and 5.
 
 DarnMenu's capture set supports F1-F12, letters, top-row and numpad digits,
 numpad operators, and Insert/Delete/Home/End/Page Up/Page Down. Existing default
