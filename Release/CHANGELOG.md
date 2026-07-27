@@ -10,8 +10,8 @@
   logging from the in-game menu.
 - Save overrides to `Mods/shared/PerfectPlacement_user.lua`; changes apply
   after restarting Palworld.
-- Use a compact `Movement settings (cm)` layout and keep unfinished options
-  hidden.
+- Show distance units in each relevant setting's help text while keeping labels
+  compact, and keep unfinished options hidden.
 - Fall back safely to `Scripts/config.lua` if no saved DarnMenu configuration
   is available.
 

@@ -7,7 +7,8 @@ DarnMenu configuration
   settings.
 - Saves overrides in Mods/shared/PerfectPlacement_user.lua. Restart Palworld
   after applying changes.
-- Uses a compact Movement settings (cm) layout and hides unfinished options.
+- Shows distance units in the relevant setting help text, keeps labels compact,
+  and hides unfinished options.
 
 Stability and interface
 - Registers every placement control once at startup, preventing recreated UI

@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 9
+local SCHEMA_VERSION = 10
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -29,7 +29,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 9,
+  schemaVersion = 10,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -79,9 +79,9 @@ return {
       { path = "step_down", label = "Decrease move step", kind = "keychord" },
       { path = "step_up", label = "Increase move step", kind = "keychord" },
     }},
-    { title = "Movement settings (cm)", options = {
+    { title = "Movement settings", options = {
       { path = "movement_start_cm", label = "Starting movement step", kind = "number",
-        min = 0.1, max = 1000, step = 0.1 },
+        min = 0.1, max = 1000, step = 0.1, help = "In centimeters." },
       { path = "movement_step_scale", label = "Step multiplier", kind = "enum",
         values = {
           { value = 2, label = "×2" },
@@ -91,13 +91,15 @@ return {
       { subtitle = "Advanced step limits",
         help = "The minimum must not exceed the maximum." },
       { path = "movement_minimum_cm", label = "Minimum movement step", kind = "number",
-        min = 0.1, max = 1000, step = 0.1 },
+        min = 0.1, max = 1000, step = 0.1, help = "In centimeters." },
       { path = "movement_maximum_cm", label = "Maximum movement step", kind = "number",
-        min = 0.1, max = 1000, step = 1 },
+        min = 0.1, max = 1000, step = 1, help = "In centimeters." },
       { path = "movement_maximum_below_cm", label = "Maximum movement below origin",
-        kind = "number", min = 0, max = 1000, step = 5 },
+        kind = "number", min = 0, max = 1000, step = 5,
+        help = "In centimeters." },
       { path = "movement_maximum_above_cm", label = "Maximum movement above origin",
-        kind = "number", min = 0, max = 5000, step = 10 },
+        kind = "number", min = 0, max = 5000, step = 10,
+        help = "In centimeters." },
     }},
     { title = "Diagnostics", options = {
       { path = "verbose_logging", label = "Verbose UE4SS logging", kind = "bool",

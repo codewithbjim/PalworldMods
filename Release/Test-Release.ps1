@@ -61,17 +61,23 @@ Assert-ReleaseCondition ($manifest.Version -eq $Version) `
 Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
     "Info.json must declare the DarnMenu dependency."
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*9') `
-    "DarnMenu schema version 9 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*10') `
+    "DarnMenu schema version 10 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
 Assert-ReleaseCondition (
-    $darnMenuSource -match 'title\s*=\s*"Movement settings \(cm\)"'
-) "Movement settings must declare centimeters once in the section title."
+    $darnMenuSource -match 'title\s*=\s*"Movement settings"'
+) "The plain Movement settings section title was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -notmatch 'note\s*=\s*"centimeters"'
-) "Movement settings must not repeat the centimeters unit on each row."
+) "Movement settings must not use per-row note labels for units."
+Assert-ReleaseCondition (
+    ([regex]::Matches(
+        $darnMenuSource,
+        'help\s*=\s*"In centimeters\."'
+    )).Count -eq 5
+) "Exactly five distance settings must show centimeters in their help text."
 Assert-ReleaseCondition (
     $darnMenuSource -notmatch 'title\s*=\s*"Interface"'
 ) "The Interface section must remain hidden from DarnMenu."
