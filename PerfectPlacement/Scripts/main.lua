@@ -42,6 +42,7 @@ local lifecycle_ui_refresh_ticks = 0
 local builder_fallback_scan_cooldown = 0
 local construction_guide_mode = nil
 local building_mode_exit_checks = 0
+local locked_construction_ui_was_active = false
 local unfrozen_ui_builder_component = nil
 local unfrozen_ui_preview_visible = nil
 local notification_generation = 0
@@ -1179,6 +1180,9 @@ local function should_release_locked_preview()
     if state ~= State.EDITING then
         return false, nil
     end
+    if freeze_transition_input_locked then
+        return false, nil
+    end
     if not is_valid(preview_actor) then
         return true, "preview object was destroyed"
     end
@@ -1197,12 +1201,20 @@ local function should_release_locked_preview()
     if allow_ui_fallback_scan then
         construction_ui_scan_context_name = scan_context_name
     end
-    local observed_construction_exit = (mode_ok and not in_building_mode)
-        or construction_ui_active == false
+    if construction_ui_active == true then
+        locked_construction_ui_was_active = true
+    end
+    -- A stale/template widget can report hidden while construction is active.
+    -- Treat false as a close edge only after this frozen preview observed its
+    -- live construction UI, while keeping builder mode independently valid.
+    local builder_reports_exit = mode_ok and not in_building_mode
+    local ui_reports_exit = locked_construction_ui_was_active
+        and construction_ui_active == false
+    local observed_construction_exit = builder_reports_exit or ui_reports_exit
     if observed_construction_exit then
         building_mode_exit_checks = building_mode_exit_checks + 1
         if building_mode_exit_checks >= 5 then
-            if construction_ui_active == false then
+            if ui_reports_exit and not builder_reports_exit then
                 return true, "Palworld closed the construction UI"
             end
             return true, "Palworld exited building mode"
@@ -1247,7 +1259,8 @@ local function start_lifecycle_monitor()
     if lifecycle_loop_callback == nil then
         lifecycle_loop_callback = function()
         lifecycle_monitor_last_tick = os.clock()
-        if state == State.SWITCHING
+        if freeze_transition_input_locked
+            or state == State.SWITCHING
             or state == State.FREEZING
             or state == State.UNFREEZING
         then
@@ -1272,7 +1285,8 @@ local function start_lifecycle_monitor()
         if lifecycle_game_thread_callback == nil then
             lifecycle_game_thread_callback = function()
             lifecycle_game_thread_pending = false
-            if state == State.SWITCHING
+            if freeze_transition_input_locked
+                or state == State.SWITCHING
                 or state == State.FREEZING
                 or state == State.UNFREEZING
             then
@@ -1639,7 +1653,9 @@ local function refresh_building_validity_ui()
 end
 
 local function refresh_locked_validity()
-    if state ~= State.EDITING
+    if Config.validity == nil
+        or Config.validity.refresh_frozen_feedback ~= true
+        or state ~= State.EDITING
         or not is_valid(builder_component)
         or not is_valid(preview_actor)
     then
@@ -1686,7 +1702,11 @@ local function refresh_locked_validity()
 end
 
 local function schedule_locked_validity_refresh()
-    if validity_refresh_pending or state ~= State.EDITING then
+    if Config.validity == nil
+        or Config.validity.refresh_frozen_feedback ~= true
+        or validity_refresh_pending
+        or state ~= State.EDITING
+    then
         return
     end
 
@@ -1991,7 +2011,10 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
         if is_locked then
             ensure_keyguide_hook()
         end
-        local construction = FindFirstOf("WBP_IngameConstruction_C")
+        local construction = cached_construction_widget
+        if not is_valid(construction) then
+            construction = FindFirstOf("WBP_IngameConstruction_C")
+        end
         if not is_valid(construction) then
             log("Construction key-guide widget instance was not found.")
             return
@@ -2113,6 +2136,7 @@ local function cancel_begin_editing(transition_id, previous_state, reason)
     preview_tick_was_enabled = nil
     builder_tick_was_enabled = nil
     locked_preview_name = nil
+    locked_construction_ui_was_active = false
     locked_origin_location = nil
     locked_origin_rotation = nil
     locked_origin_pivot = nil
@@ -2136,6 +2160,8 @@ local function begin_editing(defer_initial_validity)
     if active_component == nil then
         return false
     end
+    local construction_ui_active_at_freeze =
+        construction_ui_is_active(true)
     local previous_state = state
     local transition_id = begin_freeze_transition(State.FREEZING)
 
@@ -2292,6 +2318,9 @@ local function begin_editing(defer_initial_validity)
         )
     end
 
+    locked_construction_ui_was_active =
+        construction_ui_active_at_freeze == true
+    construction_ui_scan_context_name = nil
     state = State.EDITING
     lifecycle_ui_refresh_ticks = 0
     building_mode_exit_checks = 0
@@ -2348,6 +2377,7 @@ release_preview = function(reason)
     preview_root_component = nil
     preview_root_previous_mobility = nil
     locked_preview_name = nil
+    locked_construction_ui_was_active = false
     locked_origin_location = nil
     locked_origin_rotation = nil
     locked_origin_pivot = nil
@@ -3338,6 +3368,7 @@ ui_host_notify_callback = function()
             unfrozen_ui_builder_component = nil
             unfrozen_ui_preview_visible = nil
             construction_ui_scan_context_name = nil
+            locked_construction_ui_was_active = false
             builder_fallback_scan_cooldown = 0
             lifecycle_ui_refresh_ticks = 0
             refresh_keycaps_for_ui_host(host)
@@ -3372,6 +3403,6 @@ end
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.7-rc.1")
+log("Loaded Perfect Placement 0.1.7-rc.2")
 log("Companion key-guide UI bridge revision 23 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

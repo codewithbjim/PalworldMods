@@ -28,6 +28,7 @@ function Get-Sha256 {
 }
 
 $manifestPath = Join-Path $modRoot "Info.json"
+$configPath = Join-Path $modRoot "Scripts\config.lua"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
 $thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
@@ -41,6 +42,8 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $manifestPath -PathType Leaf) `
     "Missing manifest: $manifestPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $darnMenuPath -PathType Leaf) `
     "Missing DarnMenu adapter: $darnMenuPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $configPath -PathType Leaf) `
+    "Missing default config: $configPath"
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmSchemaPath)) `
     "Obsolete Mod Config Menu schema must not be shipped."
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
@@ -111,8 +114,9 @@ foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
     }
 }
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*11') `
-    "DarnMenu schema version 11 was not found."
+$configSource = Get-Content -LiteralPath $configPath -Raw
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*12') `
+    "DarnMenu schema version 12 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -135,6 +139,16 @@ Assert-ReleaseCondition (
     $darnMenuSource -match
         'path\s*=\s*"freeze_to_piece"[\s\S]*?kind\s*=\s*"keychord"'
 ) "DarnMenu must expose the copy-and-freeze key chord."
+Assert-ReleaseCondition (
+    $darnMenuSource -match
+        'path\s*=\s*"refresh_frozen_validity"[\s\S]*?kind\s*=\s*"bool"'
+) "DarnMenu must expose the opt-in frozen-validity toggle."
+Assert-ReleaseCondition (
+    $darnMenuSource -match 'refresh_frozen_validity\s*=\s*false'
+) "Frozen-validity feedback must default off in DarnMenu."
+Assert-ReleaseCondition (
+    $configSource -match 'refresh_frozen_feedback\s*=\s*false'
+) "Frozen-validity feedback must default off in config.lua."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
 Assert-ReleaseCondition (
@@ -166,6 +180,12 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -match 'widget:UpdateDisplay\(\)'
 ) "Frozen validity refresh must update Palworld's placement warning."
+Assert-ReleaseCondition (
+    ([regex]::Matches(
+        $mainSource,
+        'Config\.validity\.refresh_frozen_feedback\s*~=\s*true'
+    )).Count -eq 2
+) "Both frozen-validity entry points must be disabled unless explicitly enabled."
 Assert-ReleaseCondition (
     ([regex]::Matches(
         $mainSource,
@@ -212,6 +232,30 @@ Assert-ReleaseCondition (
     $constructionUiFunction.Groups["body"].Value -match
         'if\s+not\s+allow_fallback_scan\s+then\s+return\s+nil'
 ) "A class-wide construction-widget scan must require a new preview context."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'local\s+ui_reports_exit\s*=\s*locked_construction_ui_was_active\s+' +
+        'and\s+construction_ui_active\s*==\s*false'
+) "Construction UI visibility must be edge-triggered before it can auto-release Freeze."
+Assert-ReleaseCondition (
+    $mainSource -notmatch
+        'observed_construction_exit\s*=\s*\(mode_ok\s+and\s+not\s+' +
+        'in_building_mode\)\s+or\s+construction_ui_active\s*==\s*false'
+) "A hidden construction widget must not independently auto-release Freeze."
+$lifecycleMonitorFunction = [regex]::Match(
+    $mainSource,
+    'local function start_lifecycle_monitor\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function refresh_overlap_component'
+)
+Assert-ReleaseCondition $lifecycleMonitorFunction.Success `
+    "The lifecycle monitor function was not found."
+Assert-ReleaseCondition (
+    ([regex]::Matches(
+        $lifecycleMonitorFunction.Groups["body"].Value,
+        'if\s+freeze_transition_input_locked\s+or\s+state\s*==\s*State\.SWITCHING'
+    )).Count -eq 2
+) "Both lifecycle monitor stages must pause while Freeze is settling."
 Assert-ReleaseCondition (
     $mainSource -match
         'if\s+lifecycle_game_thread_pending\s+then\s+return'

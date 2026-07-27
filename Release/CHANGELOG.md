@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.7-rc.2
+
+Freeze lifecycle hotfix.
+
+### Fixed
+
+- Prevent a successfully frozen preview from immediately auto-releasing when Palworld temporarily reports the construction widget as hidden during its key-guide rebuild.
+- Pause lifecycle release checks while Freeze or Unfreeze is still settling.
+- Preserve automatic cleanup after leaving construction by treating widget closure as an edge only after the current frozen preview has observed a live construction UI.
+
+### Changed
+
+- Make live red/blue frozen-validity feedback opt-in and disabled by default because collision and material refreshes can cause visible stutter on some builds.
+- Expose the experimental toggle in DarnMenu; `Scripts/config.lua` users can set `validity.refresh_frozen_feedback = true`.
+
 ## 0.1.7-rc.1
 
 Optional DarnMenu integration hotfix.

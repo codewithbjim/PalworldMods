@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 11
+local SCHEMA_VERSION = 12
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -30,7 +30,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 11,
+  schemaVersion = 12,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -60,6 +60,7 @@ return {
     movement_step_scale = 10,
     movement_maximum_below_cm = 25.0,
     movement_maximum_above_cm = 650.0,
+    refresh_frozen_validity = false,
     use_palworld_keycaps = true,
     verbose_logging = false,
   },
@@ -69,6 +70,9 @@ return {
       { path = "copy_piece", label = "Copy targeted build piece", kind = "keychord" },
       { path = "freeze_to_piece", label = "Copy and freeze to targeted piece",
         kind = "keychord" },
+      { path = "refresh_frozen_validity", label = "Live frozen validity feedback",
+        kind = "bool",
+        help = "Experimental. Repaints valid/error state after movement and may cause stutter." },
     }},
     { title = "Movement bindings", options = {
       { path = "move_left", label = "Move left", kind = "keychord" },
@@ -139,6 +143,9 @@ local SETTING_SPECS = {
     movement_maximum_above_cm = {
         section = "movement", field = "maximum_above_initial_cm", kind = "number",
         minimum = 0.0, maximum = 5000.0,
+    },
+    refresh_frozen_validity = {
+        section = "validity", field = "refresh_frozen_feedback", kind = "boolean",
     },
     use_palworld_keycaps = {
         section = "ui", field = "use_palworld_keycaps", kind = "boolean",

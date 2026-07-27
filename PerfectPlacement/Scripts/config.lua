@@ -39,6 +39,12 @@ return {
         coarse = 15.0,
     },
 
+    validity = {
+        -- Experimental. Rechecking overlaps and repainting every material after
+        -- frozen movement can cause visible frame-time spikes on large pieces.
+        refresh_frozen_feedback = false,
+    },
+
     -- Fallback bindings used when DarnMenu is absent or has no saved override.
     -- Symbolic key names drive both UE4SS input registration and the
     -- keycaps in the companion UI. Supported names include A-Z, 0-9, F1-F12,

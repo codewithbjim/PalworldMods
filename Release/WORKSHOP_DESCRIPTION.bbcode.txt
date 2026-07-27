@@ -53,7 +53,7 @@ Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1
 [h2]Configure controls[/h2]
 With optional DarnMenu installed, open [b]ESC → Mod Options → Perfect Placement[/b] to edit key chords. Apply changes and restart Palworld. Without DarnMenu, Perfect Placement uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
-The optional DarnMenu page also configures movement steps and limits and verbose diagnostic logging.
+The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and experimental live frozen-validity feedback. Live validity feedback is disabled by default because its collision and material refresh can cause stutter.
 
 [h2]Important beta limitations[/h2]
 [list]

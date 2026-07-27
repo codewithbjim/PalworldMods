@@ -40,6 +40,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 
 ## 3. Freeze lifecycle stress test
 
+- [ ] Freeze a preview and leave all controls untouched for at least five seconds. Confirm it remains frozen and no `Auto-releasing frozen preview` entry appears in `UE4SS.log`.
 - [ ] Freeze and Unfreeze normally at least 20 consecutive times.
 - [ ] Rapidly press Freeze for at least 10 seconds. Only one transition should occur at a time, with no crash or stuck preview.
 - [ ] Press movement, rotation, reset, step-up, and step-down repeatedly during the first second after Freeze.
@@ -55,9 +56,9 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Alternate movement and rotation rapidly for at least 30 seconds.
 - [ ] Spam Reset while alternating movement and rotation.
 - [ ] Verify the vertical lower and upper clamps.
-- [ ] Freeze a valid preview, move it into an invalid area, then move it clear. Confirm the mesh changes blue -> red -> blue and the warning matches each state without Unfreezing.
-- [ ] Repeat starting from an invalid preview. Confirm the object remains at the exact user-controlled transform during every validity repaint.
-- [ ] Spam movement, rotation, and Reset across a validity boundary. Confirm refreshes coalesce, the builder never retargets toward the camera, and the preview does not remain red after the result becomes valid.
+- [ ] With live frozen-validity feedback at its default Off setting, spam movement, rotation, and Reset across validity boundaries and confirm there is no input-linked stutter.
+- [ ] Opt in to live frozen-validity feedback, relaunch, then move a frozen preview blue -> red -> blue and confirm the warning follows the placeable state.
+- [ ] While the experimental feedback is enabled, confirm the object remains at the exact user-controlled transform; then restore the option to Off before release testing continues.
 - [ ] Confirm no repeated error floods appear in the UE4SS log.
 
 ## 5. Palworld lifecycle interactions
@@ -91,6 +92,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Verify DarnMenu rejects out-of-range numeric values and Perfect Placement rejects invalid values placed into the shared file by hand.
 - [ ] Set movement minimum above maximum by hand and confirm both limits safely fall back to `config.lua` with one clear log message.
 - [ ] Toggle verbose logging, relaunch, and confirm the saved value applies.
+- [ ] Toggle live frozen-validity feedback, relaunch, and confirm the saved value applies; verify a missing saved value keeps the feature Off.
 - [ ] Temporarily move `Mods/shared/PerfectPlacement_user.lua`, remove or disable both DarnMenu and DarnUI, and confirm Perfect Placement starts without a missing-dependency or Lua error and uses `Scripts/config.lua` defaults.
 - [ ] Restore the saved player override while DarnMenu and DarnUI remain disabled, then confirm Perfect Placement loads the override without requiring either optional mod.
 - [ ] Test NumLock on and off for Numpad 1/3.

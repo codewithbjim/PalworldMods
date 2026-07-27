@@ -31,7 +31,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 
 With DarnMenu installed, configure key chords under [b]ESC → Mod Options → Perfect Placement[/b]. Binding changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
-The optional DarnMenu page also configures movement steps and limits and verbose diagnostic logging. DarnUI is installed as DarnMenu's own dependency.
+The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and experimental live frozen-validity feedback. Live validity feedback is disabled by default because its collision and material refresh can cause stutter. DarnUI is installed as DarnMenu's own dependency.
 
 [line]
 [size=5][b]Installation[/b][/size]
@@ -65,9 +65,7 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 [*][b]Copy targeted build piece:[/b] Shift + Middle mouse
 [/list]
 
-The key guide appears only while a live construction preview is available.
-Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.
-Gamepad placement controls are not supported in this release.
+The key guide appears only while a live construction preview is available. Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected. Gamepad placement controls are not supported in this release.
 
 [line]
 [size=5][b]Notes and limitations[/b][/size]

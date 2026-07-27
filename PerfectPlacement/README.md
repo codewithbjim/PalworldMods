@@ -45,7 +45,7 @@ Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation increm
 
 Optional: with DarnMenu 1.6.2 or newer installed, Perfect Placement appears under **ESC → Mod Options**. Its native key-chord controls support a primary key plus any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed bindings to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying a binding change because UE4SS cannot unregister startup keybinds safely.
 
-The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; and verbose diagnostic logging. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
+The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; verbose diagnostic logging; and experimental live frozen-validity feedback. Live validity feedback is disabled by default because refreshing collision and materials after each frozen transform can cause stutter. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
 
 Without DarnMenu, Perfect Placement's built-in controls remain available. It uses the defaults in `Scripts/config.lua` when no saved `Mods/shared/PerfectPlacement_user.lua` override exists. DarnUI is supplied as DarnMenu's own dependency; Perfect Placement does not require either mod and does not create a separate DarnUI overlay.
 
