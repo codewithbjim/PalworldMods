@@ -1,35 +1,36 @@
 # Changelog
 
+## 0.1.7-rc.1
+
+Optional DarnMenu integration hotfix.
+
+### Changed
+
+- Make DarnMenu an optional integration instead of a required dependency.
+- Continue using built-in controls and `Scripts/config.lua` defaults when DarnMenu is not installed and no saved player override exists.
+- Keep in-game Mod Options and saved player overrides available when DarnMenu 1.6.2 or newer is installed.
+- Correct the Steam package dependency identifier for the official UE4SS Experimental item.
+
 ## 0.1.7-rc
 
 Stability and validity-feedback release candidate.
 
 ### Fixed
 
-- Refresh frozen-preview collision validity after movement, rotation, and
-  Reset, then update Palworld's valid/error material and placement warning when
-  the preview crosses between valid and invalid positions.
-- Verify the actor's actual transform after UE4SS `FHitResult`
-  output-marshalling errors, and apply the checker and visible preview
-  independently so one transform cannot prevent the other.
-- Keep asynchronous callbacks alive until UE4SS safely retires them, preventing
-  a removed game-thread hook from leaving placement controls and the frozen UI
-  unresponsive.
+- Refresh frozen-preview collision validity after movement, rotation, and Reset, then update Palworld's valid/error material and placement warning when the preview crosses between valid and invalid positions.
+- Verify the actor's actual transform after UE4SS `FHitResult` output-marshalling errors, and apply the checker and visible preview independently so one transform cannot prevent the other.
+- Keep asynchronous callbacks alive until UE4SS safely retires them, preventing a removed game-thread hook from leaving placement controls and the frozen UI unresponsive.
 - Harden build-piece switching against stale or spammed transitions.
-- Reacquire delayed UI and toast objects after world or widget changes instead
-  of retaining stale UObject wrappers.
+- Reacquire delayed UI and toast objects after world or widget changes instead of retaining stale UObject wrappers.
 
 ### Performance
 
-- Stop class-wide construction-widget scans during normal lifecycle polling.
-  Scan only for a new active preview, then reuse the cached live widget.
-- Coalesce pending lifecycle, transform-hold, and validity-refresh callbacks so
-  hitches and rapid input cannot accumulate duplicate game-thread work.
+- Stop class-wide construction-widget scans during normal lifecycle polling. Scan only for a new active preview, then reuse the cached live widget.
+- Coalesce pending lifecycle, transform-hold, and validity-refresh callbacks so hitches and rapid input cannot accumulate duplicate game-thread work.
 
 ### Compatibility
 
-- Prefer UE4SS's isolated `ProcessEvent` game-thread route when available,
-  while retaining the established queue as a fallback.
+- Prefer UE4SS's isolated `ProcessEvent` game-thread route when available, while retaining the established queue as a fallback.
 - Keep the DarnMenu 1.6.2+ requirement and `Scripts/config.lua` fallback.
 
 ## 0.1.6-release
@@ -38,25 +39,21 @@ Configuration and lifecycle-stability update.
 
 ### Added
 
-- Configure Perfect Placement under
-  `ESC → Mod Options → Perfect Placement` with DarnMenu 1.6.2.
+- Configure Perfect Placement under `ESC → Mod Options → Perfect Placement` with DarnMenu 1.6.2.
 - Remap every placement action with DarnMenu's native key-chord editor.
-- Configure movement increments, step limits, vertical bounds, and verbose
-  diagnostic logging in game.
+- Configure movement increments, step limits, vertical bounds, and verbose diagnostic logging in game.
 - Save player overrides in `Mods/shared/PerfectPlacement_user.lua`.
 
 ### Fixed
 
-- Prevent recreated placement UI widgets and world reloads from registering
-  duplicate input callbacks.
+- Prevent recreated placement UI widgets and world reloads from registering duplicate input callbacks.
 - Keep each keypress limited to one placement action throughout a play session.
 - Hide the Perfect Placement guide when construction mode closes.
 - Refresh displayed keycaps safely when the placement UI is recreated.
 
 ### Changed
 
-- Replace the previous Mod Config Menu integration and remove its obsolete
-  schema and reader from Nexus and Workshop packages.
+- Replace the previous Mod Config Menu integration and remove its obsolete schema and reader from Nexus and Workshop packages.
 - Require DarnMenu 1.6.2 or newer. DarnUI is installed through DarnMenu.
 - Use `Scripts/config.lua` defaults when no saved player override is available.
 - Binding and configuration changes apply after restarting Palworld.
@@ -66,14 +63,11 @@ Configuration and lifecycle-stability update.
 Input and freeze-lifecycle stability hotfix for the 0.1.5 release line.
 
 - Serialize configured keyboard and mouse actions onto the game thread.
-- Ignore Freeze, Unfreeze, movement, rotation, reset, step, and copy inputs
-  while the placement transition is settling.
+- Ignore Freeze, Unfreeze, movement, rotation, reset, step, and copy inputs while the placement transition is settling.
 - Discard queued inputs captured before or during a placement transition.
-- Validate the builder component, install checker, and preview actor before
-  applying a transform.
+- Validate the builder component, install checker, and preview actor before applying a transform.
 - Retain delayed transition callbacks until UE4SS executes them.
-- Keep lifecycle polling from touching placement objects during Freeze and
-  Unfreeze.
+- Keep lifecycle polling from touching placement objects during Freeze and Unfreeze.
 - Package every Mod Config Menu runtime file in Nexus and Workshop builds.
 
 ## 0.1.5

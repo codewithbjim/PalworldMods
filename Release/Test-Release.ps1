@@ -68,8 +68,12 @@ Assert-ReleaseCondition ($manifest.PackageName -eq "PerfectPlacement") `
     "Unexpected package name '$($manifest.PackageName)'."
 Assert-ReleaseCondition ($manifest.Version -eq $Version) `
     "Info.json version '$($manifest.Version)' does not match '$Version'."
-Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
-    "Info.json must declare the DarnMenu dependency."
+Assert-ReleaseCondition ($manifest.Dependencies -contains "UE4SSExperimentalPW") `
+    "Info.json must declare the official UE4SS Experimental package dependency."
+Assert-ReleaseCondition (-not ($manifest.Dependencies -contains "DarnMenu")) `
+    "DarnMenu must remain an optional integration, not a hard package dependency."
+Assert-ReleaseCondition (@($manifest.Dependencies).Count -eq 1) `
+    "Info.json must contain only the UE4SSExperimentalPW hard dependency."
 Assert-ReleaseCondition ($manifest.Thumbnail -eq "thumbnail.png") `
     "Info.json Thumbnail must be thumbnail.png."
 Assert-ReleaseCondition ((Get-Item -LiteralPath $thumbnailPath).Length -lt 1MB) `
@@ -93,6 +97,19 @@ $firstWorkshopChangelogLine = (
 Assert-ReleaseCondition (
     $firstWorkshopChangelogLine -match [regex]::Escape($Version)
 ) "WORKSHOP_CHANGELOG.txt does not begin with $Version."
+foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
+    $wrappedLine = Select-String `
+        -LiteralPath $publicChangelog `
+        -Pattern '^[ \t]+\S' |
+        Select-Object -First 1
+    if ($wrappedLine) {
+        throw (
+            "Hard-wrapped changelog line: {0}:{1}" -f
+            $wrappedLine.Path,
+            $wrappedLine.LineNumber
+        )
+    }
+}
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
 Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*11') `
     "DarnMenu schema version 11 was not found."
@@ -235,6 +252,9 @@ $workshopManifest =
     Get-Content -LiteralPath $workshopManifestPath -Raw | ConvertFrom-Json
 Assert-ReleaseCondition ($workshopManifest.Version -eq $Version) `
     "Workshop manifest version '$($workshopManifest.Version)' is stale."
+Assert-ReleaseCondition (
+    (Get-Sha256 $manifestPath) -eq (Get-Sha256 $workshopManifestPath)
+) "Workshop Info.json must match source Info.json byte-for-byte."
 Assert-ReleaseCondition (
     -not (Test-Path -LiteralPath (
         Join-Path $WorkshopPath "PerfectPlacement.modconfig.json"

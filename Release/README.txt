@@ -1,20 +1,21 @@
-PERFECT PLACEMENT 0.1.7-RC
-=======================
+PERFECT PLACEMENT 0.1.7-RC.1
+=========================
 
 RELEASE CANDIDATE
 -----------------
-Test this build in a disposable world or with a verified save backup before
-using it for an important build.
+Test this build in a disposable world or with a verified save backup before using it for an important build.
 
 REQUIREMENT
 -----------
-A Palworld-compatible UE4SS installation and DarnMenu 1.6.2 or newer.
-DarnUI is installed as DarnMenu's dependency.
+A Palworld-compatible UE4SS installation.
+
+OPTIONAL DARNMENU INTEGRATION
+-----------------------------
+DarnMenu 1.6.2 or newer adds in-game Mod Options. DarnUI is installed as DarnMenu's own dependency. Perfect Placement works without either one.
 
 INSTALLATION
 ------------
-Extract this archive into the Palworld installation folder containing "Pal".
-Allow folders to merge.
+Extract this archive into the Palworld installation folder containing "Pal". Allow folders to merge.
 
 Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\enabled.txt
@@ -48,22 +49,18 @@ Normal middle-mouse Pal commands remain unaffected.
 
 Gamepad placement controls are not supported in this release.
 
-DARNMENU
---------
-Open ESC > Mod Options > Perfect Placement to edit key chords. Apply changes,
-then restart Palworld. Saved overrides live in:
+DARNMENU (OPTIONAL)
+-------------------
+Open ESC > Mod Options > Perfect Placement to edit key chords. Apply changes, then restart Palworld. Saved overrides live in:
   Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
-The page also configures movement-step values, step multiplier, vertical
-limits, and verbose diagnostic logging.
+The page also configures movement-step values, step multiplier, vertical limits, and verbose diagnostic logging.
 
-Without DarnMenu or a saved override, Scripts\config.lua supplies the defaults.
+Without DarnMenu, the built-in controls remain available. Scripts\config.lua supplies the defaults when no saved override exists.
 
 KEYBIND COMPATIBILITY
 ---------------------
-Bindings may become intermittent when the same chord is registered by another
-mod or by UE4SS's built-in Keybinds mod. Check all UE4SS and mod keybinds for
-conflicts, then remap one of the overlapping actions.
+Bindings may become intermittent when the same chord is registered by another mod or by UE4SS's built-in Keybinds mod. Check all UE4SS and mod keybinds for conflicts, then remap one of the overlapping actions.
 
 UNINSTALL
 ---------

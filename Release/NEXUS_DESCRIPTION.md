@@ -3,6 +3,7 @@
 Freeze a building preview in place, walk around it, and make precise positional and rotational adjustments before handing control back to Palworld.
 
 Perfect Placement is for the moment when vanilla placement is almost right—but the camera, terrain, or snap system will not let you put a piece exactly where you want it.
+
 ---
 
 ## Highlights
@@ -21,23 +22,19 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 
 - Palworld on Windows
 - A Palworld-compatible UE4SS installation
-- DarnMenu 1.6.2 or newer (DarnUI is DarnMenu's dependency)
+- Optional: DarnMenu 1.6.2 or newer for in-game Mod Options
 
 Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install both parts.
 
-Configure key chords under **ESC → Mod Options → Perfect Placement**. Binding
-changes apply after restarting Palworld. If DarnMenu is unavailable, the mod
-falls back to its built-in bindings.
+With DarnMenu installed, configure key chords under **ESC → Mod Options → Perfect Placement**. Binding changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and `Scripts/config.lua` defaults unless a saved `Mods/shared/PerfectPlacement_user.lua` override already exists.
 
-The same page configures movement steps and limits and verbose diagnostic
-logging.
+The optional DarnMenu page also configures movement steps and limits and verbose diagnostic logging. DarnUI is installed as DarnMenu's own dependency.
 
 ---
 
 ## Installation
 
-Extract the archive into the Palworld installation folder containing `Pal`.
-Allow folders to merge.
+Extract the archive into the Palworld installation folder containing `Pal`. Allow folders to merge.
 
 The installed files should end up at:
 
@@ -66,9 +63,7 @@ PerfectPlacement : 1
 - **Reset to frozen transform:** Numpad 5
 - **Copy targeted build piece:** Shift + Middle mouse
 
-The key guide appears only while a live construction preview is available.
-Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.
-Gamepad placement controls are not supported in this release.
+The key guide appears only while a live construction preview is available. Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected. Gamepad placement controls are not supported in this release.
 
 ---
 
@@ -93,8 +88,7 @@ Check the UE4SS console/log for `[PerfectPlacement]` errors and confirm Num Lock
 
 **The guide is missing or incomplete**
 
-Remove older Perfect Placement `.pak` files before installing the current one.
-Do not keep two versions under different filenames.
+Remove older Perfect Placement `.pak` files before installing the current one. Do not keep two versions under different filenames.
 
 When reporting a problem, include your Palworld version, UE4SS version, installed mod list, reproduction steps, and the relevant UE4SS log section.
 
@@ -108,5 +102,4 @@ Open an issue on the project repository and include the diagnostic information l
 
 ## Support the project
 
-If Perfect Placement has been useful and you would like to support continued
-development, you can leave a tip on [Ko-fi](https://ko-fi.com/virtualbjorn).
+If Perfect Placement has been useful and you would like to support continued development, you can leave a tip on [Ko-fi](https://ko-fi.com/virtualbjorn).

@@ -1,7 +1,7 @@
 -- Optional DarnMenu integration for Perfect Placement.
 --
 -- DarnMenu writes player changes to Mods/shared/PerfectPlacement_user.lua.
--- config.lua remains the standalone baseline when DarnMenu is not installed.
+-- config.lua remains the baseline when no saved player override is available.
 
 local M = {}
 
@@ -34,7 +34,7 @@ return {
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
-  note = "Requires DarnMenu 1.6.2 or newer. Bindings apply after restarting Palworld.",
+  note = "Optional integration for DarnMenu 1.6.2 or newer. Bindings apply after restarting Palworld.",
   applyNote = "Saved. Restart Palworld to apply binding changes.",
   live = false,
   defaults = {

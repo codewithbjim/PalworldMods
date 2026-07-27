@@ -1,12 +1,17 @@
+Version 0.1.7-rc.1 - Optional DarnMenu integration
+
+Changed
+- DarnMenu is now optional instead of a required Workshop dependency.
+- Without DarnMenu, Perfect Placement uses its built-in controls and Scripts/config.lua defaults unless a saved player override already exists.
+- Install DarnMenu 1.6.2 or newer only for in-game Mod Options and saved player overrides.
+- Correct the package dependency identifier for the official UE4SS Experimental item.
+
 Version 0.1.7-rc - Stability and validity feedback
 
 Fixed
-- Refresh valid/invalid placement feedback after frozen movement, rotation, and
-  Reset.
-- Verify transforms after UE4SS FHitResult output-marshalling errors so the
-  checker and visible preview remain synchronized.
-- Harden callback lifetimes to prevent controls and the frozen UI becoming
-  unresponsive after rapid input.
+- Refresh valid/invalid placement feedback after frozen movement, rotation, and Reset.
+- Verify transforms after UE4SS FHitResult output-marshalling errors so the checker and visible preview remain synchronized.
+- Harden callback lifetimes to prevent controls and the frozen UI becoming unresponsive after rapid input.
 - Harden build-piece switching against stale or spammed transitions.
 - Reacquire delayed UI objects safely after map and widget changes.
 
@@ -16,23 +21,19 @@ Performance
 - Coalesce pending game-thread work during hitches and rapid input.
 
 Compatibility
-- Prefer UE4SS's isolated ProcessEvent route when available, with the existing
-  queue as fallback.
+- Prefer UE4SS's isolated ProcessEvent route when available, with the existing queue as fallback.
 - DarnMenu 1.6.2 or newer remains required.
 
 Version 0.1.6-release - Configuration and lifecycle stability
 
 Added
-- Configure Perfect Placement under ESC > Mod Options > Perfect Placement with
-  DarnMenu 1.6.2.
+- Configure Perfect Placement under ESC > Mod Options > Perfect Placement with DarnMenu 1.6.2.
 - Remap every placement action with native key-chord controls.
-- Configure movement increments, step limits, vertical bounds, and verbose
-  diagnostic logging in game.
+- Configure movement increments, step limits, vertical bounds, and verbose diagnostic logging in game.
 - Save player overrides in Mods/shared/PerfectPlacement_user.lua.
 
 Fixed
-- Prevent placement UI recreation and world reloads from registering duplicate
-  input callbacks.
+- Prevent placement UI recreation and world reloads from registering duplicate input callbacks.
 - Keep each keypress limited to one placement action.
 - Hide the placement guide when construction mode closes.
 - Refresh displayed keycaps safely when the placement UI is recreated.

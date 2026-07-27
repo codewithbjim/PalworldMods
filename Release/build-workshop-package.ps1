@@ -5,7 +5,7 @@ param(
 
     [string]$ThumbnailSource,
 
-    [string]$Version = "0.1.7-rc"
+    [string]$Version = "0.1.7-rc.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,11 +84,14 @@ if ($manifest.Version -ne $Version) {
 if ($manifest.Thumbnail -ne "thumbnail.png") {
     throw "Info.json Thumbnail must be 'thumbnail.png' to match the staged Workshop asset."
 }
-if (-not ($manifest.Dependencies -contains "UE4SS")) {
-    throw "The staged package does not declare its UE4SS dependency."
+if (-not ($manifest.Dependencies -contains "UE4SSExperimentalPW")) {
+    throw "The staged package does not declare the official UE4SS Experimental package dependency."
 }
-if (-not ($manifest.Dependencies -contains "DarnMenu")) {
-    throw "The staged package does not declare its DarnMenu dependency."
+if ($manifest.Dependencies -contains "DarnMenu") {
+    throw "DarnMenu must remain an optional integration, not a hard package dependency."
+}
+if (@($manifest.Dependencies).Count -ne 1) {
+    throw "The staged package must contain only the UE4SSExperimentalPW hard dependency."
 }
 foreach ($type in @("Lua", "LogicMods")) {
     if (-not ($manifest.InstallRule.Type -contains $type)) {

@@ -3372,6 +3372,6 @@ end
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.7-rc")
+log("Loaded Perfect Placement 0.1.7-rc.1")
 log("Companion key-guide UI bridge revision 23 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

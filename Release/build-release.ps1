@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.7-rc",
+    [string]$Version = "0.1.7-rc.1",
     [switch]$KeepStage
 )
 
@@ -38,6 +38,15 @@ foreach ($required in @(
 $manifest = Get-Content -LiteralPath (Join-Path $luaSource "Info.json") -Raw | ConvertFrom-Json
 if ($manifest.Version -ne $Version) {
     throw "Info.json version '$($manifest.Version)' does not match requested version '$Version'."
+}
+if (-not ($manifest.Dependencies -contains "UE4SSExperimentalPW")) {
+    throw "Info.json must declare the official UE4SS Experimental package dependency."
+}
+if ($manifest.Dependencies -contains "DarnMenu") {
+    throw "DarnMenu must remain an optional integration, not a hard package dependency."
+}
+if (@($manifest.Dependencies).Count -ne 1) {
+    throw "Info.json must contain only the UE4SSExperimentalPW hard dependency."
 }
 if ($manifest.Thumbnail -ne "thumbnail.png") {
     throw "Info.json Thumbnail must be 'thumbnail.png' to match the packaged release asset."

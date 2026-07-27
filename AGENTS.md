@@ -21,3 +21,9 @@ be recovered later for maintenance or a forked update.
 
 Treat a release as incomplete until its annotated tag has been verified and
 pushed.
+
+## Release file formatting
+
+- Keep each prose paragraph and list item on one physical line in every human-authored release text file, including changelogs, descriptions, readmes, and checklists.
+- Use extra line breaks only for structural Markdown or BBCode, code blocks, tables, and intentionally preformatted layouts.
+- Review release diffs for accidental hard-wrapped sentences before committing or publishing.

@@ -2,14 +2,13 @@
   "ModName": "Perfect Placement",
   "PackageName": "PerfectPlacement",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.1.7-rc",
+  "Version": "0.1.7-rc.1",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",
   "Description": "Freezes a building preview so the player can walk around and fine-tune its transform before final placement.",
   "Dependencies": [
-    "UE4SS",
-    "DarnMenu"
+    "UE4SSExperimentalPW"
   ],
   "Tags": [
     "UE4SS",
