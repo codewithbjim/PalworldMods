@@ -2,19 +2,32 @@
 
 ## 0.1.6-release
 
-- Replace Mod Config Menu integration with DarnMenu 1.6.2 native key-chord
-  controls under `ESC → Mod Options`.
-- Add validated DarnMenu controls for movement steps and limits and verbose
-  diagnostics.
-- Consolidate centimeter units into the Movement settings section heading for
-  a more compact options layout.
-- Keep the unfinished Interface setting hidden from DarnMenu.
-- Read saved overrides from `Mods/shared/PerfectPlacement_user.lua`.
-- Remove the MCM JSON schema and UTF-16 JSON reader from release packages.
-- Fall back safely to `Scripts/config.lua` when DarnMenu is unavailable.
-- Hide the Perfect Placement guide after Palworld closes construction mode.
-- Register placement controls only once during startup, preventing recreated UI
-  hosts from accumulating duplicate callbacks.
+### DarnMenu configuration
+
+- Replace Mod Config Menu with DarnMenu 1.6.2 native key-chord controls under
+  `ESC → Mod Options → Perfect Placement`.
+- Configure movement increments, step limits, vertical bounds, and diagnostic
+  logging from the in-game menu.
+- Save overrides to `Mods/shared/PerfectPlacement_user.lua`; changes apply
+  after restarting Palworld.
+- Use a compact `Movement settings (cm)` layout and keep unfinished options
+  hidden.
+- Fall back safely to `Scripts/config.lua` if no saved DarnMenu configuration
+  is available.
+
+### Stability and interface
+
+- Register each placement control once at startup so recreated UI widgets and
+  world reloads cannot accumulate duplicate input callbacks.
+- Refresh the displayed keycaps without re-registering controls.
+- Hide the Perfect Placement guide when construction mode closes, including
+  after leaving a frozen preview.
+
+### Packaging
+
+- Remove the obsolete Mod Config Menu schema and reader from Nexus and
+  Workshop packages.
+- Require DarnMenu 1.6.2 or newer; DarnUI remains supplied through DarnMenu.
 
 ## 0.1.5-crashfix.1
 
