@@ -50,7 +50,7 @@ then restart Palworld. Saved overrides live in:
   Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
 The page also configures movement-step values, step multiplier, vertical
-limits, keycap icons, and verbose diagnostic logging.
+limits, and verbose diagnostic logging.
 
 Without DarnMenu or a saved override, Scripts\config.lua supplies the defaults.
 

@@ -86,8 +86,7 @@ release is blocked if any required item fails or cannot be explained.
       rejects invalid values placed into the shared file by hand.
 - [ ] Set movement minimum above maximum by hand and confirm both limits safely
       fall back to `config.lua` with one clear log message.
-- [ ] Toggle Palworld keycaps and verbose logging separately, relaunching after
-      each change.
+- [ ] Toggle verbose logging, relaunch, and confirm the saved value applies.
 - [ ] Remove or disable DarnMenu and confirm Perfect Placement safely falls
       back to `Scripts/config.lua` without a Lua error.
 - [ ] Test NumLock on and off for Numpad 1/3.

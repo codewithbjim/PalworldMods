@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 8
+local SCHEMA_VERSION = 9
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -29,7 +29,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 8,
+  schemaVersion = 9,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -98,10 +98,6 @@ return {
         kind = "number", min = 0, max = 1000, step = 5 },
       { path = "movement_maximum_above_cm", label = "Maximum movement above origin",
         kind = "number", min = 0, max = 5000, step = 10 },
-    }},
-    { title = "Interface", options = {
-      { path = "use_palworld_keycaps", label = "Use Palworld keycap icons",
-        kind = "bool" },
     }},
     { title = "Diagnostics", options = {
       { path = "verbose_logging", label = "Verbose UE4SS logging", kind = "bool",
@@ -318,7 +314,7 @@ function M.apply_settings(config, report)
 
     if loaded_count > 0 then
         report_message(string.format(
-            "Loaded %d DarnMenu gameplay/interface settings (schema v%d).",
+            "Loaded %d DarnMenu settings (schema v%d).",
             loaded_count,
             SCHEMA_VERSION
         ))

@@ -4,10 +4,11 @@
 
 - Replace Mod Config Menu integration with DarnMenu 1.6.2 native key-chord
   controls under `ESC → Mod Options`.
-- Add validated DarnMenu controls for movement steps and limits, Palworld
-  keycaps, and verbose diagnostics.
+- Add validated DarnMenu controls for movement steps and limits and verbose
+  diagnostics.
 - Consolidate centimeter units into the Movement settings section heading for
   a more compact options layout.
+- Keep the unfinished Interface setting hidden from DarnMenu.
 - Read saved overrides from `Mods/shared/PerfectPlacement_user.lua`.
 - Remove the MCM JSON schema and UTF-16 JSON reader from release packages.
 - Fall back safely to `Scripts/config.lua` when DarnMenu is unavailable.

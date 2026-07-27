@@ -29,8 +29,8 @@ Configure key chords under **ESC → Mod Options → Perfect Placement**. Bindin
 changes apply after restarting Palworld. If DarnMenu is unavailable, the mod
 falls back to its built-in bindings.
 
-The same page configures movement steps and limits, Palworld keycap icons, and
-verbose diagnostic logging.
+The same page configures movement steps and limits and verbose diagnostic
+logging.
 
 ---
 

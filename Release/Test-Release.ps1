@@ -61,8 +61,8 @@ Assert-ReleaseCondition ($manifest.Version -eq $Version) `
 Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
     "Info.json must declare the DarnMenu dependency."
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*8') `
-    "DarnMenu schema version 8 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*9') `
+    "DarnMenu schema version 9 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -72,6 +72,9 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $darnMenuSource -notmatch 'note\s*=\s*"centimeters"'
 ) "Movement settings must not repeat the centimeters unit on each row."
+Assert-ReleaseCondition (
+    $darnMenuSource -notmatch 'title\s*=\s*"Interface"'
+) "The Interface section must remain hidden from DarnMenu."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
 $keycapRefresh = [regex]::Match(
