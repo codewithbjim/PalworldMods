@@ -57,8 +57,12 @@ release is blocked if any required item fails or cannot be explained.
 
 ## 5. Palworld lifecycle interactions
 
-- [ ] Freeze, then press Escape and return to construction.
-- [ ] Freeze, then open and close the build menu.
+- [ ] Freeze, then press Escape. Confirm the Perfect Placement guide and toast
+      disappear within one second and remain hidden during normal gameplay.
+- [ ] Freeze, then open and close the build menu. Confirm no frozen or unfrozen
+      control menu remains after construction mode closes.
+- [ ] Return to construction after each exit test and confirm the unfrozen guide
+      appears only when a live placement preview exists.
 - [ ] Freeze, then select a different build piece.
 - [ ] Freeze, then place the current piece through Palworld's normal path.
 - [ ] Freeze, then cancel or destroy the active preview.

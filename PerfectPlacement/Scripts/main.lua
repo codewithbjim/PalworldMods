@@ -25,6 +25,7 @@ local transform_loop_started = false
 local preview_tick_was_enabled = nil
 local builder_component = nil
 local cached_builder_component = nil
+local cached_construction_widget = nil
 local builder_tick_was_enabled = nil
 local lifecycle_monitor_started = false
 local lifecycle_monitor_last_tick = -1000.0
@@ -960,6 +961,63 @@ local function set_builder_tick_enabled(enabled)
     return true
 end
 
+local function construction_ui_is_active()
+    -- The builder component and preview can remain valid after construction
+    -- mode closes, particularly while their ticks are suspended for Freeze.
+    -- Live construction widgets supply an independent lifecycle signal. Check
+    -- every instance because Unreal can retain a stale hidden widget while a
+    -- newer construction screen is active.
+    local function query_widget_visibility(construction)
+        local visibility_ok, visible = pcall(function()
+            return construction:IsVisible()
+        end)
+        if visibility_ok then
+            return visible == true
+        end
+
+        local viewport_ok, in_viewport = pcall(function()
+            return construction:IsInViewport()
+        end)
+        if viewport_ok then
+            return in_viewport == true
+        end
+        return nil
+    end
+
+    local saw_valid_widget = is_valid(cached_construction_widget)
+    local visibility_query_supported = false
+    if saw_valid_widget then
+        local cached_visibility =
+            query_widget_visibility(cached_construction_widget)
+        if cached_visibility == true then
+            return true
+        end
+        visibility_query_supported = cached_visibility ~= nil
+    end
+
+    for _, construction in ipairs(safe_find_all_of("WBP_IngameConstruction_C")) do
+        if is_valid(construction) and construction ~= cached_construction_widget then
+            saw_valid_widget = true
+            local visible = query_widget_visibility(construction)
+            if visible ~= nil then
+                visibility_query_supported = true
+                if visible == true then
+                    cached_construction_widget = construction
+                    return true
+                end
+            end
+        end
+    end
+
+    if not saw_valid_widget or visibility_query_supported then
+        cached_construction_widget = nil
+        return false
+    end
+    -- Older Palworld/UE4SS combinations may expose neither query. Treat that
+    -- as unknown so the established builder checks remain authoritative.
+    return nil
+end
+
 local function should_release_locked_preview()
     if state ~= State.EDITING then
         return false, nil
@@ -974,12 +1032,18 @@ local function should_release_locked_preview()
     local mode_ok, in_building_mode = pcall(function()
         return builder_component:IsInBuildingMode()
     end)
-    if mode_ok and not in_building_mode then
+    local construction_ui_active = construction_ui_is_active()
+    local observed_construction_exit = (mode_ok and not in_building_mode)
+        or construction_ui_active == false
+    if observed_construction_exit then
         building_mode_exit_checks = building_mode_exit_checks + 1
         if building_mode_exit_checks >= 5 then
+            if construction_ui_active == false then
+                return true, "Palworld closed the construction UI"
+            end
             return true, "Palworld exited building mode"
         end
-    elseif mode_ok then
+    elseif (mode_ok and in_building_mode) or construction_ui_active == true then
         building_mode_exit_checks = 0
     end
 
@@ -1076,7 +1140,11 @@ local function start_lifecycle_monitor()
                 return in_mode, is_valid(target)
             end)
 
-            local should_show = status_ok and in_building_mode and has_preview
+            local construction_ui_active = construction_ui_is_active()
+            local should_show = status_ok
+                and in_building_mode
+                and has_preview
+                and construction_ui_active ~= false
             if should_show ~= unfrozen_ui_preview_visible then
                 unfrozen_ui_preview_visible = should_show
                 update_construction_hotkey_guide(false, false, not should_show)
@@ -1653,6 +1721,7 @@ release_preview = function(reason)
     local no_active_preview = reason == "preview object was destroyed"
         or reason == "Palworld cleared the build preview"
     local left_construction = reason == "Palworld exited building mode"
+        or reason == "Palworld closed the construction UI"
         or reason == "builder component became invalid"
     unfrozen_ui_builder_component = builder_component
     unfrozen_ui_preview_visible = not (left_construction or no_active_preview)
