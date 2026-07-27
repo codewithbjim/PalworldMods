@@ -3,6 +3,7 @@ param(
     [string]$Version,
     [string]$ZipPath,
     [string]$PakSource,
+    [string]$WorkshopPath,
     [switch]$RequireLuaCompiler
 )
 
@@ -29,6 +30,11 @@ function Get-Sha256 {
 $manifestPath = Join-Path $modRoot "Info.json"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
+$thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
+$pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
+$changelogPath = Join-Path $releaseRoot "CHANGELOG.md"
+$releaseReadmePath = Join-Path $releaseRoot "README.txt"
+$workshopChangelogPath = Join-Path $releaseRoot "WORKSHOP_CHANGELOG.txt"
 $obsoleteMcmSchemaPath = Join-Path $modRoot "PerfectPlacement.modconfig.json"
 $obsoleteMcmReaderPath = Join-Path $modRoot "Scripts\modconfig.lua"
 Assert-ReleaseCondition (Test-Path -LiteralPath $manifestPath -PathType Leaf) `
@@ -39,6 +45,10 @@ Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmSchemaPath)) `
     "Obsolete Mod Config Menu schema must not be shipped."
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
     "Obsolete Mod Config Menu reader must not be shipped."
+Assert-ReleaseCondition (Test-Path -LiteralPath $thumbnailPath -PathType Leaf) `
+    "Missing release thumbnail: $thumbnailPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $pakHashPath -PathType Leaf) `
+    "Missing release PAK checksum: $pakHashPath"
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (-not $Version) {
@@ -47,11 +57,11 @@ if (-not $Version) {
 if (-not $ZipPath) {
     $ZipPath = Join-Path $releaseRoot "Dist\PerfectPlacement-$Version.zip"
 }
+if (-not $WorkshopPath) {
+    $WorkshopPath = Join-Path $releaseRoot "Dist\Workshop-$Version"
+}
 if (-not $PakSource) {
-    $PakSource = Join-Path $repoRoot (
-        "PerfectPlacementBlueprint\PalworldModdingKit\Saved\StagedBuilds\" +
-        "Windows\Pal\Content\Paks\pakchunk1-Windows.pak"
-    )
+    $PakSource = Join-Path $releaseRoot "Assets\PerfectPlacement.pak"
 }
 
 Assert-ReleaseCondition ($manifest.PackageName -eq "PerfectPlacement") `
@@ -60,9 +70,32 @@ Assert-ReleaseCondition ($manifest.Version -eq $Version) `
     "Info.json version '$($manifest.Version)' does not match '$Version'."
 Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
     "Info.json must declare the DarnMenu dependency."
+Assert-ReleaseCondition ($manifest.Thumbnail -eq "thumbnail.png") `
+    "Info.json Thumbnail must be thumbnail.png."
+Assert-ReleaseCondition ((Get-Item -LiteralPath $thumbnailPath).Length -lt 1MB) `
+    "Release thumbnail must be smaller than 1 MB."
+$changelogSource = Get-Content -LiteralPath $changelogPath -Raw
+$firstChangelogVersion = [regex]::Match(
+    $changelogSource,
+    '(?m)^##\s+(.+?)\s*$'
+).Groups[1].Value
+Assert-ReleaseCondition ($firstChangelogVersion -eq $Version) `
+    "The first CHANGELOG.md version '$firstChangelogVersion' is stale."
+$releaseReadmeSource = Get-Content -LiteralPath $releaseReadmePath -Raw
+Assert-ReleaseCondition (
+    $releaseReadmeSource -match [regex]::Escape($Version.ToUpperInvariant())
+) "README.txt does not identify $Version."
+$firstWorkshopChangelogLine = (
+    Get-Content -LiteralPath $workshopChangelogPath |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -First 1
+)
+Assert-ReleaseCondition (
+    $firstWorkshopChangelogLine -match [regex]::Escape($Version)
+) "WORKSHOP_CHANGELOG.txt does not begin with $Version."
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*10') `
-    "DarnMenu schema version 10 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*11') `
+    "DarnMenu schema version 11 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -81,8 +114,19 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $darnMenuSource -notmatch 'title\s*=\s*"Interface"'
 ) "The Interface section must remain hidden from DarnMenu."
+Assert-ReleaseCondition (
+    $darnMenuSource -match
+        'path\s*=\s*"freeze_to_piece"[\s\S]*?kind\s*=\s*"keychord"'
+) "DarnMenu must expose the copy-and-freeze key chord."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
+Assert-ReleaseCondition (
+    $mainSource -match [regex]::Escape("Loaded Perfect Placement $Version")
+) "The Lua startup version does not match '$Version'."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'register_action\("freeze_to_piece",\s*freeze_to_looked_at_build_piece\)'
+) "The copy-and-freeze action is not registered."
 $keycapRefresh = [regex]::Match(
     $mainSource,
     'local function refresh_keycaps_for_ui_host\(host\)(?<body>[\s\S]*?)\r?\nend'
@@ -96,6 +140,65 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -notmatch 'refresh_bindings_from_darnmenu'
 ) "The obsolete per-UI-host binding refresh must not be restored."
+Assert-ReleaseCondition (
+    $mainSource -match 'BuildingSurfaceMaterialSet'
+) "Frozen validity refresh must use Palworld's live surface material set."
+Assert-ReleaseCondition (
+    $mainSource -match 'mesh:SetMaterial\(material_index,\s*material\)'
+) "Frozen validity refresh must repaint each preview material slot."
+Assert-ReleaseCondition (
+    $mainSource -match 'widget:UpdateDisplay\(\)'
+) "Frozen validity refresh must update Palworld's placement warning."
+Assert-ReleaseCondition (
+    ([regex]::Matches(
+        $mainSource,
+        'ExecuteInGameThread\s*\('
+    )).Count -eq 2
+) "Direct game-thread calls must remain isolated inside the retained wrapper."
+Assert-ReleaseCondition (
+    $mainSource -notmatch 'ExecuteWithDelay\s*\('
+) "All delayed callbacks must use the retained callback wrapper."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'completed_async_callbacks\[callback_id\]\s*=\s*true'
+) "Executed callbacks must remain retained until bounded-history pruning."
+Assert-ReleaseCondition (
+    $mainSource -match 'EGameThreadMethod\.ProcessEvent'
+) "Immediate PP callbacks must prefer the isolated ProcessEvent queue."
+Assert-ReleaseCondition (
+    $mainSource -match 'set_actor_transform_verified'
+) "Transform calls must verify success after UE4SS FHitResult marshal errors."
+Assert-ReleaseCondition (
+    $mainSource -match 'registered_keybind_callbacks'
+) "Registered keybind callbacks must keep a module-lifetime Lua reference."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'if\s+status_ok\s+and\s+in_building_mode\s+and\s+has_preview\s+then\s+' +
+        '[\s\S]*?construction_ui_active\s*=\s*' +
+        'construction_ui_is_active\(allow_ui_fallback_scan\)'
+) "Normal gameplay must not scan for construction widgets while build mode is inactive."
+$constructionUiFunction = [regex]::Match(
+    $mainSource,
+    'local function construction_ui_is_active\(allow_fallback_scan\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function should_release_locked_preview'
+)
+Assert-ReleaseCondition $constructionUiFunction.Success `
+    "The construction UI lifecycle function was not found."
+Assert-ReleaseCondition (
+    $constructionUiFunction.Groups["body"].Value -match
+        'if\s+cached_visibility\s*==\s*true\s+or\s+' +
+        'not\s+allow_fallback_scan\s+then\s+' +
+        'return\s+cached_visibility'
+) "Construction UI checks must reuse the cached widget instead of repeatedly using FindAllOf."
+Assert-ReleaseCondition (
+    $constructionUiFunction.Groups["body"].Value -match
+        'if\s+not\s+allow_fallback_scan\s+then\s+return\s+nil'
+) "A class-wide construction-widget scan must require a new preview context."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'if\s+lifecycle_game_thread_pending\s+then\s+return'
+) "The lifecycle monitor must coalesce pending game-thread checks."
 
 $requiredSources = @(
     "enabled.txt",
@@ -113,8 +216,54 @@ foreach ($relativePath in $requiredSources) {
 }
 Assert-ReleaseCondition (Test-Path -LiteralPath $PakSource -PathType Leaf) `
     "Missing staged PAK: $PakSource"
+$expectedPakHash = (
+    (Get-Content -LiteralPath $pakHashPath -Raw).Trim() -split "\s+"
+)[0].ToUpperInvariant()
+Assert-ReleaseCondition (
+    (Get-Sha256 $PakSource) -eq $expectedPakHash
+) "Release PAK does not match its pinned SHA-256."
 Assert-ReleaseCondition (Test-Path -LiteralPath $ZipPath -PathType Leaf) `
     "Missing release archive: $ZipPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $WorkshopPath -PathType Container) `
+    "Missing Workshop package: $WorkshopPath"
+
+$workshopManifestPath = Join-Path $WorkshopPath "Info.json"
+Assert-ReleaseCondition (
+    Test-Path -LiteralPath $workshopManifestPath -PathType Leaf
+) "Workshop package is missing Info.json."
+$workshopManifest =
+    Get-Content -LiteralPath $workshopManifestPath -Raw | ConvertFrom-Json
+Assert-ReleaseCondition ($workshopManifest.Version -eq $Version) `
+    "Workshop manifest version '$($workshopManifest.Version)' is stale."
+Assert-ReleaseCondition (
+    -not (Test-Path -LiteralPath (
+        Join-Path $WorkshopPath "PerfectPlacement.modconfig.json"
+    ))
+) "Workshop package contains the obsolete Mod Config Menu schema."
+foreach ($scriptName in @("main.lua", "config.lua", "keybindings.lua", "darnmenu.lua")) {
+    $sourceScript = Join-Path $modRoot "Scripts\$scriptName"
+    $workshopScript = Join-Path $WorkshopPath "Scripts\$scriptName"
+    Assert-ReleaseCondition (
+        Test-Path -LiteralPath $workshopScript -PathType Leaf
+    ) "Workshop package is missing Scripts\$scriptName."
+    Assert-ReleaseCondition (
+        (Get-Sha256 $sourceScript) -eq (Get-Sha256 $workshopScript)
+    ) "Workshop package contains stale Scripts\$scriptName."
+}
+$workshopPak = Join-Path $WorkshopPath "LogicMods\PerfectPlacement.pak"
+Assert-ReleaseCondition (
+    Test-Path -LiteralPath $workshopPak -PathType Leaf
+) "Workshop package is missing LogicMods\PerfectPlacement.pak."
+Assert-ReleaseCondition (
+    (Get-Sha256 $PakSource) -eq (Get-Sha256 $workshopPak)
+) "Workshop package contains a stale or unexpected PerfectPlacement.pak."
+$workshopThumbnail = Join-Path $WorkshopPath "thumbnail.png"
+Assert-ReleaseCondition (
+    Test-Path -LiteralPath $workshopThumbnail -PathType Leaf
+) "Workshop package is missing thumbnail.png."
+Assert-ReleaseCondition (
+    (Get-Sha256 $thumbnailPath) -eq (Get-Sha256 $workshopThumbnail)
+) "Workshop package contains a stale or unexpected thumbnail.png."
 
 foreach ($scriptPath in Get-ChildItem -LiteralPath $releaseRoot -Filter "*.ps1") {
     $tokens = $null
@@ -168,6 +317,13 @@ try {
             (Get-Sha256 $sourcePath) -eq (Get-Sha256 $archivePath)
         ) "Archive contains stale content: $relativePath"
     }
+    $archiveThumbnail = Join-Path $archiveModRoot "thumbnail.png"
+    Assert-ReleaseCondition (
+        (Test-Path -LiteralPath $archiveThumbnail -PathType Leaf)
+    ) "Archive is missing thumbnail.png."
+    Assert-ReleaseCondition (
+        (Get-Sha256 $thumbnailPath) -eq (Get-Sha256 $archiveThumbnail)
+    ) "Archive contains a stale or unexpected thumbnail.png."
 
     $archiveManifest = Get-Content -LiteralPath (
         Join-Path $archiveModRoot "Info.json"

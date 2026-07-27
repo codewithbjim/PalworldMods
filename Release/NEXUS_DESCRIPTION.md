@@ -12,6 +12,8 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 - **Controlled rotation.** Rotate around the captured build-piece pivot instead of fighting the vanilla camera trace.
 - **Instant reset.** Return the preview to the exact position and rotation it had when frozen.
 - **Eyedropper.** Copy the build piece under the cursor into the active preview.
+- **Copy and freeze.** Copy the targeted piece and freeze its replacement
+  preview at the same position and rotation.
 - **Native guide UI.** The on-screen keyboard and mouse controls stay visible while a live construction preview is available.
 - **Scoped behavior.** Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
 
@@ -65,6 +67,7 @@ PerfectPlacement : 1
 - **Decrease / increase movement step:** Numpad - / +
 - **Reset to frozen transform:** Numpad 5
 - **Copy targeted build piece:** Shift + Middle mouse
+- **Copy and freeze to targeted piece:** Ctrl + Shift + Middle mouse
 
 The key guide appears only while a live construction preview is available.
 Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected.

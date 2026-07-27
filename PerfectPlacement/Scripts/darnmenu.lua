@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 10
+local SCHEMA_VERSION = 11
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -23,13 +23,14 @@ local SUPPORTED_ACTIONS = {
     step_up = true,
     toggle_freeze = true,
     copy_piece = true,
+    freeze_to_piece = true,
 }
 
 -- DarnMenu 1.6.2's keychord control stores a primary UE4SS key name plus
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 10,
+  schemaVersion = 11,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -39,6 +40,9 @@ return {
   defaults = {
     toggle_freeze = { key = "MIDDLE_MOUSE_BUTTON", modifiers = {} },
     copy_piece = { key = "MIDDLE_MOUSE_BUTTON", modifiers = { "SHIFT" } },
+    freeze_to_piece = {
+      key = "MIDDLE_MOUSE_BUTTON", modifiers = { "CONTROL", "SHIFT" }
+    },
     move_left = { key = "NUM_FOUR", modifiers = {} },
     move_right = { key = "NUM_SIX", modifiers = {} },
     move_forward = { key = "NUM_EIGHT", modifiers = {} },
@@ -63,6 +67,8 @@ return {
     { title = "Preview", options = {
       { path = "toggle_freeze", label = "Freeze or unfreeze preview", kind = "keychord" },
       { path = "copy_piece", label = "Copy targeted build piece", kind = "keychord" },
+      { path = "freeze_to_piece", label = "Copy and freeze to targeted piece",
+        kind = "keychord" },
     }},
     { title = "Movement bindings", options = {
       { path = "move_left", label = "Move left", kind = "keychord" },

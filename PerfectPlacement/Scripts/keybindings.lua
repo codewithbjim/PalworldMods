@@ -188,6 +188,10 @@ local defaults = {
     step_up = { key = "NUMPAD_ADD" },
     toggle_freeze = { key = "MIDDLE_MOUSE" },
     copy_piece = { key = "MIDDLE_MOUSE", modifiers = { "SHIFT" } },
+    freeze_to_piece = {
+        key = "MIDDLE_MOUSE",
+        modifiers = { "CONTROL", "SHIFT" },
+    },
 }
 
 local action_order = {
@@ -204,6 +208,7 @@ local action_order = {
     "step_up",
     "toggle_freeze",
     "copy_piece",
+    "freeze_to_piece",
 }
 
 local modifier_assets = {

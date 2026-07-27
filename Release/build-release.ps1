@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.6-release",
+    [string]$Version = "0.1.7-rc",
     [switch]$KeepStage
 )
 
@@ -11,7 +11,9 @@ $stageRoot = Join-Path $releaseRoot "Stage"
 $distRoot = Join-Path $releaseRoot "Dist"
 $zipPath = Join-Path $distRoot "PerfectPlacement-$Version.zip"
 $luaSource = Join-Path $repoRoot "PerfectPlacement"
-$pakSource = Join-Path $repoRoot "PerfectPlacementBlueprint\PalworldModdingKit\Saved\StagedBuilds\Windows\Pal\Content\Paks\pakchunk1-Windows.pak"
+$pakSource = Join-Path $releaseRoot "Assets\PerfectPlacement.pak"
+$pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
+$thumbnailSource = Join-Path $releaseRoot "thumbnail.png"
 $luaDestination = Join-Path $stageRoot "Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement"
 $pakDestination = Join-Path $stageRoot "Pal\Content\Paks\LogicMods"
 
@@ -23,6 +25,8 @@ foreach ($required in @(
     (Join-Path $luaSource "Scripts\keybindings.lua"),
     (Join-Path $luaSource "Scripts\darnmenu.lua"),
     $pakSource,
+    $pakHashPath,
+    $thumbnailSource,
     (Join-Path $releaseRoot "README.txt"),
     (Join-Path $releaseRoot "CHANGELOG.md")
 )) {
@@ -35,6 +39,19 @@ $manifest = Get-Content -LiteralPath (Join-Path $luaSource "Info.json") -Raw | C
 if ($manifest.Version -ne $Version) {
     throw "Info.json version '$($manifest.Version)' does not match requested version '$Version'."
 }
+if ($manifest.Thumbnail -ne "thumbnail.png") {
+    throw "Info.json Thumbnail must be 'thumbnail.png' to match the packaged release asset."
+}
+if ((Get-Item -LiteralPath $thumbnailSource).Length -ge 1MB) {
+    throw "Thumbnail must be smaller than Steam's 1 MB limit: $thumbnailSource"
+}
+$expectedPakHash = (
+    (Get-Content -LiteralPath $pakHashPath -Raw).Trim() -split "\s+"
+)[0].ToUpperInvariant()
+$actualPakHash = (Get-FileHash -LiteralPath $pakSource -Algorithm SHA256).Hash
+if ($actualPakHash -ne $expectedPakHash) {
+    throw "Release PAK hash '$actualPakHash' does not match '$expectedPakHash'."
+}
 
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -43,6 +60,7 @@ New-Item -ItemType Directory -Force -Path $luaDestination, $pakDestination, $dis
 
 Copy-Item -LiteralPath (Join-Path $luaSource "enabled.txt") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Info.json") -Destination $luaDestination
+Copy-Item -LiteralPath $thumbnailSource -Destination (Join-Path $luaDestination "thumbnail.png")
 Copy-Item -LiteralPath (Join-Path $luaSource "README.md") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Scripts") -Destination $luaDestination -Recurse
 Copy-Item -LiteralPath $pakSource -Destination (Join-Path $pakDestination "PerfectPlacement.pak")

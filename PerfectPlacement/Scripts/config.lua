@@ -63,6 +63,10 @@ return {
             key = "MIDDLE_MOUSE",
             modifiers = { "SHIFT" },
         },
+        freeze_to_piece = {
+            key = "MIDDLE_MOUSE",
+            modifiers = { "CONTROL", "SHIFT" },
+        },
     },
 
     -- When true, Perfect Placement periodically reapplies the stored transform.

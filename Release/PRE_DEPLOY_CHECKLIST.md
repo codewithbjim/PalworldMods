@@ -1,7 +1,8 @@
 # Perfect Placement pre-deploy checklist
 
-Complete this checklist against the exact archive that will be uploaded. A
-release is blocked if any required item fails or cannot be explained.
+Complete this checklist against the exact Nexus archive and Workshop package
+that will be uploaded. A release is blocked if any required item fails or
+cannot be explained.
 
 ## 1. Prepare the candidate
 
@@ -9,6 +10,15 @@ release is blocked if any required item fails or cannot be explained.
 - [ ] Update `Info.json`, DarnMenu schema version, load-time version logging,
       changelogs, release readme, and publishing-script defaults.
 - [ ] Build the Nexus archive with `Release/build-release.ps1`.
+- [ ] Build a clean Workshop candidate:
+
+  ```powershell
+  powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\Release\build-workshop-package.ps1 `
+    -Destination .\Release\Dist\Workshop-<version> `
+    -Version <version>
+  ```
+
 - [ ] Run the automated release gate:
 
   ```powershell
@@ -42,6 +52,9 @@ release is blocked if any required item fails or cannot be explained.
 - [ ] Repeat the previous test during Unfreeze.
 - [ ] Hold `Ctrl`, `Alt`, and `Ctrl+Alt` while repeatedly using the default
       middle-mouse Freeze binding.
+- [ ] Move vertically for at least 30 seconds, then Unfreeze and Freeze again.
+      Confirm controls still respond and the UE4SS log has no `Ref was not
+      function`, `removing hook`, or invalid-callback cleanup message.
 - [ ] Confirm the preview never becomes permanently frozen, duplicated,
       invisible, detached from Palworld control, or impossible to place.
 
@@ -52,7 +65,14 @@ release is blocked if any required item fails or cannot be explained.
 - [ ] Alternate movement and rotation rapidly for at least 30 seconds.
 - [ ] Spam Reset while alternating movement and rotation.
 - [ ] Verify the vertical lower and upper clamps.
-- [ ] Confirm placement-validity feedback remains responsive.
+- [ ] Freeze a valid preview, move it into an invalid area, then move it clear.
+      Confirm the mesh changes blue -> red -> blue and the warning matches each
+      state without Unfreezing.
+- [ ] Repeat starting from an invalid preview. Confirm the object remains at
+      the exact user-controlled transform during every validity repaint.
+- [ ] Spam movement, rotation, and Reset across a validity boundary. Confirm
+      refreshes coalesce, the builder never retargets toward the camera, and
+      the preview does not remain red after the result becomes valid.
 - [ ] Confirm no repeated error floods appear in the UE4SS log.
 
 ## 5. Palworld lifecycle interactions
@@ -74,6 +94,21 @@ release is blocked if any required item fails or cannot be explained.
 
 - [ ] Copy a different build piece with the eyedropper.
 - [ ] Attempt to copy while Freeze or Unfreeze is settling.
+- [ ] Use `Ctrl+Shift+Middle Mouse` on a piece matching the active preview.
+      Confirm the preview moves to the targeted piece's location and rotation,
+      freezes there, and Reset returns to that captured transform.
+- [ ] Repeat copy-and-freeze while targeting a different piece type. Confirm
+      the replacement preview is created before it moves or freezes.
+- [ ] Copy-and-freeze pieces with non-zero yaw in several orientations and
+      confirm no checker/preview snap offset is applied twice.
+- [ ] Rapidly spam copy-and-freeze for at least 10 seconds. Confirm only one
+      switch transaction runs at a time and no stale preview is frozen.
+- [ ] Aim at empty space and non-build actors, then use copy-and-freeze.
+      Confirm it fails cleanly without changing the active preview.
+- [ ] Confirm a copied preview overlapping the source is marked invalid, then
+      move it clear and verify it becomes valid.
+- [ ] Confirm the DarnMenu Preview section exposes the copy-and-freeze chord.
+      The bundled companion guide has no separate row for this action.
 - [ ] Change every configurable binding once and reopen the world.
 - [ ] Test a binding with each supported modifier and one multi-modifier chord.
 - [ ] Confirm the page appears under `ESC → Mod Options` with DarnMenu 1.6.2+
@@ -98,6 +133,15 @@ release is blocked if any required item fails or cannot be explained.
 
 ## 7. Soak and compatibility
 
+- [ ] Record a frame-time baseline for at least five minutes with Perfect
+      Placement disabled, then repeat outside construction mode with the
+      candidate enabled. Confirm there is no rhythmic hitch near 500 ms
+      intervals.
+- [ ] Remain in construction mode with an unfrozen preview for five minutes,
+      then repeat while frozen. Confirm there is no repeating frame-time spike.
+- [ ] Enter and exit construction mode at least 20 times and travel or reload
+      the world. Confirm the guide still follows the current live widget without
+      periodic UObject-scan stutter.
 - [ ] Remain in construction mode and edit pieces continuously for 10 minutes.
 - [ ] Watch frame time and confirm there is no progressive slowdown.
 - [ ] Review the complete UE4SS log for errors, stale-object warnings, or

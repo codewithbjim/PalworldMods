@@ -8,6 +8,7 @@ local MOD = "PerfectPlacement"
 local State = {
     SEARCHING = "searching",
     READY = "ready",
+    SWITCHING = "switching",
     FREEZING = "freezing",
     EDITING = "editing",
     UNFREEZING = "unfreezing",
@@ -22,12 +23,20 @@ local desired_location = nil
 local desired_rotation = nil
 local current_move_step = nil
 local transform_loop_started = false
+local transform_game_thread_pending = false
+local transform_loop_callback = nil
+local transform_game_thread_callback = nil
 local preview_tick_was_enabled = nil
 local builder_component = nil
 local cached_builder_component = nil
+local cached_pal_utility = nil
 local cached_construction_widget = nil
+local construction_ui_scan_context_name = nil
 local builder_tick_was_enabled = nil
 local lifecycle_monitor_started = false
+local lifecycle_game_thread_pending = false
+local lifecycle_loop_callback = nil
+local lifecycle_game_thread_callback = nil
 local lifecycle_monitor_last_tick = -1000.0
 local lifecycle_ui_refresh_ticks = 0
 local builder_fallback_scan_cooldown = 0
@@ -43,6 +52,7 @@ local locked_origin_location = nil
 local locked_origin_rotation = nil
 local locked_origin_pivot = nil
 local last_preview_overlap_state = nil
+local validity_refresh_pending = false
 local rotation_pivot = nil
 local rotation_pivot_local_offset = nil
 local preview_relative_location = nil
@@ -50,19 +60,30 @@ local preview_relative_rotation = nil
 local freeze_transition_generation = 0
 local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
+local keyguide_pre_hook_callback = nil
+local keyguide_post_hook_callback = nil
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
+local ui_host_notify_callback = nil
+local ui_host_setup_pending = false
 local ui_host_missing_was_logged = false
 local keycap_ui_host = nil
 local resolved_bindings = nil
 local keycap_texture_cache = {}
+local registered_keybind_callbacks = {}
 
 local LIFECYCLE_INTERVAL_MS = 100
 local IDLE_UI_REFRESH_TICKS = 5
 local BUILDER_FALLBACK_RETRY_TICKS = 10
 local FREEZE_TRANSITION_SETTLE_MS = 500
+local VALIDITY_REFRESH_INTERVAL_MS = 50
+local FREEZE_TO_PIECE_RETRY_MS = 50
+local FREEZE_TO_PIECE_MAX_ATTEMPTS = 60
 local retained_async_callbacks = {}
+local retained_async_callback_order = {}
+local completed_async_callbacks = {}
 local retained_async_callback_serial = 0
+local RETAINED_ASYNC_CALLBACK_HISTORY = 256
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
@@ -71,13 +92,50 @@ end
 DarnMenu.apply_settings(Config, log)
 current_move_step = Config.movement.normal
 
+local function discard_retained_async_callback(callback_id)
+    retained_async_callbacks[callback_id] = nil
+    completed_async_callbacks[callback_id] = nil
+    for index = #retained_async_callback_order, 1, -1 do
+        if retained_async_callback_order[index] == callback_id then
+            table.remove(retained_async_callback_order, index)
+            return
+        end
+    end
+end
+
+local function prune_completed_async_callbacks(active_callback_id)
+    if #retained_async_callback_order <= RETAINED_ASYNC_CALLBACK_HISTORY then
+        return
+    end
+
+    local index = 1
+    while #retained_async_callback_order > RETAINED_ASYNC_CALLBACK_HISTORY
+        and index <= #retained_async_callback_order
+    do
+        local callback_id = retained_async_callback_order[index]
+        if callback_id ~= active_callback_id
+            and completed_async_callbacks[callback_id]
+        then
+            retained_async_callbacks[callback_id] = nil
+            completed_async_callbacks[callback_id] = nil
+            table.remove(retained_async_callback_order, index)
+        else
+            index = index + 1
+        end
+    end
+end
+
 local function retain_async_callback(callback, label)
     retained_async_callback_serial = retained_async_callback_serial + 1
     local callback_id = retained_async_callback_serial
     local retained_callback
     retained_callback = function(...)
         local ok, error_message = pcall(callback, ...)
-        retained_async_callbacks[callback_id] = nil
+        -- Keep a bounded history. Releasing the final Lua reference from
+        -- inside an EngineTick invocation can make UE4SS revisit an invalid
+        -- registry entry while it retires the one-shot callback.
+        completed_async_callbacks[callback_id] = true
+        prune_completed_async_callbacks(callback_id)
         if not ok then
             log(string.format(
                 "%s failed: %s",
@@ -87,18 +145,31 @@ local function retain_async_callback(callback, label)
         end
     end
     retained_async_callbacks[callback_id] = retained_callback
+    retained_async_callback_order[#retained_async_callback_order + 1] = callback_id
     return retained_callback, callback_id
 end
 
 local function execute_in_game_thread_retained(callback, label)
     local retained_callback, callback_id =
         retain_async_callback(callback, label)
-    local ok, error_message = pcall(
-        ExecuteInGameThread,
-        retained_callback
-    )
+    local ok, error_message = pcall(function()
+        -- Input and fail-safe work must not depend on UE4SS's once-per-frame
+        -- EngineTick queue. If another callback breaks that hook, ProcessEvent
+        -- remains available and PP can still Unfreeze cleanly.
+        if ProcessEventAvailable == true
+            and EGameThreadMethod ~= nil
+            and EGameThreadMethod.ProcessEvent ~= nil
+        then
+            ExecuteInGameThread(
+                retained_callback,
+                EGameThreadMethod.ProcessEvent
+            )
+        else
+            ExecuteInGameThread(retained_callback)
+        end
+    end)
     if not ok then
-        retained_async_callbacks[callback_id] = nil
+        discard_retained_async_callback(callback_id)
         log(string.format(
             "Could not queue %s: %s",
             label or "game-thread callback",
@@ -112,11 +183,23 @@ end
 local function execute_in_game_thread_with_retained_delay(
     delay_ms,
     callback,
-    label
+    label,
+    enqueue_failure_callback
 )
     local delayed_callback, callback_id =
         retain_async_callback(function()
-            execute_in_game_thread_retained(callback, label)
+            local enqueued = execute_in_game_thread_retained(callback, label)
+            if not enqueued and enqueue_failure_callback ~= nil then
+                local failure_ok, failure_error =
+                    pcall(enqueue_failure_callback)
+                if not failure_ok then
+                    log(string.format(
+                        "%s enqueue-failure recovery failed: %s",
+                        label or "Delayed game-thread callback",
+                        tostring(failure_error)
+                    ))
+                end
+            end
         end, label)
     local ok, error_message = pcall(
         ExecuteWithDelay,
@@ -124,7 +207,7 @@ local function execute_in_game_thread_with_retained_delay(
         delayed_callback
     )
     if not ok then
-        retained_async_callbacks[callback_id] = nil
+        discard_retained_async_callback(callback_id)
         log(string.format(
             "Could not queue %s: %s",
             label or "delayed game-thread callback",
@@ -156,7 +239,10 @@ local function settle_freeze_transition(transition_id, stable_state)
         function()
             complete_freeze_transition(transition_id, stable_state)
         end,
-        "Freeze transition settle callback"
+        "Freeze transition settle callback",
+        function()
+            complete_freeze_transition(transition_id, stable_state)
+        end
     )
     if not queued then
         complete_freeze_transition(transition_id, stable_state)
@@ -759,6 +845,61 @@ local function read_preview_transform()
     return true
 end
 
+local function angular_distance(left, right)
+    return math.abs(((left - right + 180.0) % 360.0) - 180.0)
+end
+
+local function set_actor_transform_verified(actor, location, rotation, label)
+    if not is_valid(actor) then
+        return false
+    end
+
+    local hit_result = {}
+    local call_ok, call_error = pcall(function()
+        actor:K2_SetActorLocationAndRotation(
+            location,
+            rotation,
+            false,
+            hit_result,
+            true
+        )
+    end)
+
+    -- This UE4SS build can throw while marshalling the unused FHitResult after
+    -- ProcessEvent has already moved the actor. Verify the actual transform
+    -- instead of treating that post-call conversion error as a failed move.
+    local verify_ok, actual_location, actual_rotation = pcall(function()
+        return actor:K2_GetActorLocation(), actor:K2_GetActorRotation()
+    end)
+    local reached_target = verify_ok
+        and actual_location ~= nil
+        and actual_rotation ~= nil
+        and math.abs(actual_location.X - location.X) <= 0.5
+        and math.abs(actual_location.Y - location.Y) <= 0.5
+        and math.abs(actual_location.Z - location.Z) <= 0.5
+        and angular_distance(actual_rotation.Pitch, rotation.Pitch) <= 0.1
+        and angular_distance(actual_rotation.Yaw, rotation.Yaw) <= 0.1
+        and angular_distance(actual_rotation.Roll, rotation.Roll) <= 0.1
+    if reached_target then
+        if not call_ok then
+            verbose(string.format(
+                "%s moved successfully despite UE4SS output marshalling error: %s",
+                label,
+                tostring(call_error)
+            ))
+        end
+        return true
+    end
+
+    log(string.format(
+        "Failed to apply %s transform: %s",
+        label,
+        call_ok and "actor did not reach the requested transform"
+            or tostring(call_error)
+    ))
+    return false
+end
+
 local function apply_preview_transform()
     if freeze_transition_input_locked
         or state ~= State.EDITING
@@ -772,22 +913,12 @@ local function apply_preview_transform()
         return false
     end
 
-    local ok, error_message = pcall(function()
-        if is_valid(transform_actor) then
-            transform_actor:K2_SetActorLocationAndRotation(
-                desired_location,
-                desired_rotation,
-                false,
-                {},
-                true
-            )
-        end
-        if is_valid(preview_actor) then
-            local preview_location = desired_location
-            local preview_rotation = desired_rotation
-            if preview_relative_location ~= nil and preview_relative_rotation ~= nil then
+    local calculate_ok, preview_location, preview_rotation = pcall(function()
+        local calculated_location = desired_location
+        local calculated_rotation = desired_rotation
+        if preview_relative_location ~= nil and preview_relative_rotation ~= nil then
                 local yaw = math.rad(desired_rotation.Yaw)
-                preview_location = {
+                calculated_location = {
                     X = desired_location.X
                         + (math.cos(yaw) * preview_relative_location.X)
                         - (math.sin(yaw) * preview_relative_location.Y),
@@ -796,26 +927,34 @@ local function apply_preview_transform()
                         + (math.cos(yaw) * preview_relative_location.Y),
                     Z = desired_location.Z + preview_relative_location.Z,
                 }
-                preview_rotation = {
+                calculated_rotation = {
                     Pitch = desired_rotation.Pitch + preview_relative_rotation.Pitch,
                     Yaw = desired_rotation.Yaw + preview_relative_rotation.Yaw,
                     Roll = desired_rotation.Roll + preview_relative_rotation.Roll,
                 }
-            end
-            preview_actor:K2_SetActorLocationAndRotation(
-                preview_location,
-                preview_rotation,
-                false,
-                {},
-                true
-            )
         end
+        return calculated_location, calculated_rotation
     end)
-    if not ok then
-        log("Failed to apply preview transform: " .. tostring(error_message))
+    if not calculate_ok then
+        log("Failed to calculate preview transform: " .. tostring(preview_location))
         return false
     end
-    return true
+
+    -- Always attempt both calls. A post-call FHitResult marshal error from the
+    -- checker must not prevent the visible preview from receiving its move.
+    local checker_applied = set_actor_transform_verified(
+        transform_actor,
+        desired_location,
+        desired_rotation,
+        "InstallChecker"
+    )
+    local preview_applied = set_actor_transform_verified(
+        preview_actor,
+        preview_location,
+        preview_rotation,
+        "preview actor"
+    )
+    return checker_applied and preview_applied
 end
 
 local function start_transform_loop()
@@ -824,13 +963,27 @@ local function start_transform_loop()
     end
     transform_loop_started = true
 
-    LoopAsync(Config.transform_refresh_ms, function()
-        if state == State.EDITING then
-            ExecuteInGameThread(function()
-                apply_preview_transform()
-            end)
+    if transform_game_thread_callback == nil then
+        transform_game_thread_callback = function()
+            transform_game_thread_pending = false
+            apply_preview_transform()
         end
-    end)
+    end
+    if transform_loop_callback == nil then
+        transform_loop_callback = function()
+            if state == State.EDITING and not transform_game_thread_pending then
+                transform_game_thread_pending = true
+                local queued = execute_in_game_thread_retained(
+                    transform_game_thread_callback,
+                    "Frozen transform hold"
+                )
+                if not queued then
+                    transform_game_thread_pending = false
+                end
+            end
+        end
+    end
+    LoopAsync(Config.transform_refresh_ms, transform_loop_callback)
 end
 
 local function set_preview_tick_enabled(enabled)
@@ -962,12 +1115,12 @@ local function set_builder_tick_enabled(enabled)
     return true
 end
 
-local function construction_ui_is_active()
+local function construction_ui_is_active(allow_fallback_scan)
     -- The builder component and preview can remain valid after construction
     -- mode closes, particularly while their ticks are suspended for Freeze.
-    -- Live construction widgets supply an independent lifecycle signal. Check
-    -- every instance because Unreal can retain a stale hidden widget while a
-    -- newer construction screen is active.
+    -- Live construction widgets supply an independent lifecycle signal.
+    -- Reuse the known live widget so this 10 Hz frozen safety check never
+    -- performs a class-wide UObject scan on every pass.
     local function query_widget_visibility(construction)
         local visibility_ok, visible = pcall(function()
             return construction:IsVisible()
@@ -985,38 +1138,41 @@ local function construction_ui_is_active()
         return nil
     end
 
-    local saw_valid_widget = is_valid(cached_construction_widget)
-    local visibility_query_supported = false
-    if saw_valid_widget then
+    if is_valid(cached_construction_widget) then
         local cached_visibility =
             query_widget_visibility(cached_construction_widget)
-        if cached_visibility == true then
-            return true
+        if cached_visibility == true or not allow_fallback_scan then
+            return cached_visibility
         end
-        visibility_query_supported = cached_visibility ~= nil
     end
 
+    if not allow_fallback_scan then
+        return nil
+    end
+
+    -- This fallback is reached only when the builder already reports an active
+    -- preview and no usable widget has been cached. Cache the first live result;
+    -- SetupKeyGuide's hook refreshes the cache if Palworld replaces the widget.
+    local fallback_widget = nil
     for _, construction in ipairs(safe_find_all_of("WBP_IngameConstruction_C")) do
         if is_valid(construction) and construction ~= cached_construction_widget then
-            saw_valid_widget = true
             local visible = query_widget_visibility(construction)
-            if visible ~= nil then
-                visibility_query_supported = true
-                if visible == true then
-                    cached_construction_widget = construction
-                    return true
-                end
+            if visible == true then
+                cached_construction_widget = construction
+                return true
+            end
+            if fallback_widget == nil and visible == nil then
+                fallback_widget = construction
             end
         end
     end
 
-    if not saw_valid_widget or visibility_query_supported then
-        cached_construction_widget = nil
-        return false
+    if is_valid(fallback_widget) then
+        cached_construction_widget = fallback_widget
+        return nil
     end
-    -- Older Palworld/UE4SS combinations may expose neither query. Treat that
-    -- as unknown so the established builder checks remain authoritative.
-    return nil
+    cached_construction_widget = nil
+    return false
 end
 
 local function should_release_locked_preview()
@@ -1033,7 +1189,14 @@ local function should_release_locked_preview()
     local mode_ok, in_building_mode = pcall(function()
         return builder_component:IsInBuildingMode()
     end)
-    local construction_ui_active = construction_ui_is_active()
+    local scan_context_name = locked_preview_name
+    local allow_ui_fallback_scan = scan_context_name ~= nil
+        and scan_context_name ~= construction_ui_scan_context_name
+    local construction_ui_active =
+        construction_ui_is_active(allow_ui_fallback_scan)
+    if allow_ui_fallback_scan then
+        construction_ui_scan_context_name = scan_context_name
+    end
     local observed_construction_exit = (mode_ok and not in_building_mode)
         or construction_ui_active == false
     if observed_construction_exit then
@@ -1081,9 +1244,13 @@ local function start_lifecycle_monitor()
         return
     end
     lifecycle_monitor_started = true
-    LoopAsync(LIFECYCLE_INTERVAL_MS, function()
+    if lifecycle_loop_callback == nil then
+        lifecycle_loop_callback = function()
         lifecycle_monitor_last_tick = os.clock()
-        if state == State.FREEZING or state == State.UNFREEZING then
+        if state == State.SWITCHING
+            or state == State.FREEZING
+            or state == State.UNFREEZING
+        then
             return
         end
         -- Frozen previews need responsive safety checks. Outside editing, do
@@ -1098,8 +1265,17 @@ local function start_lifecycle_monitor()
             lifecycle_ui_refresh_ticks = 0
         end
 
-        ExecuteInGameThread(function()
-            if state == State.FREEZING or state == State.UNFREEZING then
+        if lifecycle_game_thread_pending then
+            return
+        end
+        lifecycle_game_thread_pending = true
+        if lifecycle_game_thread_callback == nil then
+            lifecycle_game_thread_callback = function()
+            lifecycle_game_thread_pending = false
+            if state == State.SWITCHING
+                or state == State.FREEZING
+                or state == State.UNFREEZING
+            then
                 return
             end
             if state == State.EDITING then
@@ -1131,17 +1307,30 @@ local function start_lifecycle_monitor()
                 return
             end
 
-            local status_ok, in_building_mode, has_preview = pcall(function()
+            local status_ok, in_building_mode, has_preview, active_preview =
+                pcall(function()
                 local in_mode = unfrozen_ui_builder_component:IsInBuildingMode()
                 local checker = unfrozen_ui_builder_component.InstallChecker
                 local target = nil
                 if is_valid(checker) then
                     target = checker.TargetBuildObject
                 end
-                return in_mode, is_valid(target)
+                return in_mode, is_valid(target), target
             end)
 
-            local construction_ui_active = construction_ui_is_active()
+            local construction_ui_active = nil
+            if status_ok and in_building_mode and has_preview then
+                local preview_name = full_name(active_preview)
+                local allow_ui_fallback_scan =
+                    preview_name ~= construction_ui_scan_context_name
+                construction_ui_active =
+                    construction_ui_is_active(allow_ui_fallback_scan)
+                if allow_ui_fallback_scan then
+                    construction_ui_scan_context_name = preview_name
+                end
+            else
+                construction_ui_scan_context_name = nil
+            end
             local should_show = status_ok
                 and in_building_mode
                 and has_preview
@@ -1159,14 +1348,309 @@ local function start_lifecycle_monitor()
                 unfrozen_ui_preview_visible = nil
                 builder_fallback_scan_cooldown = 0
             end
+            end
+        end
+        local queued = execute_in_game_thread_retained(
+            lifecycle_game_thread_callback,
+            "Placement lifecycle monitor"
+        )
+        if not queued then
+            lifecycle_game_thread_pending = false
+        end
+        end
+    end
+    LoopAsync(LIFECYCLE_INTERVAL_MS, lifecycle_loop_callback)
+end
+
+local function refresh_overlap_component(component, refreshed_components)
+    if not is_valid(component) then
+        return
+    end
+
+    local component_name = full_name(component)
+    if refreshed_components[component_name] then
+        return
+    end
+    refreshed_components[component_name] = true
+
+    local ok, error_message = pcall(function()
+        local collision_profile = component:GetCollisionProfileName()
+        component:SetCollisionProfileName(collision_profile, true)
+    end)
+    if not ok then
+        verbose("Could not refresh overlaps for " .. component_name .. ": " .. tostring(error_message))
+    end
+end
+
+local function refresh_locked_overlaps()
+    local refreshed_components = {}
+
+    local ok, error_message = pcall(function()
+        if is_valid(transform_actor) then
+            refresh_overlap_component(transform_actor.OverlapCheckComponent, refreshed_components)
+            if is_valid(transform_actor.OverlapChecker) then
+                refresh_overlap_component(transform_actor.OverlapChecker.Collision, refreshed_components)
+            end
+        end
+        if is_valid(preview_actor) then
+            refresh_overlap_component(preview_actor.OverlapCheckCollision, refreshed_components)
+            if is_valid(preview_actor.OverlapChecker) then
+                refresh_overlap_component(preview_actor.OverlapChecker.Collision, refreshed_components)
+            end
+        end
+    end)
+    if not ok then
+        verbose("Could not enumerate frozen preview overlap components: " .. tostring(error_message))
+    end
+end
+
+local function for_each_unreal_array(array, callback, label)
+    if array == nil then
+        return false
+    end
+
+    local ok, error_message = pcall(function()
+        array:ForEach(function(index, wrapped_value)
+            local value = wrapped_value
+            local unwrap_ok, unwrapped_value = pcall(function()
+                return wrapped_value:get()
+            end)
+            if unwrap_ok then
+                value = unwrapped_value
+            end
+
+            local callback_ok, callback_error = pcall(callback, value, index)
+            if not callback_ok then
+                verbose(string.format(
+                    "%s item failed: %s",
+                    label or "Unreal array",
+                    tostring(callback_error)
+                ))
+            end
         end)
     end)
+    if not ok then
+        verbose(string.format(
+            "Could not iterate %s: %s",
+            label or "Unreal array",
+            tostring(error_message)
+        ))
+    end
+    return ok
+end
+
+local function find_pal_utility()
+    if is_valid(cached_pal_utility) then
+        return cached_pal_utility
+    end
+
+    local ok, utility = pcall(function()
+        local exact = StaticFindObject("/Script/Pal.Default__PalUtility")
+        if is_valid(exact) then
+            return exact
+        end
+        return FindFirstOf("PalUtility")
+    end)
+    if ok and is_valid(utility) then
+        cached_pal_utility = utility
+        return utility
+    end
+    cached_pal_utility = nil
+    return nil
+end
+
+local function get_building_surface_material_set()
+    local utility = find_pal_utility()
+    if not is_valid(utility) or not is_valid(preview_actor) then
+        return nil
+    end
+
+    local ok, material_set = pcall(function()
+        local manager = utility:GetMapObjectManager(preview_actor)
+        if not is_valid(manager) then
+            return nil
+        end
+        return manager.BuildingSurfaceMaterialSet
+    end)
+    if ok then
+        return material_set
+    end
+    verbose("Could not resolve Palworld's build surface materials: "
+        .. tostring(material_set))
+    return nil
+end
+
+local function material_is_two_sided(visual_control, mesh, material_index)
+    local source_material = nil
+    pcall(function()
+        source_material =
+            visual_control:GetMaterialInstanceNormal(mesh, material_index)
+    end)
+    if not is_valid(source_material) then
+        pcall(function()
+            source_material = mesh:GetMaterial(material_index)
+        end)
+    end
+    if not is_valid(source_material) then
+        return false
+    end
+
+    local base_material = source_material
+    pcall(function()
+        local resolved_base = source_material:GetBaseMaterial()
+        if is_valid(resolved_base) then
+            base_material = resolved_base
+        end
+    end)
+    local ok, two_sided = pcall(function()
+        return base_material.TwoSided
+    end)
+    return ok and two_sided == true
+end
+
+local function apply_material_to_mesh(
+    mesh,
+    visual_control,
+    regular_material,
+    two_sided_material
+)
+    if not is_valid(mesh) or not is_valid(regular_material) then
+        return 0
+    end
+
+    local count_ok, material_count = pcall(function()
+        return mesh:GetNumMaterials()
+    end)
+    material_count = count_ok and tonumber(material_count) or 0
+    local changed = 0
+    for material_index = 0, material_count - 1 do
+        local material = regular_material
+        if is_valid(two_sided_material)
+            and material_is_two_sided(visual_control, mesh, material_index)
+        then
+            material = two_sided_material
+        end
+
+        local set_ok = pcall(function()
+            mesh:SetMaterial(material_index, material)
+        end)
+        if set_ok then
+            changed = changed + 1
+        end
+    end
+    return changed
+end
+
+local function apply_locked_validity_material(is_placeable)
+    local material_set = get_building_surface_material_set()
+    if material_set == nil or not is_valid(preview_actor) then
+        return false
+    end
+
+    local visual_ok, visual_control = pcall(function()
+        return preview_actor.VisualCtrl
+    end)
+    if not visual_ok or not is_valid(visual_control) then
+        return false
+    end
+
+    local materials_ok, regular_material, two_sided_material, work_material =
+        pcall(function()
+            if is_placeable then
+                return material_set.Highlight,
+                    material_set.HighlightTwoSided,
+                    material_set.HighlightWorkPositionVisualizer
+            end
+            return material_set.Error,
+                material_set.ErrorTwoSided,
+                material_set.ErrorWorkPositionVisualizer
+        end)
+    if not materials_ok or not is_valid(regular_material) then
+        return false
+    end
+
+    local changed = 0
+    local meshes_ok, meshes = pcall(function()
+        return preview_actor.AllMeshes
+    end)
+    if meshes_ok then
+        for_each_unreal_array(meshes, function(mesh)
+            changed = changed + apply_material_to_mesh(
+                mesh,
+                visual_control,
+                regular_material,
+                two_sided_material
+            )
+        end, "preview meshes")
+    end
+
+    if changed == 0 then
+        local main_mesh_ok, main_mesh = pcall(function()
+            return preview_actor.MainMesh
+        end)
+        if main_mesh_ok then
+            changed = changed + apply_material_to_mesh(
+                main_mesh,
+                visual_control,
+                regular_material,
+                two_sided_material
+            )
+        end
+    end
+
+    if is_valid(work_material) then
+        local work_ok, work_visualizers = pcall(function()
+            return visual_control.WorkPositionVisualizers
+        end)
+        if work_ok then
+            for_each_unreal_array(work_visualizers, function(component)
+                changed = changed + apply_material_to_mesh(
+                    component,
+                    visual_control,
+                    work_material,
+                    work_material
+                )
+            end, "work-position visualizers")
+        end
+    end
+    return changed > 0
+end
+
+local function refresh_building_validity_ui()
+    local find_ok, widget = pcall(function()
+        return FindFirstOf("WBP_PalBuilding_C")
+    end)
+    local widget_name = find_ok and full_name(widget) or "<invalid>"
+    if not find_ok
+        or not is_valid(widget)
+        or string.find(widget_name, "Default__", 1, true) ~= nil
+        or string.find(widget_name, "WidgetTree", 1, true) ~= nil
+    then
+        return
+    end
+
+    local ok, error_message = pcall(function()
+        widget:UpdateDisplay()
+    end)
+    if not ok then
+        verbose("Could not refresh Palworld's placement warning: "
+            .. tostring(error_message))
+    end
 end
 
 local function refresh_locked_validity()
-    if state ~= State.EDITING or not is_valid(builder_component) then
+    if state ~= State.EDITING
+        or not is_valid(builder_component)
+        or not is_valid(preview_actor)
+    then
         return
     end
+
+    -- The builder and preview ticks stay suspended. Recompute the result from
+    -- the moved overlaps, then propagate it with Palworld's own live surface
+    -- material set and building-widget refresh.
+    refresh_locked_overlaps()
+
     local ok, operation_result = pcall(function()
         return builder_component:IsEnableBuild()
     end)
@@ -1181,12 +1665,54 @@ local function refresh_locked_validity()
     if last_preview_overlap_state == is_placeable then
         return
     end
-    last_preview_overlap_state = is_placeable
+
+    local material_updated = apply_locked_validity_material(is_placeable)
+    refresh_building_validity_ui()
+    if material_updated then
+        last_preview_overlap_state = is_placeable
+    else
+        -- Retry on the next coalesced refresh if the preview's mesh hierarchy
+        -- was still being constructed.
+        last_preview_overlap_state = nil
+        verbose("Frozen validity changed, but no preview material slot was ready.")
+    end
+
     log(string.format(
-        "Frozen preview is %s (operation result: %s).",
+        "Frozen preview is %s (operation result: %s; material refreshed: %s).",
         is_placeable and "placeable" or "not placeable",
-        operation_text
+        operation_text,
+        tostring(material_updated)
     ))
+end
+
+local function schedule_locked_validity_refresh()
+    if validity_refresh_pending or state ~= State.EDITING then
+        return
+    end
+
+    validity_refresh_pending = true
+    local refresh_generation = freeze_transition_generation
+    local queued = execute_in_game_thread_with_retained_delay(
+        VALIDITY_REFRESH_INTERVAL_MS,
+        function()
+            if state ~= State.EDITING
+                or refresh_generation ~= freeze_transition_generation
+            then
+                return
+            end
+            validity_refresh_pending = false
+            refresh_locked_validity()
+        end,
+        "Frozen validity refresh",
+        function()
+            if refresh_generation == freeze_transition_generation then
+                validity_refresh_pending = false
+            end
+        end
+    )
+    if not queued then
+        validity_refresh_pending = false
+    end
 end
 
 local function object_path_from_full_name(name)
@@ -1406,17 +1932,23 @@ local function ensure_keyguide_hook()
     if keyguide_hook_registered then
         return true
     end
-    local ok, pre_id, post_id = pcall(function()
-        return RegisterHook(KEYGUIDE_SETUP_PATH, function()
+    if keyguide_pre_hook_callback == nil then
+        keyguide_pre_hook_callback = function()
             -- The guide must be changed after the Blueprint has rebuilt its
             -- rows. A no-op pre-hook keeps the UE4SS hook signature explicit.
-        end, function(context)
+        end
+    end
+    if keyguide_post_hook_callback == nil then
+        keyguide_post_hook_callback = function(context)
             local construction = context
             local unwrap_ok, unwrapped = pcall(function()
                 return context:get()
             end)
             if unwrap_ok and unwrapped ~= nil then
                 construction = unwrapped
+            end
+            if is_valid(construction) then
+                cached_construction_widget = construction
             end
             local apply_ok, apply_error = pcall(function()
                 if Config.ui ~= nil and not Config.ui.use_stock_keyguide_fallback then
@@ -1430,7 +1962,14 @@ local function ensure_keyguide_hook()
             if not apply_ok then
                 log("Could not apply hooked construction guide: " .. tostring(apply_error))
             end
-        end)
+        end
+    end
+    local ok, pre_id, post_id = pcall(function()
+        return RegisterHook(
+            KEYGUIDE_SETUP_PATH,
+            keyguide_pre_hook_callback,
+            keyguide_post_hook_callback
+        )
     end)
     if not ok or (pre_id == nil and post_id == nil) then
         log("Construction key-guide hook is not loaded yet.")
@@ -1457,6 +1996,7 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
             log("Construction key-guide widget instance was not found.")
             return
         end
+        cached_construction_widget = construction
         set_native_locked_controls_hidden(construction, is_locked)
 
         -- The companion widget supplies Perfect Placement's own controls, but
@@ -1522,25 +2062,74 @@ local function show_preview_notification(message, color)
         end
         toast:AnmEvent_In()
 
-        ExecuteWithDelay(1800, function()
-            ExecuteInGameThread(function()
+        execute_in_game_thread_with_retained_delay(
+            1800,
+            function()
                 if generation ~= notification_generation then
                     return
                 end
                 pcall(function()
-                    if is_valid(toast) then
-                        toast:AnmEvent_Out()
+                    local current_player_ui = FindFirstOf("WBP_PlayerUI_C")
+                    local current_toast = nil
+                    if is_valid(current_player_ui) then
+                        current_toast = current_player_ui.WBP_Ingame_Message
+                    end
+                    if not is_valid(current_toast) then
+                        current_toast = FindFirstOf("WBP_Ingame_Message_C")
+                    end
+                    if is_valid(current_toast) then
+                        current_toast:AnmEvent_Out()
                     end
                 end)
-            end)
-        end)
+            end,
+            "Preview status notification hide"
+        )
     end)
     if not ok then
         log("Could not show preview status notification: " .. tostring(error_message))
     end
 end
 
-local function begin_editing()
+local function cancel_begin_editing(transition_id, previous_state, reason)
+    if preview_tick_was_enabled ~= nil then
+        set_preview_tick_enabled(preview_tick_was_enabled ~= false)
+    end
+    if builder_tick_was_enabled ~= nil then
+        set_builder_tick_enabled(builder_tick_was_enabled ~= false)
+    end
+    if is_valid(preview_root_component)
+        and preview_root_previous_mobility ~= nil
+    then
+        pcall(function()
+            preview_root_component:SetMobility(preview_root_previous_mobility)
+        end)
+    end
+
+    builder_component = nil
+    transform_actor = nil
+    preview_actor = nil
+    preview_root_component = nil
+    preview_root_previous_mobility = nil
+    preview_tick_was_enabled = nil
+    builder_tick_was_enabled = nil
+    locked_preview_name = nil
+    locked_origin_location = nil
+    locked_origin_rotation = nil
+    locked_origin_pivot = nil
+    last_preview_overlap_state = nil
+    rotation_pivot = nil
+    rotation_pivot_local_offset = nil
+    preview_relative_location = nil
+    preview_relative_rotation = nil
+    desired_location = nil
+    desired_rotation = nil
+    validity_refresh_pending = false
+    complete_freeze_transition(transition_id, previous_state)
+    log("Could not freeze preview: " .. tostring(reason))
+    return false
+end
+
+local function begin_editing(defer_initial_validity)
     -- Keybinds are global in UE4SS. Resolve only the local player's live build
     -- context here so MMB is a cheap no-op during normal gameplay.
     local active_component, active_checker, active_preview = find_active_build_context(false)
@@ -1575,22 +2164,11 @@ local function begin_editing()
     end
 
     if not read_preview_transform() then
-        if is_valid(preview_root_component)
-            and preview_root_previous_mobility ~= nil
-        then
-            pcall(function()
-                preview_root_component:SetMobility(
-                    preview_root_previous_mobility
-                )
-            end)
-        end
-        builder_component = nil
-        transform_actor = nil
-        preview_actor = nil
-        preview_root_component = nil
-        preview_root_previous_mobility = nil
-        complete_freeze_transition(transition_id, previous_state)
-        return false
+        return cancel_begin_editing(
+            transition_id,
+            previous_state,
+            "the preview transform could not be read"
+        )
     end
     local preview_transform_ok, preview_location, preview_rotation = pcall(function()
         return preview_actor:K2_GetActorLocation(), preview_actor:K2_GetActorRotation()
@@ -1678,8 +2256,16 @@ local function begin_editing()
         return preview_actor:IsActorTickEnabled()
     end)
     preview_tick_was_enabled = tick_query_ok and tick_enabled or true
-    if set_preview_tick_enabled(false) then
+    local preview_tick_suspended = preview_tick_was_enabled == false
+        or set_preview_tick_enabled(false)
+    if preview_tick_suspended then
         log("Preview actor tick suspended for frozen editing.")
+    else
+        return cancel_begin_editing(
+            transition_id,
+            previous_state,
+            "the preview actor tick could not be suspended"
+        )
     end
 
     if builder_component ~= nil then
@@ -1687,11 +2273,23 @@ local function begin_editing()
             return builder_component:IsComponentTickEnabled()
         end)
         builder_tick_was_enabled = builder_tick_query_ok and builder_tick_enabled or true
-        if set_builder_tick_enabled(false) then
+        local builder_tick_suspended = builder_tick_was_enabled == false
+            or set_builder_tick_enabled(false)
+        if builder_tick_suspended then
             log("Player builder component tick suspended for frozen editing.")
+        else
+            return cancel_begin_editing(
+                transition_id,
+                previous_state,
+                "the player builder component tick could not be suspended"
+            )
         end
     else
-        log("Could not find the local player's BuilderComponent.")
+        return cancel_begin_editing(
+            transition_id,
+            previous_state,
+            "the local player's BuilderComponent became unavailable"
+        )
     end
 
     state = State.EDITING
@@ -1706,7 +2304,11 @@ local function begin_editing()
         current_move_step,
         Config.rotation.normal
     ))
-    refresh_locked_validity()
+    if defer_initial_validity then
+        schedule_locked_validity_refresh()
+    else
+        refresh_locked_validity()
+    end
     settle_freeze_transition(transition_id, State.EDITING)
     return true
 end
@@ -1716,6 +2318,7 @@ release_preview = function(reason)
         return false
     end
     local transition_id = begin_freeze_transition(State.UNFREEZING)
+    validity_refresh_pending = false
     lifecycle_ui_refresh_ticks = 0
     building_mode_exit_checks = 0
     local is_manual_unfreeze = reason == "manual"
@@ -1869,7 +2472,7 @@ local function move_preview(forward_amount, right_amount, up_amount, distance_ov
     end
 
     if apply_preview_transform() then
-        refresh_locked_validity()
+        schedule_locked_validity_refresh()
     end
     verbose(string.format(
         "Move input applied: location=(%.1f, %.1f, %.1f)",
@@ -1905,7 +2508,7 @@ local function rotate_preview(yaw_amount, degrees_override)
     end
 
     if apply_preview_transform() then
-        refresh_locked_validity()
+        schedule_locked_validity_refresh()
     end
 end
 
@@ -1941,7 +2544,7 @@ local function reset_preview_transform()
     end
 
     if apply_preview_transform() then
-        refresh_locked_validity()
+        schedule_locked_validity_refresh()
         log("Preview reset to its original frozen transform.")
     end
 end
@@ -1974,8 +2577,463 @@ local function actor_from_hit_result(hit_result)
     return hit_result.HitObjectHandle.ReferenceObject:Get()
 end
 
+local function build_object_id_details(actor)
+    local id_ok, build_object_id = pcall(function()
+        return actor.BuildObjectId
+    end)
+    if not id_ok or build_object_id == nil or tostring(build_object_id) == "None" then
+        return nil, nil
+    end
+
+    local name_ok, id_name = pcall(function()
+        return build_object_id:ToString()
+    end)
+    if not name_ok or id_name == nil then
+        return nil, nil
+    end
+    return build_object_id, tostring(id_name)
+end
+
+local function finite_number(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+local function snapshot_actor_transform(actor)
+    local location = actor:K2_GetActorLocation()
+    local rotation = actor:K2_GetActorRotation()
+    if location == nil
+        or rotation == nil
+        or not finite_number(location.X)
+        or not finite_number(location.Y)
+        or not finite_number(location.Z)
+        or not finite_number(rotation.Pitch)
+        or not finite_number(rotation.Yaw)
+        or not finite_number(rotation.Roll)
+    then
+        error("target build piece returned an invalid transform")
+    end
+    return {
+        X = location.X,
+        Y = location.Y,
+        Z = location.Z,
+    }, {
+        Pitch = rotation.Pitch,
+        Yaw = rotation.Yaw,
+        Roll = rotation.Roll,
+    }
+end
+
+local function capture_looked_at_build_piece()
+    local component, active_checker, active_preview = find_active_build_context(false)
+    if component == nil then
+        error("no placement preview is active")
+    end
+    local player = component:GetOwner()
+    local camera = component.OwnerCamera
+    if not is_valid(player) or not is_valid(camera) then
+        error("player build camera is unavailable")
+    end
+
+    local start_location = camera:K2_GetComponentLocation()
+    local forward = camera:GetForwardVector()
+    local end_location = {
+        X = start_location.X + (forward.X * 50000.0),
+        Y = start_location.Y + (forward.Y * 50000.0),
+        Z = start_location.Z + (forward.Z * 50000.0),
+    }
+    local hit_result = {}
+    local transparent = { R = 0, G = 0, B = 0, A = 0 }
+    local was_hit = UEHelpers.GetKismetSystemLibrary():LineTraceSingle(
+        player,
+        start_location,
+        end_location,
+        0,
+        false,
+        { player },
+        0,
+        hit_result,
+        true,
+        transparent,
+        transparent,
+        0.0
+    )
+    if not was_hit then
+        error("no object was found under the cursor")
+    end
+
+    local target = actor_from_hit_result(hit_result)
+    if not is_valid(target) then
+        error("the traced actor is invalid")
+    end
+    local target_name = full_name(target)
+    if target == active_preview or target_name == full_name(active_preview) then
+        error("the cursor is pointing at the active placement preview")
+    end
+    local target_state_ok, target_state = pcall(function()
+        return target.CurrentState
+    end)
+    if target_state_ok and target_state ~= nil then
+        local rendered_target_state = tostring(target_state)
+        if target_state == 1
+            or string.find(rendered_target_state, "Simulation", 1, true) ~= nil
+        then
+            error("the cursor is pointing at a simulated placement preview")
+        end
+    end
+    local build_object_id, build_object_id_name = build_object_id_details(target)
+    if build_object_id == nil then
+        error("target is not a copyable Pal build object: " .. target_name)
+    end
+    local active_build_object_id, active_build_object_id_name =
+        build_object_id_details(active_preview)
+    if active_build_object_id == nil then
+        error("active preview does not expose a valid build object ID")
+    end
+    local target_location, target_rotation = snapshot_actor_transform(target)
+
+    return {
+        build_object_id = build_object_id,
+        build_object_id_name = build_object_id_name,
+        active_build_object_id_name = active_build_object_id_name,
+        location = target_location,
+        rotation = target_rotation,
+        source_name = target_name,
+        component = component,
+        checker = active_checker,
+        preview = active_preview,
+    }
+end
+
+local function position_preview_at_captured_transform(checker, active_preview, source)
+    if not is_valid(checker) or not is_valid(active_preview) then
+        return false, "replacement preview context is invalid"
+    end
+
+    local rollback_transform = nil
+    local ok, error_message = pcall(function()
+        local checker_location = checker:K2_GetActorLocation()
+        local checker_rotation = checker:K2_GetActorRotation()
+        local active_preview_location = active_preview:K2_GetActorLocation()
+        local active_preview_rotation = active_preview:K2_GetActorRotation()
+        rollback_transform = {
+            checker_location = {
+                X = checker_location.X,
+                Y = checker_location.Y,
+                Z = checker_location.Z,
+            },
+            checker_rotation = {
+                Pitch = checker_rotation.Pitch,
+                Yaw = checker_rotation.Yaw,
+                Roll = checker_rotation.Roll,
+            },
+            preview_location = {
+                X = active_preview_location.X,
+                Y = active_preview_location.Y,
+                Z = active_preview_location.Z,
+            },
+            preview_rotation = {
+                Pitch = active_preview_rotation.Pitch,
+                Yaw = active_preview_rotation.Yaw,
+                Roll = active_preview_rotation.Roll,
+            },
+        }
+
+        local offset_x = active_preview_location.X - checker_location.X
+        local offset_y = active_preview_location.Y - checker_location.Y
+        local checker_yaw = math.rad(checker_rotation.Yaw)
+        local relative_location = {
+            X = (math.cos(checker_yaw) * offset_x)
+                + (math.sin(checker_yaw) * offset_y),
+            Y = (-math.sin(checker_yaw) * offset_x)
+                + (math.cos(checker_yaw) * offset_y),
+            Z = active_preview_location.Z - checker_location.Z,
+        }
+        local relative_rotation = {
+            Pitch = active_preview_rotation.Pitch - checker_rotation.Pitch,
+            Yaw = active_preview_rotation.Yaw - checker_rotation.Yaw,
+            Roll = active_preview_rotation.Roll - checker_rotation.Roll,
+        }
+
+        local target_checker_rotation = {
+            Pitch = source.rotation.Pitch - relative_rotation.Pitch,
+            Yaw = source.rotation.Yaw - relative_rotation.Yaw,
+            Roll = source.rotation.Roll - relative_rotation.Roll,
+        }
+        local target_checker_yaw = math.rad(target_checker_rotation.Yaw)
+        local rotated_offset_x =
+            (math.cos(target_checker_yaw) * relative_location.X)
+            - (math.sin(target_checker_yaw) * relative_location.Y)
+        local rotated_offset_y =
+            (math.sin(target_checker_yaw) * relative_location.X)
+            + (math.cos(target_checker_yaw) * relative_location.Y)
+        local target_checker_location = {
+            X = source.location.X - rotated_offset_x,
+            Y = source.location.Y - rotated_offset_y,
+            Z = source.location.Z - relative_location.Z,
+        }
+
+        checker:K2_SetActorLocationAndRotation(
+            target_checker_location,
+            target_checker_rotation,
+            false,
+            {},
+            true
+        )
+        active_preview:K2_SetActorLocationAndRotation(
+            source.location,
+            source.rotation,
+            false,
+            {},
+            true
+        )
+    end)
+    if not ok then
+        if rollback_transform ~= nil then
+            pcall(function()
+                checker:K2_SetActorLocationAndRotation(
+                    rollback_transform.checker_location,
+                    rollback_transform.checker_rotation,
+                    false,
+                    {},
+                    true
+                )
+                active_preview:K2_SetActorLocationAndRotation(
+                    rollback_transform.preview_location,
+                    rollback_transform.preview_rotation,
+                    false,
+                    {},
+                    true
+                )
+            end)
+        end
+        return false, tostring(error_message)
+    end
+    return true
+end
+
+local function abort_piece_switch(transition_id, message)
+    if transition_id ~= freeze_transition_generation
+        or state ~= State.SWITCHING
+    then
+        return
+    end
+    log("Build-piece switch failed: " .. tostring(message))
+    preview_actor = nil
+    lifecycle_ui_refresh_ticks = 0
+    complete_freeze_transition(transition_id, State.SEARCHING)
+end
+
+local queue_piece_switch_poll
+
+local function finish_piece_switch(
+    transition_id,
+    source,
+    freeze_after_switch,
+    component,
+    checker,
+    active_preview
+)
+    if freeze_after_switch then
+        local positioned, position_error =
+            position_preview_at_captured_transform(checker, active_preview, source)
+        if not positioned then
+            abort_piece_switch(transition_id, position_error)
+            return
+        end
+
+        -- The preview is now at the captured world transform. End the switch
+        -- transaction and immediately start the normal freeze transaction in
+        -- this same game-thread callback, leaving no input-visible gap.
+        complete_freeze_transition(transition_id, State.READY)
+        local freeze_ok, frozen_or_error = pcall(begin_editing, true)
+        if freeze_ok and frozen_or_error then
+            log("Copied and froze preview to " .. source.source_name .. ".")
+        else
+            if not freeze_ok then
+                log("Copy-and-freeze transition failed: " .. tostring(frozen_or_error))
+                if state == State.EDITING then
+                    pcall(release_preview, "copy-and-freeze transition failed")
+                elseif state == State.FREEZING then
+                    cancel_begin_editing(
+                        freeze_transition_generation,
+                        State.READY,
+                        "copy-and-freeze raised an unexpected transition error"
+                    )
+                end
+            end
+            log("Copied the targeted piece, but its replacement preview could not be frozen.")
+        end
+        return
+    end
+
+    cached_builder_component = component
+    preview_actor = active_preview
+    complete_freeze_transition(transition_id, State.READY)
+    log("Copied build preview from " .. source.source_name .. ".")
+end
+
+queue_piece_switch_poll = function(
+    transition_id,
+    source,
+    freeze_after_switch,
+    attempt,
+    stable_preview_name
+)
+    local queued = execute_in_game_thread_with_retained_delay(
+        FREEZE_TO_PIECE_RETRY_MS,
+        function()
+            if transition_id ~= freeze_transition_generation
+                or state ~= State.SWITCHING
+            then
+                return
+            end
+
+            local ok, error_message = pcall(function()
+                local component, checker, active_preview =
+                    find_active_build_context(false)
+                local _, active_id_name = build_object_id_details(active_preview)
+                local current_preview_name = is_valid(active_preview)
+                    and full_name(active_preview)
+                    or nil
+                local expected_preview_is_ready = component ~= nil
+                    and active_id_name == source.build_object_id_name
+                    and current_preview_name ~= nil
+
+                if expected_preview_is_ready
+                    and current_preview_name == stable_preview_name
+                then
+                    finish_piece_switch(
+                        transition_id,
+                        source,
+                        freeze_after_switch,
+                        component,
+                        checker,
+                        active_preview
+                    )
+                    return
+                end
+
+                if attempt >= FREEZE_TO_PIECE_MAX_ATTEMPTS then
+                    abort_piece_switch(
+                        transition_id,
+                        "replacement preview did not become ready within "
+                            .. tostring(
+                                FREEZE_TO_PIECE_RETRY_MS
+                                    * FREEZE_TO_PIECE_MAX_ATTEMPTS
+                            )
+                            .. " ms"
+                    )
+                    return
+                end
+
+                queue_piece_switch_poll(
+                    transition_id,
+                    source,
+                    freeze_after_switch,
+                    attempt + 1,
+                    expected_preview_is_ready and current_preview_name or nil
+                )
+            end)
+            if not ok then
+                abort_piece_switch(transition_id, error_message)
+            end
+        end,
+        "Build-piece switch readiness check",
+        function()
+            abort_piece_switch(
+                transition_id,
+                "could not enter the game thread for a readiness check"
+            )
+        end
+    )
+    if not queued then
+        abort_piece_switch(transition_id, "could not queue the readiness check")
+    end
+end
+
+local function switch_to_captured_build_piece(source, freeze_after_switch)
+    local transition_id = begin_freeze_transition(State.SWITCHING)
+    local mode_label = freeze_after_switch and "copy-and-freeze" or "eyedropper"
+    log(string.format(
+        "Starting %s switch to %s.",
+        mode_label,
+        source.source_name
+    ))
+
+    local finish_ok, finish_error = pcall(function()
+        local building_model = FindFirstOf("PalUIBuildingModel")
+        if is_valid(building_model) then
+            building_model:FinishBuilding()
+        end
+    end)
+    if not finish_ok then
+        abort_piece_switch(transition_id, finish_error)
+        return
+    end
+
+    preview_actor = nil
+    local queued = execute_in_game_thread_with_retained_delay(
+        1,
+        function()
+            if transition_id ~= freeze_transition_generation
+                or state ~= State.SWITCHING
+            then
+                return
+            end
+
+            local ok, error_message = pcall(function()
+                local ui_model = FindFirstOf("PalUIBuildModel")
+                if not is_valid(ui_model) then
+                    ui_model = FindFirstOf("BP_PalUIBuildModel_C")
+                end
+                if not is_valid(ui_model) then
+                    error("build-menu model did not become available")
+                end
+                ui_model:StartBuildObject(source.build_object_id)
+                queue_piece_switch_poll(
+                    transition_id,
+                    source,
+                    freeze_after_switch,
+                    1,
+                    nil
+                )
+            end)
+            if not ok then
+                abort_piece_switch(transition_id, error_message)
+            end
+        end,
+        "Build-piece selection handoff",
+        function()
+            abort_piece_switch(
+                transition_id,
+                "could not enter the game thread for the selection handoff"
+            )
+        end
+    )
+    if not queued then
+        abort_piece_switch(transition_id, "could not queue the selection handoff")
+    end
+end
+
+local function capture_piece_for_action(action_label)
+    local ok, source_or_error = pcall(capture_looked_at_build_piece)
+    if not ok then
+        log(string.format(
+            "%s failed: %s.",
+            action_label,
+            tostring(source_or_error)
+        ))
+        return nil
+    end
+    return source_or_error
+end
+
 local function copy_looked_at_build_piece()
     if freeze_transition_input_locked
+        or state == State.SWITCHING
         or state == State.FREEZING
         or state == State.UNFREEZING
     then
@@ -1986,116 +3044,55 @@ local function copy_looked_at_build_piece()
         log("Eyedropper ignored while the preview is frozen.")
         return
     end
-    ExecuteInGameThread(function()
-        local ok, error_message = pcall(function()
-            local component, active_checker, active_preview = find_active_build_context(false)
-            if component == nil then
-                log("Eyedropper ignored: no placement preview is active.")
-                return
-            end
-            local player = component:GetOwner()
-            local camera = component.OwnerCamera
-            if not is_valid(player) or not is_valid(camera) then
-                error("player build camera is unavailable")
-            end
 
-            local start_location = camera:K2_GetComponentLocation()
-            local forward = camera:GetForwardVector()
-            local end_location = {
-                X = start_location.X + (forward.X * 50000.0),
-                Y = start_location.Y + (forward.Y * 50000.0),
-                Z = start_location.Z + (forward.Z * 50000.0),
-            }
-            local hit_result = {}
-            local transparent = { R = 0, G = 0, B = 0, A = 0 }
-            local was_hit = UEHelpers.GetKismetSystemLibrary():LineTraceSingle(
-                player,
-                start_location,
-                end_location,
-                0,
-                false,
-                { player },
-                0,
-                hit_result,
-                true,
-                transparent,
-                transparent,
-                0.0
-            )
-            if not was_hit then
-                error("no object was found under the cursor")
-            end
+    local source = capture_piece_for_action("Eyedropper")
+    if source == nil then
+        return
+    end
+    if source.build_object_id_name == source.active_build_object_id_name then
+        log("Eyedropper ignored: looked-at piece already matches the active preview.")
+        return
+    end
+    source.component = nil
+    source.checker = nil
+    source.preview = nil
+    switch_to_captured_build_piece(source, false)
+end
 
-            local target = actor_from_hit_result(hit_result)
-            if not is_valid(target) then
-                error("the traced actor is invalid")
-            end
-            local id_ok, build_object_id = pcall(function()
-                return target.BuildObjectId
-            end)
-            if not id_ok or build_object_id == nil or tostring(build_object_id) == "None" then
-                error("target is not a copyable Pal build object: " .. full_name(target))
-            end
+local function freeze_to_looked_at_build_piece()
+    if freeze_transition_input_locked
+        or state == State.SWITCHING
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+    then
+        verbose("Copy-and-freeze ignored while placement state settles.")
+        return
+    end
+    if state == State.EDITING then
+        log("Copy-and-freeze ignored while the preview is already frozen.")
+        return
+    end
 
-            local active_id_ok, active_build_object_id = pcall(function()
-                return active_preview.BuildObjectId
-            end)
-            local names_ok, target_id_name, active_id_name = pcall(function()
-                return build_object_id:ToString(), active_build_object_id:ToString()
-            end)
-            if active_id_ok and names_ok and target_id_name == active_id_name then
-                log("Eyedropper ignored: looked-at piece already matches the active preview.")
-                return
-            end
-
-            local building_model = FindFirstOf("PalUIBuildingModel")
-            if is_valid(building_model) then
-                building_model:FinishBuilding()
-                -- FinishBuilding creates the menu-side selection model. Handoff
-                -- on the next async tick to minimize or eliminate visible menu flash.
-                ExecuteWithDelay(1, function()
-                    ExecuteInGameThread(function()
-                        local delayed_ok, delayed_error = pcall(function()
-                            if not is_valid(target) then
-                                error("copied source actor became invalid")
-                            end
-                            local delayed_build_object_id = target.BuildObjectId
-                            local ui_model = FindFirstOf("PalUIBuildModel")
-                            if not is_valid(ui_model) then
-                                ui_model = FindFirstOf("BP_PalUIBuildModel_C")
-                            end
-                            if not is_valid(ui_model) then
-                                error("build-menu model did not become available")
-                            end
-                            ui_model:StartBuildObject(delayed_build_object_id)
-                            log(string.format(
-                                "Copied build preview started from %s.",
-                                full_name(target)
-                            ))
-                        end)
-                        if not delayed_ok then
-                            log("Could not start copied build preview: " .. tostring(delayed_error))
-                        end
-                    end)
-                end)
-            else
-                local ui_model = FindFirstOf("PalUIBuildModel")
-                if not is_valid(ui_model) then
-                    ui_model = FindFirstOf("BP_PalUIBuildModel_C")
-                end
-                if not is_valid(ui_model) then
-                    error("no active Palworld building model is available")
-                end
-                ui_model:StartBuildObject(build_object_id)
-            end
-            preview_actor = nil
-            state = State.SEARCHING
-            log("Queued copied build piece from " .. full_name(target) .. ".")
-        end)
-        if not ok then
-            log("Could not copy looked-at build piece: " .. tostring(error_message))
-        end
-    end)
+    local source = capture_piece_for_action("Copy-and-freeze")
+    if source == nil then
+        return
+    end
+    if source.build_object_id_name == source.active_build_object_id_name then
+        local transition_id = begin_freeze_transition(State.SWITCHING)
+        finish_piece_switch(
+            transition_id,
+            source,
+            true,
+            source.component,
+            source.checker,
+            source.preview
+        )
+        return
+    end
+    source.component = nil
+    source.checker = nil
+    source.preview = nil
+    switch_to_captured_build_piece(source, true)
 end
 
 local function register_chord(key, modifiers, callback)
@@ -2121,6 +3118,8 @@ local function register_chord(key, modifiers, callback)
         else
             RegisterKeyBind(key, modifiers, queued_callback)
         end
+        registered_keybind_callbacks[#registered_keybind_callbacks + 1] =
+            queued_callback
     end)
     if not ok then
         log(string.format(
@@ -2301,6 +3300,7 @@ register_supplemental_freeze_chord(
     { ModifierKey.CONTROL, ModifierKey.ALT }
 )
 register_action("copy_piece", copy_looked_at_build_piece)
+register_action("freeze_to_piece", freeze_to_looked_at_build_piece)
 
 local function refresh_keycaps_for_ui_host(host)
     keycap_ui_host = nil
@@ -2314,35 +3314,54 @@ local UI_HOST_CLASS_PATH =
     "/Game/Mods/PerfectPlacement/WBP_PerfectPlacement_KeyGuide"
     .. ".WBP_PerfectPlacement_KeyGuide_C"
 
+ui_host_notify_callback = function()
+    if ui_host_setup_pending then
+        return
+    end
+    ui_host_setup_pending = true
+    local queued = execute_in_game_thread_with_retained_delay(
+        250,
+        function()
+            ui_host_setup_pending = false
+            -- Treat NotifyOnNewObject only as a wake-up signal. Reacquiring on
+            -- the game thread avoids retaining a UObject wrapper across a map
+            -- transition and delayed callback.
+            perfect_placement_ui_host = nil
+            keycap_ui_host = nil
+            local host = find_perfect_placement_ui_host()
+            if not is_valid(host) then
+                return
+            end
+
+            ui_host_missing_was_logged = false
+            cached_builder_component = nil
+            unfrozen_ui_builder_component = nil
+            unfrozen_ui_preview_visible = nil
+            construction_ui_scan_context_name = nil
+            builder_fallback_scan_cooldown = 0
+            lifecycle_ui_refresh_ticks = 0
+            refresh_keycaps_for_ui_host(host)
+
+            if os.clock() - lifecycle_monitor_last_tick > 1.0 then
+                lifecycle_monitor_started = false
+                start_lifecycle_monitor()
+                log("Placement UI lifecycle monitor restarted for the new world.")
+            end
+        end,
+        "Companion UI host setup",
+        function()
+            ui_host_setup_pending = false
+        end
+    )
+    if not queued then
+        ui_host_setup_pending = false
+    end
+end
+
 local ui_notify_ok, ui_notify_error = pcall(
     NotifyOnNewObject,
     UI_HOST_CLASS_PATH,
-    function(host)
-        ExecuteWithDelay(250, function()
-            ExecuteInGameThread(function()
-                if not is_valid(host) then
-                    return
-                end
-
-                perfect_placement_ui_host = host
-                keycap_ui_host = nil
-                ui_host_missing_was_logged = false
-                cached_builder_component = nil
-                unfrozen_ui_builder_component = nil
-                unfrozen_ui_preview_visible = nil
-                builder_fallback_scan_cooldown = 0
-                lifecycle_ui_refresh_ticks = 0
-
-                refresh_keycaps_for_ui_host(host)
-
-                if os.clock() - lifecycle_monitor_last_tick > 1.0 then
-                    lifecycle_monitor_started = false
-                    start_lifecycle_monitor()
-                    log("Placement UI lifecycle monitor restarted for the new world.")
-                end
-            end)
-        end)
-    end
+    ui_host_notify_callback
 )
 if not ui_notify_ok then
     log("Could not register companion UI lifecycle notification: "
@@ -2353,6 +3372,6 @@ end
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.6-release")
-log("Companion key-guide UI bridge revision 22 loaded.")
+log("Loaded Perfect Placement 0.1.7-rc")
+log("Companion key-guide UI bridge revision 23 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")
