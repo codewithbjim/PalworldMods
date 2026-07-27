@@ -34,6 +34,9 @@ param(
     [string]$FileId,
     [string]$Category = 'main',
     [string]$Description,
+    [bool]$PrimaryModManagerDownload = $true,
+    [bool]$AllowModManagerDownload = $true,
+    [bool]$UpdateModVersion = $true,
     [switch]$ArchiveExisting,
     [switch]$KeepZip,
     [switch]$Publish
@@ -155,6 +158,9 @@ if ($DryRun) {
     Write-Host "  name        : $ModName"
     Write-Host "  version     : $Version"
     Write-Host "  category    : $Category"
+    Write-Host "  primary     : $PrimaryModManagerDownload"
+    Write-Host "  mod manager : $AllowModManagerDownload"
+    Write-Host "  update page : $UpdateModVersion"
     Write-Host "  archive old : $([bool]$ArchiveExisting)"
     Write-Host "  description : $(if ($Description) { "$($Description.Length) chars (from CHANGELOG.md)" } else { '<none>' })"
     Write-Host ""
@@ -258,7 +264,9 @@ try {
             name                         = $ModName
             version                      = $Version
             file_category                = $Category
-            primary_mod_manager_download = $true
+            primary_mod_manager_download = $PrimaryModManagerDownload
+            allow_mod_manager_download   = $AllowModManagerDownload
+            update_mod_version           = $UpdateModVersion
         }
         if ($Description) { $payload.description = $Description }
         # Send raw UTF-8 bytes: PS 5.1 encodes string bodies as Latin-1, which
@@ -281,6 +289,9 @@ try {
             name                  = $ModName
             version               = $Version
             file_category         = $Category
+            primary_mod_manager_download = $PrimaryModManagerDownload
+            allow_mod_manager_download   = $AllowModManagerDownload
+            update_mod_version    = $UpdateModVersion
             archive_existing_file = [bool]$ArchiveExisting
         }
         if ($Description) { $payload.description = $Description }
