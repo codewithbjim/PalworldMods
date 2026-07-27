@@ -87,6 +87,3 @@ Disable Perfect Placement in [b]Options → Mod Management[/b], apply the change
 
 [h2]Support the project[/h2]
 If Perfect Placement has been useful and you would like to support continued development, you can leave a tip on [url=https://ko-fi.com/virtualbjorn]Ko-fi[/url].
-
-[h2]Credits[/h2]
-Created by [b]virtualbjörn[/b]. Performance improvements in 0.1.1 incorporate the initial cache patch supplied by Nexus community contributor [b]DoubleGx0[/b].
