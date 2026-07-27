@@ -2,6 +2,8 @@ Version 0.1.6-release — DarnMenu integration and lifecycle fixes
 
 - Replaces Mod Config Menu with DarnMenu 1.6.2 native key-chord controls.
 - Adds movement, interface, and diagnostic DarnMenu settings.
+- Moves the centimeter unit into the Movement settings heading for a cleaner
+  options layout.
 - Saves overrides in Mods/shared/PerfectPlacement_user.lua.
 - Removes the old MCM JSON schema and reader.
 - Falls back to Scripts/config.lua when DarnMenu is unavailable.
