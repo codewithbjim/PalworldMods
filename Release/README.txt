@@ -49,6 +49,9 @@ Open ESC > Mod Options > Perfect Placement to edit key chords. Apply changes,
 then restart Palworld. Saved overrides live in:
   Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
+The page also configures movement-step values, step multiplier, vertical
+limits, rotation increment, keycap icons, and verbose diagnostic logging.
+
 Without DarnMenu or a saved override, Scripts\config.lua supplies the defaults.
 
 KEYBIND COMPATIBILITY

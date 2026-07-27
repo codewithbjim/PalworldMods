@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 5
+local SCHEMA_VERSION = 6
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -29,7 +29,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 5,
+  schemaVersion = 6,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -50,13 +50,22 @@ return {
     reset = { key = "NUM_FIVE", modifiers = {} },
     step_down = { key = "SUBTRACT", modifiers = {} },
     step_up = { key = "ADD", modifiers = {} },
+    movement_start_cm = 10.0,
+    movement_minimum_cm = 0.1,
+    movement_maximum_cm = 1000.0,
+    movement_step_scale = 10,
+    movement_maximum_below_cm = 25.0,
+    movement_maximum_above_cm = 650.0,
+    rotation_step_degrees = 5.0,
+    use_palworld_keycaps = true,
+    verbose_logging = false,
   },
   sections = {
     { title = "Preview", options = {
       { path = "toggle_freeze", label = "Freeze or unfreeze preview", kind = "keychord" },
       { path = "copy_piece", label = "Copy targeted build piece", kind = "keychord" },
     }},
-    { title = "Movement", options = {
+    { title = "Movement bindings", options = {
       { path = "move_left", label = "Move left", kind = "keychord" },
       { path = "move_right", label = "Move right", kind = "keychord" },
       { path = "move_forward", label = "Move forward", kind = "keychord" },
@@ -64,16 +73,85 @@ return {
       { path = "move_up", label = "Move up", kind = "keychord" },
       { path = "move_down", label = "Move down", kind = "keychord" },
     }},
-    { title = "Rotation and step", options = {
+    { title = "Rotation and step bindings", options = {
       { path = "rotate_left", label = "Rotate left", kind = "keychord" },
       { path = "rotate_right", label = "Rotate right", kind = "keychord" },
       { path = "reset", label = "Reset transform", kind = "keychord" },
       { path = "step_down", label = "Decrease move step", kind = "keychord" },
       { path = "step_up", label = "Increase move step", kind = "keychord" },
     }},
+    { title = "Movement settings", options = {
+      { path = "movement_start_cm", label = "Starting movement step", kind = "number",
+        min = 0.1, max = 1000, step = 0.1, note = "centimeters" },
+      { path = "movement_step_scale", label = "Step multiplier", kind = "enum",
+        values = {
+          { value = 2, label = "×2" },
+          { value = 5, label = "×5" },
+          { value = 10, label = "×10" },
+        } },
+      { subtitle = "Advanced step limits",
+        help = "The minimum must not exceed the maximum." },
+      { path = "movement_minimum_cm", label = "Minimum movement step", kind = "number",
+        min = 0.1, max = 1000, step = 0.1, note = "centimeters" },
+      { path = "movement_maximum_cm", label = "Maximum movement step", kind = "number",
+        min = 0.1, max = 1000, step = 1, note = "centimeters" },
+      { path = "movement_maximum_below_cm", label = "Maximum movement below origin",
+        kind = "number", min = 0, max = 1000, step = 5, note = "centimeters" },
+      { path = "movement_maximum_above_cm", label = "Maximum movement above origin",
+        kind = "number", min = 0, max = 5000, step = 10, note = "centimeters" },
+    }},
+    { title = "Rotation settings", options = {
+      { path = "rotation_step_degrees", label = "Rotation step", kind = "number",
+        min = 0.1, max = 180, step = 0.1, note = "degrees" },
+    }},
+    { title = "Interface", options = {
+      { path = "use_palworld_keycaps", label = "Use Palworld keycap icons",
+        kind = "bool" },
+    }},
+    { title = "Diagnostics", options = {
+      { path = "verbose_logging", label = "Verbose UE4SS logging", kind = "bool",
+        help = "Enable only while diagnosing a problem; this can produce many log lines." },
+    }},
   },
 }
 ]==]
+
+local SETTING_SPECS = {
+    movement_start_cm = {
+        section = "movement", field = "normal", kind = "number",
+        minimum = 0.1, maximum = 1000.0,
+    },
+    movement_minimum_cm = {
+        section = "movement", field = "minimum", kind = "number",
+        minimum = 0.1, maximum = 1000.0,
+    },
+    movement_maximum_cm = {
+        section = "movement", field = "maximum", kind = "number",
+        minimum = 0.1, maximum = 1000.0,
+    },
+    movement_step_scale = {
+        section = "movement", field = "step_scale", kind = "enum",
+        allowed = { [2] = true, [5] = true, [10] = true },
+    },
+    movement_maximum_below_cm = {
+        section = "movement", field = "maximum_below_initial_cm", kind = "number",
+        minimum = 0.0, maximum = 1000.0,
+    },
+    movement_maximum_above_cm = {
+        section = "movement", field = "maximum_above_initial_cm", kind = "number",
+        minimum = 0.0, maximum = 5000.0,
+    },
+    rotation_step_degrees = {
+        section = "rotation", field = "normal", kind = "number",
+        minimum = 0.1, maximum = 180.0,
+    },
+    use_palworld_keycaps = {
+        section = "ui", field = "use_palworld_keycaps", kind = "boolean",
+    },
+    verbose_logging = {
+        section = "diagnostics", field = "verbose", kind = "boolean",
+    },
+}
 
 local function script_directory()
     if debug == nil or debug.getinfo == nil then
@@ -183,6 +261,78 @@ local function copy_binding(raw)
         end
     end
     return binding
+end
+
+local function number_is_finite(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+function M.apply_settings(config, report)
+    if type(config) ~= "table" then
+        return 0
+    end
+    local shared = shared_directory()
+    local user = shared ~= nil
+        and read_table(shared .. USER_CONFIG_NAME .. ".lua")
+        or nil
+    if user == nil then
+        return 0
+    end
+
+    local report_message = report or function() end
+    local original_minimum = config.movement.minimum
+    local original_maximum = config.movement.maximum
+    local loaded_count = 0
+    for path, spec in pairs(SETTING_SPECS) do
+        local value = user[path]
+        if value ~= nil then
+            local valid = false
+            if spec.kind == "boolean" then
+                valid = type(value) == "boolean"
+            elseif spec.kind == "number" then
+                valid = number_is_finite(value)
+                    and value >= spec.minimum
+                    and value <= spec.maximum
+            elseif spec.kind == "enum" then
+                valid = spec.allowed[value] == true
+            end
+
+            local section = config[spec.section]
+            if valid and type(section) == "table" then
+                section[spec.field] = value
+                loaded_count = loaded_count + 1
+            else
+                report_message(string.format(
+                    "DarnMenu setting '%s' is invalid; using config.lua default.",
+                    path
+                ))
+            end
+        end
+    end
+
+    if config.movement.minimum > config.movement.maximum then
+        config.movement.minimum = original_minimum
+        config.movement.maximum = original_maximum
+        report_message(
+            "DarnMenu movement minimum exceeds maximum; both limits use config.lua defaults."
+        )
+    end
+    config.movement.normal = math.max(
+        config.movement.minimum,
+        math.min(config.movement.maximum, config.movement.normal)
+    )
+
+    if loaded_count > 0 then
+        report_message(string.format(
+            "Loaded %d DarnMenu gameplay/interface settings (schema v%d).",
+            loaded_count,
+            SCHEMA_VERSION
+        ))
+    end
+    return loaded_count
 end
 
 function M.load(action_order, report)

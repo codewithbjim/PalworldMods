@@ -20,7 +20,7 @@ local preview_root_component = nil
 local preview_root_previous_mobility = nil
 local desired_location = nil
 local desired_rotation = nil
-local current_move_step = Config.movement.normal
+local current_move_step = nil
 local transform_loop_started = false
 local preview_tick_was_enabled = nil
 local builder_component = nil
@@ -67,6 +67,9 @@ local retained_async_callback_serial = 0
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
 end
+
+DarnMenu.apply_settings(Config, log)
+current_move_step = Config.movement.normal
 
 local function retain_async_callback(callback, label)
     retained_async_callback_serial = retained_async_callback_serial + 1
