@@ -3,7 +3,8 @@ PERFECT PLACEMENT 0.1.5-CRASHFIX.1
 
 REQUIREMENT
 -----------
-A Palworld-compatible UE4SS installation.
+A Palworld-compatible UE4SS installation and DarnMenu 1.6.2 or newer.
+DarnUI is installed as DarnMenu's dependency.
 
 INSTALLATION
 ------------
@@ -13,11 +14,10 @@ Allow folders to merge.
 Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\enabled.txt
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Info.json
-  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\PerfectPlacement.modconfig.json
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\main.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\config.lua
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\darnmenu.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\keybindings.lua
-  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\modconfig.lua
   Pal\Content\Paks\LogicMods\PerfectPlacement.pak
 
 If your UE4SS build uses mods.txt, add:
@@ -43,13 +43,13 @@ Normal middle-mouse Pal commands remain unaffected.
 
 Gamepad placement controls are not supported in this release.
 
-MOD CONFIG MENU
----------------
-Save key changes, then reopen your world or restart Palworld.
+DARNMENU
+--------
+Open ESC > Mod Options > Perfect Placement to edit key chords. Apply changes,
+then restart Palworld. Saved overrides live in:
+  Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
-Known MCM issue: symbol keys and mouse bindings are not always mapped or shown
-correctly by Mod Config Menu. Use letter, number, function, navigation, or
-numpad keys in MCM until that upstream issue is fixed.
+Without DarnMenu or a saved override, Scripts\config.lua supplies the defaults.
 
 KEYBIND COMPATIBILITY
 ---------------------

@@ -39,8 +39,8 @@ return {
         coarse = 15.0,
     },
 
-    -- Fallback bindings used when PerfectPlacement.modconfig.json is absent or
-    -- invalid. Symbolic key names drive both UE4SS input registration and the
+    -- Fallback bindings used when DarnMenu is absent or has no saved override.
+    -- Symbolic key names drive both UE4SS input registration and the
     -- keycaps in the companion UI. Supported names include A-Z, 0-9, F1-F12,
     -- navigation keys, common punctuation, NUMPAD_0 through NUMPAD_9, numpad
     -- operators, LEFT_MOUSE, RIGHT_MOUSE, MIDDLE_MOUSE, MOUSE_BUTTON_4, and

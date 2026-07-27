@@ -8,7 +8,8 @@
   "Author": "virtualbjörn",
   "Description": "Freezes a building preview so the player can walk around and fine-tune its transform before final placement.",
   "Dependencies": [
-    "UE4SS"
+    "UE4SS",
+    "DarnMenu"
   ],
   "Tags": [
     "UE4SS",

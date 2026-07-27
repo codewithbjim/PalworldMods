@@ -27,14 +27,19 @@ function Get-Sha256 {
 }
 
 $manifestPath = Join-Path $modRoot "Info.json"
-$modConfigPath = Join-Path $modRoot "PerfectPlacement.modconfig.json"
+$darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
+$obsoleteMcmSchemaPath = Join-Path $modRoot "PerfectPlacement.modconfig.json"
+$obsoleteMcmReaderPath = Join-Path $modRoot "Scripts\modconfig.lua"
 Assert-ReleaseCondition (Test-Path -LiteralPath $manifestPath -PathType Leaf) `
     "Missing manifest: $manifestPath"
-Assert-ReleaseCondition (Test-Path -LiteralPath $modConfigPath -PathType Leaf) `
-    "Missing Mod Config schema: $modConfigPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $darnMenuPath -PathType Leaf) `
+    "Missing DarnMenu adapter: $darnMenuPath"
+Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmSchemaPath)) `
+    "Obsolete Mod Config Menu schema must not be shipped."
+Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
+    "Obsolete Mod Config Menu reader must not be shipped."
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$modConfig = Get-Content -LiteralPath $modConfigPath -Raw | ConvertFrom-Json
 if (-not $Version) {
     $Version = [string]$manifest.Version
 }
@@ -52,18 +57,23 @@ Assert-ReleaseCondition ($manifest.PackageName -eq "PerfectPlacement") `
     "Unexpected package name '$($manifest.PackageName)'."
 Assert-ReleaseCondition ($manifest.Version -eq $Version) `
     "Info.json version '$($manifest.Version)' does not match '$Version'."
-Assert-ReleaseCondition ($modConfig.meta.vers -eq $Version) `
-    "Mod Config version '$($modConfig.meta.vers)' does not match '$Version'."
+Assert-ReleaseCondition ($manifest.Dependencies -contains "DarnMenu") `
+    "Info.json must declare the DarnMenu dependency."
+$darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*5') `
+    "DarnMenu schema version 5 was not found."
+Assert-ReleaseCondition (
+    $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
+) "DarnMenu target must be PerfectPlacement_user."
 
 $requiredSources = @(
     "enabled.txt",
     "Info.json",
-    "PerfectPlacement.modconfig.json",
     "README.md",
     "Scripts\config.lua",
+    "Scripts\darnmenu.lua",
     "Scripts\keybindings.lua",
-    "Scripts\main.lua",
-    "Scripts\modconfig.lua"
+    "Scripts\main.lua"
 )
 foreach ($relativePath in $requiredSources) {
     $sourcePath = Join-Path $modRoot $relativePath

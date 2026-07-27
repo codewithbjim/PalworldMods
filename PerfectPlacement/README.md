@@ -50,13 +50,15 @@ Additional controls:
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation
 increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
 
-If [Mod Config Menu](https://github.com/Dekita/palworld-modconfig-devhelp)
-is installed, Perfect Placement appears there automatically using
-`PerfectPlacement.modconfig.json`. This file is the primary source for action
-keys even when the menu itself is not installed; `Scripts/config.lua` supplies
-fallback bindings if the file is absent or invalid. Save changes, then reopen
-your world or restart Palworld. Perfect Placement reloads the saved bindings
-when its placement widget is created in the new world.
+With DarnMenu 1.6.2 or newer installed, Perfect Placement appears under
+**ESC → Mod Options**. Its native key-chord controls support a primary key plus
+any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed bindings
+to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying a
+binding change because UE4SS cannot unregister startup keybinds safely.
+
+If DarnMenu is unavailable or no binding has been saved, Perfect Placement uses
+the defaults in `Scripts/config.lua`. DarnUI is supplied as DarnMenu's own
+dependency; Perfect Placement does not create a separate DarnUI overlay.
 
 The companion guide resolves the selected keys to Palworld's stock keycap
 textures. Invalid, conflicting, or unsupported bindings fall back to their
@@ -65,10 +67,10 @@ combination of `Ctrl`, `Alt`, and `Shift`; the guide displays them in that
 order before the primary key. Stock keycaps are also available for left,
 right, and middle mouse buttons plus mouse buttons 4 and 5.
 
-Known MCM issue: symbol keys and mouse bindings are not always mapped or shown
-correctly by Mod Config Menu. Until that upstream issue is fixed, use letter,
-number, function, navigation, or numpad keys when configuring bindings through
-MCM.
+DarnMenu's capture set supports F1-F12, letters, top-row and numpad digits,
+numpad operators, and Insert/Delete/Home/End/Page Up/Page Down. Existing default
+mouse bindings remain valid, but mouse buttons cannot currently be captured as
+replacement keys through DarnMenu.
 
 Compatibility note: bindings may become intermittent when the same chord is
 registered by another mod or by UE4SS's built-in `Keybinds` mod. Check all

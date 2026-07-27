@@ -6,8 +6,8 @@ release is blocked if any required item fails or cannot be explained.
 ## 1. Prepare the candidate
 
 - [ ] Use a disposable test world or a verified backup.
-- [ ] Update `Info.json`, `PerfectPlacement.modconfig.json`, load-time version
-      logging, changelogs, release readme, and publishing-script defaults.
+- [ ] Update `Info.json`, DarnMenu schema version, load-time version logging,
+      changelogs, release readme, and publishing-script defaults.
 - [ ] Build the Nexus archive with `Release/build-release.ps1`.
 - [ ] Run the automated release gate:
 
@@ -70,12 +70,18 @@ release is blocked if any required item fails or cannot be explained.
 - [ ] Return to the title screen and reload the same world at least three times.
 - [ ] Quit the game while frozen and confirm the next launch is healthy.
 
-## 6. Copy and configurable-binding tests
+## 6. Copy and DarnMenu binding tests
 
 - [ ] Copy a different build piece with the eyedropper.
 - [ ] Attempt to copy while Freeze or Unfreeze is settling.
 - [ ] Change every configurable binding once and reopen the world.
 - [ ] Test a binding with each supported modifier and one multi-modifier chord.
+- [ ] Confirm the page appears under `ESC → Mod Options` with DarnMenu 1.6.2+
+      and every control uses the native keychord editor.
+- [ ] Confirm changes are written to
+      `Mods/shared/PerfectPlacement_user.lua` and apply after relaunch.
+- [ ] Remove or disable DarnMenu and confirm Perfect Placement safely falls
+      back to `Scripts/config.lua` without a Lua error.
 - [ ] Test NumLock on and off for Numpad 1/3.
 - [ ] Check for conflicts with UE4SS `Keybinds` and other installed mods.
 - [ ] Confirm configured keycaps and action labels refresh correctly.

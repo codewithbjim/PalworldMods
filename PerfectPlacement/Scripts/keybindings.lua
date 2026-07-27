@@ -102,10 +102,31 @@ local aliases = {
     LEFT_MOUSE_BUTTON = "LEFT_MOUSE",
     MMB = "MIDDLE_MOUSE",
     MIDDLEMOUSEBUTTON = "MIDDLE_MOUSE",
+    MIDDLE_MOUSE_BUTTON = "MIDDLE_MOUSE",
     MOUSE_MIDDLE = "MIDDLE_MOUSE",
     MOUSEBUTTON4 = "MOUSE_BUTTON_4",
     MOUSEBUTTON5 = "MOUSE_BUTTON_5",
     MULTIPLY = "NUMPAD_MULTIPLY",
+    ZERO = "0",
+    ONE = "1",
+    TWO = "2",
+    THREE = "3",
+    FOUR = "4",
+    FIVE = "5",
+    SIX = "6",
+    SEVEN = "7",
+    EIGHT = "8",
+    NINE = "9",
+    NUM_ZERO = "NUMPAD_0",
+    NUM_ONE = "NUMPAD_1",
+    NUM_TWO = "NUMPAD_2",
+    NUM_THREE = "NUMPAD_3",
+    NUM_FOUR = "NUMPAD_4",
+    NUM_FIVE = "NUMPAD_5",
+    NUM_SIX = "NUMPAD_6",
+    NUM_SEVEN = "NUMPAD_7",
+    NUM_EIGHT = "NUMPAD_8",
+    NUM_NINE = "NUMPAD_9",
     LEFTBRACKET = "LEFT_BRACKET",
     NUMPAD0 = "NUMPAD_0",
     NUMPAD1 = "NUMPAD_1",
@@ -138,6 +159,8 @@ local aliases = {
     PAGEUP = "PAGE_UP",
     PGDN = "PAGE_DOWN",
     PGUP = "PAGE_UP",
+    INS = "INSERT",
+    DEL = "DELETE",
     RETURN = "ENTER",
     RIGHTMOUSEBUTTON = "RIGHT_MOUSE",
     RIGHT_MOUSE_BUTTON = "RIGHT_MOUSE",
@@ -201,7 +224,7 @@ local modifier_assets = {
     },
 }
 
--- Keep modifier order stable across config.lua, Mod Config Menu, conflict
+-- Keep modifier order stable across config.lua, DarnMenu, conflict
 -- signatures, UE4SS registration, and the companion widget.
 local modifier_order = { "CONTROL", "ALT", "SHIFT" }
 

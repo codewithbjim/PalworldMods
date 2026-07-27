@@ -15,11 +15,10 @@ $destinationRoot = [System.IO.Path]::GetFullPath($Destination)
 
 foreach ($required in @(
     (Join-Path $modRoot "Info.json"),
-    (Join-Path $modRoot "PerfectPlacement.modconfig.json"),
     (Join-Path $modRoot "Scripts\main.lua"),
     (Join-Path $modRoot "Scripts\config.lua"),
     (Join-Path $modRoot "Scripts\keybindings.lua"),
-    (Join-Path $modRoot "Scripts\modconfig.lua"),
+    (Join-Path $modRoot "Scripts\darnmenu.lua"),
     $pakSource
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
@@ -38,8 +37,7 @@ foreach ($payloadDirectory in @($scriptsDestination, $logicModsDestination)) {
 New-Item -ItemType Directory -Force -Path $scriptsDestination, $logicModsDestination | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $modRoot "Info.json") -Destination $destinationRoot -Force
-Copy-Item -LiteralPath (Join-Path $modRoot "PerfectPlacement.modconfig.json") -Destination $destinationRoot -Force
-foreach ($scriptName in @("main.lua", "config.lua", "keybindings.lua", "modconfig.lua")) {
+foreach ($scriptName in @("main.lua", "config.lua", "keybindings.lua", "darnmenu.lua")) {
     Copy-Item -LiteralPath (Join-Path $modRoot "Scripts\$scriptName") -Destination $scriptsDestination -Force
 }
 Copy-Item -LiteralPath $pakSource -Destination (Join-Path $logicModsDestination "PerfectPlacement.pak") -Force
@@ -64,6 +62,9 @@ if ($manifest.PackageName -ne "PerfectPlacement") {
 }
 if (-not ($manifest.Dependencies -contains "UE4SS")) {
     throw "The staged package does not declare its UE4SS dependency."
+}
+if (-not ($manifest.Dependencies -contains "DarnMenu")) {
+    throw "The staged package does not declare its DarnMenu dependency."
 }
 foreach ($type in @("Lua", "LogicMods")) {
     if (-not ($manifest.InstallRule.Type -contains $type)) {

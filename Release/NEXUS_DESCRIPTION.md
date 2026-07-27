@@ -21,8 +21,13 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 
 - Palworld on Windows
 - A Palworld-compatible UE4SS installation
+- DarnMenu 1.6.2 or newer (DarnUI is DarnMenu's dependency)
 
 Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install both parts.
+
+Configure key chords under **ESC → Mod Options → Perfect Placement**. Binding
+changes apply after restarting Palworld. If DarnMenu is unavailable, the mod
+falls back to its built-in bindings.
 
 ---
 

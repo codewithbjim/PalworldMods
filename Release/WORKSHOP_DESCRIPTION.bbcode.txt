@@ -21,6 +21,7 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [list]
 [*]Palworld 1.0 for Windows through Steam
 [*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] is a hard requirement for the Steam Workshop version.[/b] It must be subscribed to and enabled through Palworld's Mod Management screen.
+[*][b]DarnMenu 1.6.2 or newer[/b]; DarnUI is installed as DarnMenu's dependency.
 [*]Keyboard and mouse; gamepad placement controls are not supported yet
 [/list]
 
@@ -48,6 +49,9 @@ The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palwor
 [/list]
 
 Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.
+
+[h2]Configure controls[/h2]
+Open [b]ESC → Mod Options → Perfect Placement[/b] to edit key chords through DarnMenu. Apply changes and restart Palworld. If DarnMenu is unavailable, Perfect Placement falls back to its built-in bindings.
 
 [h2]Important beta limitations[/h2]
 [list]

@@ -1,6 +1,6 @@
 local Config = require("config")
 local Keybindings = require("keybindings")
-local ModConfig = require("modconfig")
+local DarnMenu = require("darnmenu")
 local UEHelpers = require("UEHelpers")
 
 local MOD = "PerfectPlacement"
@@ -161,6 +161,8 @@ local function settle_freeze_transition(transition_id, stable_state)
 end
 
 local function load_resolved_bindings()
+    DarnMenu.register(log)
+
     local configured_bindings = {}
     for _, action in ipairs(Keybindings.action_order) do
         local configured = Config.bindings ~= nil and Config.bindings[action] or nil
@@ -170,13 +172,9 @@ local function load_resolved_bindings()
         configured_bindings[action] = configured
     end
 
-    local mcm_bindings = ModConfig.load(
-        "PerfectPlacement.modconfig.json",
-        Keybindings.action_order,
-        log
-    )
-    if mcm_bindings ~= nil then
-        for action, binding in pairs(mcm_bindings) do
+    local darnmenu_bindings = DarnMenu.load(Keybindings.action_order, log)
+    if darnmenu_bindings ~= nil then
+        for action, binding in pairs(darnmenu_bindings) do
             configured_bindings[action] = binding
         end
     end
@@ -2301,7 +2299,7 @@ register_supplemental_freeze_chord(
 )
 register_action("copy_piece", copy_looked_at_build_piece)
 
-local function refresh_bindings_from_mcm(host)
+local function refresh_bindings_from_darnmenu(host)
     resolved_bindings = load_resolved_bindings()
     for _, action in ipairs(Keybindings.action_order) do
         if action_callbacks[action] ~= nil then
@@ -2313,7 +2311,7 @@ local function refresh_bindings_from_mcm(host)
     if is_valid(host) then
         apply_configured_keycaps(host)
     end
-    log("Refreshed Mod Config Menu bindings for the new world.")
+    log("Refreshed DarnMenu bindings for the new world.")
 end
 
 local UI_HOST_CLASS_PATH =
@@ -2339,7 +2337,7 @@ local ui_notify_ok, ui_notify_error = pcall(
                 builder_fallback_scan_cooldown = 0
                 lifecycle_ui_refresh_ticks = 0
 
-                refresh_bindings_from_mcm(host)
+                refresh_bindings_from_darnmenu(host)
 
                 if os.clock() - lifecycle_monitor_last_tick > 1.0 then
                     lifecycle_monitor_started = false

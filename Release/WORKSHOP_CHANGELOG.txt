@@ -1,3 +1,11 @@
+Next maintenance update
+
+- Replaces Mod Config Menu with DarnMenu 1.6.2 native key-chord controls.
+- Saves overrides in Mods/shared/PerfectPlacement_user.lua.
+- Removes the old MCM JSON schema and reader.
+- Falls back to Scripts/config.lua when DarnMenu is unavailable.
+- Hides the placement guide after construction mode closes.
+
 Version 0.1.5-crashfix.1 — Freeze and input stability hotfix
 
 - Serializes configured keyboard and mouse controls onto the game thread.
