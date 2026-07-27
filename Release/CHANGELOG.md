@@ -2,15 +2,7 @@
 
 ## 0.1.7-rc
 
-Stability, validity-feedback, and copy-and-freeze release candidate.
-
-### Added
-
-- Add **Copy and Freeze to Targeted Piece**, bound by default to
-  `Ctrl+Shift+Middle Mouse`. It copies the targeted piece type, waits for
-  Palworld's replacement preview, transfers the target's position and
-  rotation, and freezes it there.
-- Expose the new copy-and-freeze chord in DarnMenu schema 11.
+Stability and validity-feedback release candidate.
 
 ### Fixed
 
@@ -23,8 +15,7 @@ Stability, validity-feedback, and copy-and-freeze release candidate.
 - Keep asynchronous callbacks alive until UE4SS safely retires them, preventing
   a removed game-thread hook from leaving placement controls and the frozen UI
   unresponsive.
-- Serialize eyedropper and copy-and-freeze handoffs, wait for a stable
-  replacement preview, and reject stale or spammed transitions.
+- Harden build-piece switching against stale or spammed transitions.
 - Reacquire delayed UI and toast objects after world or widget changes instead
   of retaining stale UObject wrappers.
 
@@ -40,9 +31,6 @@ Stability, validity-feedback, and copy-and-freeze release candidate.
 - Prefer UE4SS's isolated `ProcessEvent` game-thread route when available,
   while retaining the established queue as a fallback.
 - Keep the DarnMenu 1.6.2+ requirement and `Scripts/config.lua` fallback.
-- The existing companion-guide PAK is unchanged and has no dedicated
-  copy-and-freeze row; the binding is available in DarnMenu and documented in
-  the included README.
 
 ## 0.1.6-release
 

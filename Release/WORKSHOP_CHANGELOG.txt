@@ -1,10 +1,4 @@
-Version 0.1.7-rc - Stability, validity, and copy-and-freeze
-
-Added
-- Add Copy and Freeze to Targeted Piece on Ctrl+Shift+Middle Mouse.
-- Wait for Palworld's replacement preview, move it to the targeted piece's
-  position and rotation, and freeze it there.
-- Expose the new copy-and-freeze chord in DarnMenu schema 11.
+Version 0.1.7-rc - Stability and validity feedback
 
 Fixed
 - Refresh valid/invalid placement feedback after frozen movement, rotation, and
@@ -13,8 +7,7 @@ Fixed
   checker and visible preview remain synchronized.
 - Harden callback lifetimes to prevent controls and the frozen UI becoming
   unresponsive after rapid input.
-- Serialize eyedropper and copy-and-freeze switching and reject stale or
-  spammed transitions.
+- Harden build-piece switching against stale or spammed transitions.
 - Reacquire delayed UI objects safely after map and widget changes.
 
 Performance
@@ -26,8 +19,6 @@ Compatibility
 - Prefer UE4SS's isolated ProcessEvent route when available, with the existing
   queue as fallback.
 - DarnMenu 1.6.2 or newer remains required.
-- The companion guide has no separate copy-and-freeze row; configure the chord
-  through DarnMenu.
 
 Version 0.1.6-release - Configuration and lifecycle stability
 
