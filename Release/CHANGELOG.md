@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased maintenance
+## 0.1.6-release
 
 - Replace Mod Config Menu integration with DarnMenu 1.6.2 native key-chord
   controls under `ESC → Mod Options`.
@@ -10,6 +10,8 @@
 - Remove the MCM JSON schema and UTF-16 JSON reader from release packages.
 - Fall back safely to `Scripts/config.lua` when DarnMenu is unavailable.
 - Hide the Perfect Placement guide after Palworld closes construction mode.
+- Register placement controls only once during startup, preventing recreated UI
+  hosts from accumulating duplicate callbacks.
 
 ## 0.1.5-crashfix.1
 

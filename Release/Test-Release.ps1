@@ -28,6 +28,7 @@ function Get-Sha256 {
 
 $manifestPath = Join-Path $modRoot "Info.json"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
+$mainPath = Join-Path $modRoot "Scripts\main.lua"
 $obsoleteMcmSchemaPath = Join-Path $modRoot "PerfectPlacement.modconfig.json"
 $obsoleteMcmReaderPath = Join-Path $modRoot "Scripts\modconfig.lua"
 Assert-ReleaseCondition (Test-Path -LiteralPath $manifestPath -PathType Leaf) `
@@ -65,6 +66,21 @@ Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*7') `
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
+
+$mainSource = Get-Content -LiteralPath $mainPath -Raw
+$keycapRefresh = [regex]::Match(
+    $mainSource,
+    'local function refresh_keycaps_for_ui_host\(host\)(?<body>[\s\S]*?)\r?\nend'
+)
+Assert-ReleaseCondition $keycapRefresh.Success `
+    "The UI-host keycap refresh function was not found."
+Assert-ReleaseCondition (
+    $keycapRefresh.Groups["body"].Value -notmatch
+        'load_resolved_bindings|register_current_action_binding|register_action'
+) "UI-host recreation must not reload or register keybindings."
+Assert-ReleaseCondition (
+    $mainSource -notmatch 'refresh_bindings_from_darnmenu'
+) "The obsolete per-UI-host binding refresh must not be restored."
 
 $requiredSources = @(
     "enabled.txt",

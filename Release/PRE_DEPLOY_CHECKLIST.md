@@ -93,6 +93,9 @@ release is blocked if any required item fails or cannot be explained.
 - [ ] Test NumLock on and off for Numpad 1/3.
 - [ ] Check for conflicts with UE4SS `Keybinds` and other installed mods.
 - [ ] Confirm configured keycaps and action labels refresh correctly.
+- [ ] Reopen construction mode and reload the world repeatedly; confirm each
+      control fires once per keypress and the log contains only one Perfect
+      Placement startup line.
 
 ## 7. Soak and compatibility
 

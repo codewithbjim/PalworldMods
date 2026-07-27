@@ -2302,19 +2302,12 @@ register_supplemental_freeze_chord(
 )
 register_action("copy_piece", copy_looked_at_build_piece)
 
-local function refresh_bindings_from_darnmenu(host)
-    resolved_bindings = load_resolved_bindings()
-    for _, action in ipairs(Keybindings.action_order) do
-        if action_callbacks[action] ~= nil then
-            register_current_action_binding(action)
-        end
-    end
-
+local function refresh_keycaps_for_ui_host(host)
     keycap_ui_host = nil
     if is_valid(host) then
         apply_configured_keycaps(host)
     end
-    log("Refreshed DarnMenu bindings for the new world.")
+    log("Refreshed placement keycaps for the new UI host.")
 end
 
 local UI_HOST_CLASS_PATH =
@@ -2340,7 +2333,7 @@ local ui_notify_ok, ui_notify_error = pcall(
                 builder_fallback_scan_cooldown = 0
                 lifecycle_ui_refresh_ticks = 0
 
-                refresh_bindings_from_darnmenu(host)
+                refresh_keycaps_for_ui_host(host)
 
                 if os.clock() - lifecycle_monitor_last_tick > 1.0 then
                     lifecycle_monitor_started = false
@@ -2360,6 +2353,6 @@ end
 -- appear before the player uses Perfect Placement for the first time.
 start_lifecycle_monitor()
 
-log("Loaded Perfect Placement 0.1.5-crashfix.1")
+log("Loaded Perfect Placement 0.1.6-release")
 log("Companion key-guide UI bridge revision 22 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

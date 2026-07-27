@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.5-crashfix.1",
+    [string]$Version = "0.1.6-release",
     [switch]$KeepStage
 )
 

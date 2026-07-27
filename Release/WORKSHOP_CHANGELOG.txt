@@ -1,4 +1,4 @@
-Next maintenance update
+Version 0.1.6-release — DarnMenu integration and lifecycle fixes
 
 - Replaces Mod Config Menu with DarnMenu 1.6.2 native key-chord controls.
 - Adds movement, interface, and diagnostic DarnMenu settings.
@@ -6,6 +6,8 @@ Next maintenance update
 - Removes the old MCM JSON schema and reader.
 - Falls back to Scripts/config.lua when DarnMenu is unavailable.
 - Hides the placement guide after construction mode closes.
+- Registers placement controls only once so recreated UI hosts cannot
+  accumulate duplicate callbacks.
 
 Version 0.1.5-crashfix.1 — Freeze and input stability hotfix
 
