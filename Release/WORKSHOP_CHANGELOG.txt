@@ -1,24 +1,25 @@
-Version 0.1.6-release - DarnMenu configuration and stability
+Version 0.1.6-release - Configuration and lifecycle stability
 
-DarnMenu configuration
-- Replaces Mod Config Menu with DarnMenu 1.6.2 native key-chord controls under
-  ESC > Mod Options > Perfect Placement.
-- Adds in-game movement-step, movement-limit, vertical-bound, and diagnostic
-  settings.
-- Saves overrides in Mods/shared/PerfectPlacement_user.lua. Restart Palworld
-  after applying changes.
-- Shows distance units in the relevant setting help text, keeps labels compact,
-  and hides unfinished options.
+Added
+- Configure Perfect Placement under ESC > Mod Options > Perfect Placement with
+  DarnMenu 1.6.2.
+- Remap every placement action with native key-chord controls.
+- Configure movement increments, step limits, vertical bounds, and verbose
+  diagnostic logging in game.
+- Save player overrides in Mods/shared/PerfectPlacement_user.lua.
 
-Stability and interface
-- Registers every placement control once at startup, preventing recreated UI
-  widgets and world reloads from accumulating duplicate callbacks.
-- Refreshes displayed keycaps without re-registering controls.
-- Hides the placement guide whenever construction mode closes.
+Fixed
+- Prevent placement UI recreation and world reloads from registering duplicate
+  input callbacks.
+- Keep each keypress limited to one placement action.
+- Hide the placement guide when construction mode closes.
+- Refresh displayed keycaps safely when the placement UI is recreated.
 
-Packaging
-- Removes the obsolete Mod Config Menu schema and reader.
-- Requires DarnMenu 1.6.2 or newer; DarnUI is supplied through DarnMenu.
+Changed
+- Replaces Mod Config Menu and removes its obsolete schema and reader.
+- Requires DarnMenu 1.6.2 or newer. DarnUI is installed through DarnMenu.
+- Uses Scripts/config.lua defaults when no saved player override is available.
+- Applies binding and configuration changes after restarting Palworld.
 
 Version 0.1.5-crashfix.1 — Freeze and input stability hotfix
 

@@ -2,32 +2,32 @@
 
 ## 0.1.6-release
 
-### DarnMenu configuration
+Configuration and lifecycle-stability update.
 
-- Replace Mod Config Menu with DarnMenu 1.6.2 native key-chord controls under
-  `ESC → Mod Options → Perfect Placement`.
-- Configure movement increments, step limits, vertical bounds, and diagnostic
-  logging from the in-game menu.
-- Save overrides to `Mods/shared/PerfectPlacement_user.lua`; changes apply
-  after restarting Palworld.
-- Show distance units in each relevant setting's help text while keeping labels
-  compact, and keep unfinished options hidden.
-- Fall back safely to `Scripts/config.lua` if no saved DarnMenu configuration
-  is available.
+### Added
 
-### Stability and interface
+- Configure Perfect Placement under
+  `ESC → Mod Options → Perfect Placement` with DarnMenu 1.6.2.
+- Remap every placement action with DarnMenu's native key-chord editor.
+- Configure movement increments, step limits, vertical bounds, and verbose
+  diagnostic logging in game.
+- Save player overrides in `Mods/shared/PerfectPlacement_user.lua`.
 
-- Register each placement control once at startup so recreated UI widgets and
-  world reloads cannot accumulate duplicate input callbacks.
-- Refresh the displayed keycaps without re-registering controls.
-- Hide the Perfect Placement guide when construction mode closes, including
-  after leaving a frozen preview.
+### Fixed
 
-### Packaging
+- Prevent recreated placement UI widgets and world reloads from registering
+  duplicate input callbacks.
+- Keep each keypress limited to one placement action throughout a play session.
+- Hide the Perfect Placement guide when construction mode closes.
+- Refresh displayed keycaps safely when the placement UI is recreated.
 
-- Remove the obsolete Mod Config Menu schema and reader from Nexus and
-  Workshop packages.
-- Require DarnMenu 1.6.2 or newer; DarnUI remains supplied through DarnMenu.
+### Changed
+
+- Replace the previous Mod Config Menu integration and remove its obsolete
+  schema and reader from Nexus and Workshop packages.
+- Require DarnMenu 1.6.2 or newer. DarnUI is installed through DarnMenu.
+- Use `Scripts/config.lua` defaults when no saved player override is available.
+- Binding and configuration changes apply after restarting Palworld.
 
 ## 0.1.5-crashfix.1
 
