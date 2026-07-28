@@ -37,14 +37,8 @@ local lifecycle_monitor_started = false
 local lifecycle_game_thread_pending = false
 local lifecycle_loop_callback = nil
 local lifecycle_game_thread_callback = nil
-local lifecycle_monitor_last_tick = -1000.0
-local lifecycle_ui_refresh_ticks = 0
-local builder_fallback_scan_cooldown = 0
-local construction_guide_mode = nil
 local building_mode_exit_checks = 0
 local locked_construction_ui_was_active = false
-local unfrozen_ui_builder_component = nil
-local unfrozen_ui_preview_visible = nil
 local notification_generation = 0
 local locked_preview_name = nil
 local release_preview
@@ -61,21 +55,20 @@ local preview_relative_rotation = nil
 local freeze_transition_generation = 0
 local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
-local keyguide_pre_hook_callback = nil
-local keyguide_post_hook_callback = nil
+local keyguide_hook_callback = nil
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
 local ui_host_notify_callback = nil
+local construction_ui_notify_callback = nil
 local ui_host_setup_pending = false
 local ui_host_missing_was_logged = false
 local keycap_ui_host = nil
 local resolved_bindings = nil
 local keycap_texture_cache = {}
 local registered_keybind_callbacks = {}
+local construction_ui_hooks = {}
 
 local LIFECYCLE_INTERVAL_MS = 100
-local IDLE_UI_REFRESH_TICKS = 5
-local BUILDER_FALLBACK_RETRY_TICKS = 10
 local FREEZE_TRANSITION_SETTLE_MS = 500
 local VALIDITY_REFRESH_INTERVAL_MS = 50
 local FREEZE_TO_PIECE_RETRY_MS = 50
@@ -154,16 +147,16 @@ local function execute_in_game_thread_retained(callback, label)
     local retained_callback, callback_id =
         retain_async_callback(callback, label)
     local ok, error_message = pcall(function()
-        -- Input and fail-safe work must not depend on UE4SS's once-per-frame
-        -- EngineTick queue. If another callback breaks that hook, ProcessEvent
-        -- remains available and PP can still Unfreeze cleanly.
-        if ProcessEventAvailable == true
+        -- Keep Perfect Placement off UE4SS's shared simple-action dispatcher.
+        -- One invalid registry entry there removes the global hook and strands
+        -- every later placement input. EngineTick isolates this work from it.
+        if EngineTickAvailable == true
             and EGameThreadMethod ~= nil
-            and EGameThreadMethod.ProcessEvent ~= nil
+            and EGameThreadMethod.EngineTick ~= nil
         then
             ExecuteInGameThread(
                 retained_callback,
-                EGameThreadMethod.ProcessEvent
+                EGameThreadMethod.EngineTick
             )
         else
             ExecuteInGameThread(retained_callback)
@@ -187,6 +180,34 @@ local function execute_in_game_thread_with_retained_delay(
     label,
     enqueue_failure_callback
 )
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        local retained_callback, callback_id =
+            retain_async_callback(callback, label)
+        local ok, handle_or_error = pcall(
+            ExecuteInGameThreadWithDelay,
+            delay_ms,
+            retained_callback
+        )
+        if ok and handle_or_error ~= nil then
+            return true
+        end
+        discard_retained_async_callback(callback_id)
+        log(string.format(
+            "Could not queue %s: %s",
+            label or "delayed game-thread callback",
+            tostring(handle_or_error)
+        ))
+        return false
+    end
+
+    if type(ExecuteWithDelay) ~= "function" then
+        log(string.format(
+            "Could not queue %s: no delayed-action API is available.",
+            label or "delayed game-thread callback"
+        ))
+        return false
+    end
+
     local delayed_callback, callback_id =
         retain_async_callback(function()
             local enqueued = execute_in_game_thread_retained(callback, label)
@@ -340,6 +361,7 @@ local CHORD_WIDGET_SLOTS = {
     step_up = { "StepUpChord" },
     toggle_freeze = { "FreezeChord", "UnfreezeChord" },
     copy_piece = { "CopyChord" },
+    freeze_to_piece = { "CopyFreezeChord" },
 }
 
 local function load_keycap_texture(asset)
@@ -1012,7 +1034,6 @@ local function builder_component_from_player(player)
     end)
     if component_ok and is_valid(component) then
         cached_builder_component = component
-        builder_fallback_scan_cooldown = 0
         verbose("Cached BuilderComponent on " .. full_name(player))
         return component
     end
@@ -1258,119 +1279,48 @@ local function start_lifecycle_monitor()
     lifecycle_monitor_started = true
     if lifecycle_loop_callback == nil then
         lifecycle_loop_callback = function()
-        lifecycle_monitor_last_tick = os.clock()
-        if freeze_transition_input_locked
-            or state == State.SWITCHING
-            or state == State.FREEZING
-            or state == State.UNFREEZING
-        then
-            return
-        end
-        -- Frozen previews need responsive safety checks. Outside editing, do
-        -- not enqueue game-thread work until the 2 Hz guide refresh is due.
-        if state ~= State.EDITING then
-            lifecycle_ui_refresh_ticks = lifecycle_ui_refresh_ticks + 1
-            if lifecycle_ui_refresh_ticks < IDLE_UI_REFRESH_TICKS then
-                return
+            -- The monitor exists only to release a frozen preview safely.
+            -- Normal gameplay and unfrozen building are driven by UI creation
+            -- and input events, so they never enqueue recurring game-thread work.
+            if state ~= State.EDITING then
+                lifecycle_monitor_started = false
+                return true
             end
-            lifecycle_ui_refresh_ticks = 0
-        else
-            lifecycle_ui_refresh_ticks = 0
-        end
-
-        if lifecycle_game_thread_pending then
-            return
-        end
-        lifecycle_game_thread_pending = true
-        if lifecycle_game_thread_callback == nil then
-            lifecycle_game_thread_callback = function()
-            lifecycle_game_thread_pending = false
-            if freeze_transition_input_locked
-                or state == State.SWITCHING
-                or state == State.FREEZING
-                or state == State.UNFREEZING
-            then
-                return
-            end
-            if state == State.EDITING then
-                local should_release, reason = should_release_locked_preview()
-                if should_release then
-                    log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
-                    release_preview(reason)
-                end
+            if freeze_transition_input_locked then
                 return
             end
 
-            if not is_valid(unfrozen_ui_builder_component) then
-                unfrozen_ui_builder_component = nil
-                local allow_global_scan = builder_fallback_scan_cooldown <= 0
-                local candidate = find_builder_component(allow_global_scan)
-                if is_valid(candidate) then
-                    unfrozen_ui_builder_component = candidate
-                    unfrozen_ui_preview_visible = nil
-                elseif allow_global_scan then
-                    -- Direct helpers are retried every idle refresh. A failed
-                    -- full UObject scan is backed off for roughly five seconds.
-                    builder_fallback_scan_cooldown = BUILDER_FALLBACK_RETRY_TICKS
-                elseif builder_fallback_scan_cooldown > 0 then
-                    builder_fallback_scan_cooldown = builder_fallback_scan_cooldown - 1
-                end
-            end
-
-            if not is_valid(unfrozen_ui_builder_component) then
+            if lifecycle_game_thread_pending then
                 return
             end
+            lifecycle_game_thread_pending = true
+            if lifecycle_game_thread_callback == nil then
+                lifecycle_game_thread_callback = function()
+                    lifecycle_game_thread_pending = false
+                    if state ~= State.EDITING
+                        or freeze_transition_input_locked
+                        or state == State.SWITCHING
+                        or state == State.FREEZING
+                        or state == State.UNFREEZING
+                    then
+                        return
+                    end
 
-            local status_ok, in_building_mode, has_preview, active_preview =
-                pcall(function()
-                local in_mode = unfrozen_ui_builder_component:IsInBuildingMode()
-                local checker = unfrozen_ui_builder_component.InstallChecker
-                local target = nil
-                if is_valid(checker) then
-                    target = checker.TargetBuildObject
+                    local should_release, reason = should_release_locked_preview()
+                    if should_release then
+                        log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
+                        release_preview(reason)
+                    end
                 end
-                return in_mode, is_valid(target), target
-            end)
-
-            local construction_ui_active = nil
-            if status_ok and in_building_mode and has_preview then
-                local preview_name = full_name(active_preview)
-                local allow_ui_fallback_scan =
-                    preview_name ~= construction_ui_scan_context_name
-                construction_ui_active =
-                    construction_ui_is_active(allow_ui_fallback_scan)
-                if allow_ui_fallback_scan then
-                    construction_ui_scan_context_name = preview_name
-                end
-            else
-                construction_ui_scan_context_name = nil
-            end
-            local should_show = status_ok
-                and in_building_mode
-                and has_preview
-                and construction_ui_active ~= false
-            if should_show ~= unfrozen_ui_preview_visible then
-                unfrozen_ui_preview_visible = should_show
-                update_construction_hotkey_guide(false, false, not should_show)
             end
 
-            if not status_ok then
-                if cached_builder_component == unfrozen_ui_builder_component then
-                    cached_builder_component = nil
-                end
-                unfrozen_ui_builder_component = nil
-                unfrozen_ui_preview_visible = nil
-                builder_fallback_scan_cooldown = 0
+            local queued = execute_in_game_thread_retained(
+                lifecycle_game_thread_callback,
+                "Placement lifecycle monitor"
+            )
+            if not queued then
+                lifecycle_game_thread_pending = false
             end
-            end
-        end
-        local queued = execute_in_game_thread_retained(
-            lifecycle_game_thread_callback,
-            "Placement lifecycle monitor"
-        )
-        if not queued then
-            lifecycle_game_thread_pending = false
-        end
         end
     end
     LoopAsync(LIFECYCLE_INTERVAL_MS, lifecycle_loop_callback)
@@ -1948,18 +1898,33 @@ local function hide_locked_keyguide(construction)
     end
 end
 
+local function show_unfrozen_guide_for_active_preview()
+    if freeze_transition_input_locked
+        or state == State.EDITING
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+        or state == State.SWITCHING
+    then
+        return false
+    end
+
+    local active_component, active_checker, active_preview =
+        find_active_build_context(false)
+    if not is_valid(active_component)
+        or not is_valid(active_checker)
+        or not is_valid(active_preview)
+    then
+        return false
+    end
+    return update_perfect_placement_ui(false, false, false)
+end
+
 local function ensure_keyguide_hook()
     if keyguide_hook_registered then
         return true
     end
-    if keyguide_pre_hook_callback == nil then
-        keyguide_pre_hook_callback = function()
-            -- The guide must be changed after the Blueprint has rebuilt its
-            -- rows. A no-op pre-hook keeps the UE4SS hook signature explicit.
-        end
-    end
-    if keyguide_post_hook_callback == nil then
-        keyguide_post_hook_callback = function(context)
+    if keyguide_hook_callback == nil then
+        keyguide_hook_callback = function(context)
             local construction = context
             local unwrap_ok, unwrapped = pcall(function()
                 return context:get()
@@ -1971,12 +1936,19 @@ local function ensure_keyguide_hook()
                 cached_construction_widget = construction
             end
             local apply_ok, apply_error = pcall(function()
-                if Config.ui ~= nil and not Config.ui.use_stock_keyguide_fallback then
-                    if state == State.EDITING then
+                if state == State.EDITING then
+                    if Config.ui ~= nil
+                        and not Config.ui.use_stock_keyguide_fallback
+                    then
                         set_native_locked_controls_hidden(construction, true)
+                    else
+                        apply_locked_keyguide(construction)
                     end
-                else
-                    apply_locked_keyguide(construction)
+                    return
+                end
+
+                if not show_unfrozen_guide_for_active_preview() then
+                    update_perfect_placement_ui(false, false, true)
                 end
             end)
             if not apply_ok then
@@ -1987,17 +1959,148 @@ local function ensure_keyguide_hook()
     local ok, pre_id, post_id = pcall(function()
         return RegisterHook(
             KEYGUIDE_SETUP_PATH,
-            keyguide_pre_hook_callback,
-            keyguide_post_hook_callback
+            keyguide_hook_callback
         )
     end)
-    if not ok or (pre_id == nil and post_id == nil) then
-        log("Construction key-guide hook is not loaded yet.")
+    if not ok or pre_id == nil or post_id == nil then
+        verbose("Construction key-guide hook is not loaded yet.")
         return false
     end
-    keyguide_hook_registered = true
-    log("Construction key-guide post-hook registered.")
+    keyguide_hook_registered = {
+        callback = keyguide_hook_callback,
+        pre_id = pre_id,
+        post_id = post_id,
+    }
+    log("Construction key-guide event hook registered.")
     return true
+end
+
+local function ensure_construction_ui_hooks()
+    local building_root =
+        "/Game/Pal/Blueprint/UI/BuildMenu/WBP_PalBuilding"
+        .. ".WBP_PalBuilding_C:"
+    local input_root =
+        "/Game/Pal/Blueprint/UI/WBP_PalHUD_InGame_InputListener"
+        .. ".WBP_PalHUD_InGame_InputListener_C:"
+    local construction_root =
+        "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/"
+        .. "WBP_IngameConstruction.WBP_IngameConstruction_C:"
+    local all_registered = true
+
+    local function register_event_hook(function_path, event_name, resumes_guide)
+        if construction_ui_hooks[function_path] ~= nil then
+            return true
+        end
+
+        local captured_name = event_name
+        local callback = function(context)
+            local callback_ok, callback_error = pcall(function()
+                if resumes_guide then
+                    if freeze_transition_input_locked
+                        or state == State.EDITING
+                        or state == State.FREEZING
+                        or state == State.UNFREEZING
+                        or state == State.SWITCHING
+                    then
+                        return
+                    end
+
+                    local construction = context
+                    local unwrap_ok, unwrapped = pcall(function()
+                        return context:get()
+                    end)
+                    if unwrap_ok and unwrapped ~= nil then
+                        construction = unwrapped
+                    end
+                    if is_valid(construction) then
+                        cached_construction_widget = construction
+                    end
+
+                    if show_unfrozen_guide_for_active_preview() then
+                        return
+                    end
+                    execute_in_game_thread_with_retained_delay(
+                        100,
+                        function()
+                            if not show_unfrozen_guide_for_active_preview() then
+                                update_perfect_placement_ui(false, false, true)
+                            end
+                        end,
+                        "Construction guide Setup retry"
+                    )
+                    return
+                end
+
+                if state == State.EDITING and release_preview ~= nil then
+                    log("Auto-releasing frozen preview after Palworld action: "
+                        .. captured_name .. ".")
+                    release_preview("Palworld action: " .. captured_name)
+                else
+                    update_perfect_placement_ui(false, false, true)
+                end
+            end)
+            if not callback_ok then
+                log("Construction UI event failed for "
+                    .. captured_name .. ": " .. tostring(callback_error))
+            end
+        end
+
+        local hook_ok, pre_id, post_id = pcall(function()
+            return RegisterHook(function_path, callback)
+        end)
+        if not hook_ok or pre_id == nil or post_id == nil then
+            verbose("Construction UI event is not loaded yet: "
+                .. function_path)
+            return false
+        end
+
+        construction_ui_hooks[function_path] = {
+            callback = callback,
+            pre_id = pre_id,
+            post_id = post_id,
+        }
+        return true
+    end
+
+    for _, function_name in ipairs({
+        "ReturnToMainMenu",
+        "OnEsc",
+        "ChangeMode",
+        "Destruct",
+    }) do
+        if not register_event_hook(
+            building_root .. function_name,
+            function_name,
+            false
+        ) then
+            all_registered = false
+        end
+    end
+
+    for _, function_name in ipairs({
+        "OpenMenu_Internal",
+        "OpenBuildMenu",
+        "OpenBuildRadialMenu",
+        "OpenBuildRadialMenuWithSelectedIndex",
+        "OnTriggerEscape",
+    }) do
+        if not register_event_hook(
+            input_root .. function_name,
+            function_name,
+            false
+        ) then
+            all_registered = false
+        end
+    end
+
+    if not register_event_hook(
+        construction_root .. "Setup",
+        "Setup",
+        true
+    ) then
+        all_registered = false
+    end
+    return all_registered
 end
 
 update_construction_hotkey_guide = function(is_locked, show_transition_toast, hide_all)
@@ -2166,8 +2269,6 @@ local function begin_editing(defer_initial_validity)
     local transition_id = begin_freeze_transition(State.FREEZING)
 
     builder_component = active_component
-    unfrozen_ui_builder_component = nil
-    unfrozen_ui_preview_visible = nil
     transform_actor = active_checker
     preview_actor = active_preview
     log("Using InstallChecker target: " .. full_name(preview_actor))
@@ -2322,7 +2423,6 @@ local function begin_editing(defer_initial_validity)
         construction_ui_active_at_freeze == true
     construction_ui_scan_context_name = nil
     state = State.EDITING
-    lifecycle_ui_refresh_ticks = 0
     building_mode_exit_checks = 0
     locked_preview_name = full_name(preview_actor)
     update_construction_hotkey_guide(true)
@@ -2348,19 +2448,18 @@ release_preview = function(reason)
     end
     local transition_id = begin_freeze_transition(State.UNFREEZING)
     validity_refresh_pending = false
-    lifecycle_ui_refresh_ticks = 0
     building_mode_exit_checks = 0
-    local is_manual_unfreeze = reason == "manual"
+    local rendered_reason = tostring(reason)
+    local show_unfreeze_toast = reason == "manual"
     local no_active_preview = reason == "preview object was destroyed"
         or reason == "Palworld cleared the build preview"
     local left_construction = reason == "Palworld exited building mode"
         or reason == "Palworld closed the construction UI"
         or reason == "builder component became invalid"
-    unfrozen_ui_builder_component = builder_component
-    unfrozen_ui_preview_visible = not (left_construction or no_active_preview)
+        or string.find(rendered_reason, "Palworld action:", 1, true) ~= nil
     update_construction_hotkey_guide(
         false,
-        is_manual_unfreeze,
+        show_unfreeze_toast,
         left_construction or no_active_preview
     )
     set_preview_tick_enabled(preview_tick_was_enabled ~= false)
@@ -2852,7 +2951,6 @@ local function abort_piece_switch(transition_id, message)
     end
     log("Build-piece switch failed: " .. tostring(message))
     preview_actor = nil
-    lifecycle_ui_refresh_ticks = 0
     complete_freeze_transition(transition_id, State.SEARCHING)
 end
 
@@ -3353,6 +3451,8 @@ ui_host_notify_callback = function()
         250,
         function()
             ui_host_setup_pending = false
+            ensure_keyguide_hook()
+            ensure_construction_ui_hooks()
             -- Treat NotifyOnNewObject only as a wake-up signal. Reacquiring on
             -- the game thread avoids retaining a UObject wrapper across a map
             -- transition and delayed callback.
@@ -3365,19 +3465,26 @@ ui_host_notify_callback = function()
 
             ui_host_missing_was_logged = false
             cached_builder_component = nil
-            unfrozen_ui_builder_component = nil
-            unfrozen_ui_preview_visible = nil
             construction_ui_scan_context_name = nil
             locked_construction_ui_was_active = false
-            builder_fallback_scan_cooldown = 0
-            lifecycle_ui_refresh_ticks = 0
             refresh_keycaps_for_ui_host(host)
-
-            if os.clock() - lifecycle_monitor_last_tick > 1.0 then
-                lifecycle_monitor_started = false
-                start_lifecycle_monitor()
-                log("Placement UI lifecycle monitor restarted for the new world.")
-            end
+            -- ModActor also creates this host on the main menu. Never infer
+            -- construction mode from host creation alone; require the local
+            -- player's live BuilderComponent preview before showing the guide.
+            local active_component, active_checker, active_preview =
+                find_active_build_context(false)
+            local live_frozen = state == State.EDITING
+                and is_valid(builder_component)
+                and is_valid(preview_actor)
+            local live_unfrozen = is_valid(active_component)
+                and is_valid(active_checker)
+                and is_valid(active_preview)
+                and construction_ui_is_active(false) == true
+            update_perfect_placement_ui(
+                live_frozen,
+                false,
+                not (live_frozen or live_unfrozen)
+            )
         end,
         "Companion UI host setup",
         function()
@@ -3389,20 +3496,40 @@ ui_host_notify_callback = function()
     end
 end
 
-local ui_notify_ok, ui_notify_error = pcall(
-    NotifyOnNewObject,
-    UI_HOST_CLASS_PATH,
-    ui_host_notify_callback
-)
-if not ui_notify_ok then
-    log("Could not register companion UI lifecycle notification: "
-        .. tostring(ui_notify_error))
+construction_ui_notify_callback = function()
+    ensure_keyguide_hook()
+    ensure_construction_ui_hooks()
+    ui_host_notify_callback()
 end
 
--- Start the shared lifecycle/UI monitor immediately so the unfrozen guide can
--- appear before the player uses Perfect Placement for the first time.
-start_lifecycle_monitor()
+do
+    local construction_notify_ok, construction_notify_error = pcall(
+        NotifyOnNewObject,
+        "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/"
+            .. "WBP_IngameConstruction.WBP_IngameConstruction_C",
+        construction_ui_notify_callback
+    )
+    if not construction_notify_ok then
+        log("Could not register construction UI lifecycle notification: "
+            .. tostring(construction_notify_error))
+    end
+end
 
-log("Loaded Perfect Placement 0.1.7-rc.2")
-log("Companion key-guide UI bridge revision 23 loaded.")
+do
+    local ui_notify_ok, ui_notify_error = pcall(
+        NotifyOnNewObject,
+        UI_HOST_CLASS_PATH,
+        ui_host_notify_callback
+    )
+    if not ui_notify_ok then
+        log("Could not register companion UI lifecycle notification: "
+            .. tostring(ui_notify_error))
+    end
+end
+
+ensure_keyguide_hook()
+ensure_construction_ui_hooks()
+
+log("Loaded Perfect Placement 0.1.7-rc.3")
+log("Companion key-guide UI bridge revision 24 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

@@ -25,7 +25,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
     -Version <version>
   ```
 
-- [ ] Validate every Lua file with Lua 5.3 `luac -p` or an equivalent parser. Use `-RequireLuaCompiler` above when `luac` is installed.
+- [ ] Validate every Lua file with Lua 5.4 `luac -p` or an equivalent parser. Use `-RequireLuaCompiler` above when `luac` is installed.
 - [ ] Confirm the candidate commit contains only intended release changes.
 - [ ] Confirm `git status --short` is clean before tagging.
 
@@ -56,9 +56,9 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Alternate movement and rotation rapidly for at least 30 seconds.
 - [ ] Spam Reset while alternating movement and rotation.
 - [ ] Verify the vertical lower and upper clamps.
-- [ ] With live frozen-validity feedback at its default Off setting, spam movement, rotation, and Reset across validity boundaries and confirm there is no input-linked stutter.
-- [ ] Opt in to live frozen-validity feedback, relaunch, then move a frozen preview blue -> red -> blue and confirm the warning follows the placeable state.
-- [ ] While the experimental feedback is enabled, confirm the object remains at the exact user-controlled transform; then restore the option to Off before release testing continues.
+- [ ] With live frozen-validity feedback at its default On setting, move a frozen preview blue -> red -> blue and confirm the warning follows the placeable state.
+- [ ] Disable live frozen-validity feedback, relaunch, then spam movement, rotation, and Reset across validity boundaries and confirm the refresh stays disabled.
+- [ ] While live feedback is enabled, confirm the object remains at the exact user-controlled transform and monitor frame pacing while spamming movement.
 - [ ] Confirm no repeated error floods appear in the UE4SS log.
 
 ## 5. Palworld lifecycle interactions
@@ -83,7 +83,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Rapidly spam copy-and-freeze for at least 10 seconds. Confirm only one switch transaction runs at a time and no stale preview is frozen.
 - [ ] Aim at empty space and non-build actors, then use copy-and-freeze. Confirm it fails cleanly without changing the active preview.
 - [ ] Confirm a copied preview overlapping the source is marked invalid, then move it clear and verify it becomes valid.
-- [ ] Confirm the DarnMenu Preview section exposes the copy-and-freeze chord. The bundled companion guide has no separate row for this action.
+- [ ] Confirm the DarnMenu Preview section and bundled companion guide both show the configured copy-and-freeze chord.
 - [ ] Change every configurable binding once and reopen the world.
 - [ ] Test a binding with each supported modifier and one multi-modifier chord.
 - [ ] Confirm the page appears under `ESC → Mod Options` with DarnMenu 1.6.2+ and every control uses the native keychord editor.
@@ -92,7 +92,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Verify DarnMenu rejects out-of-range numeric values and Perfect Placement rejects invalid values placed into the shared file by hand.
 - [ ] Set movement minimum above maximum by hand and confirm both limits safely fall back to `config.lua` with one clear log message.
 - [ ] Toggle verbose logging, relaunch, and confirm the saved value applies.
-- [ ] Toggle live frozen-validity feedback, relaunch, and confirm the saved value applies; verify a missing saved value keeps the feature Off.
+- [ ] Toggle live frozen-validity feedback, relaunch, and confirm the saved value applies; verify a missing saved value keeps the feature On.
 - [ ] Temporarily move `Mods/shared/PerfectPlacement_user.lua`, remove or disable both DarnMenu and DarnUI, and confirm Perfect Placement starts without a missing-dependency or Lua error and uses `Scripts/config.lua` defaults.
 - [ ] Restore the saved player override while DarnMenu and DarnUI remain disabled, then confirm Perfect Placement loads the override without requiring either optional mod.
 - [ ] Test NumLock on and off for Numpad 1/3.

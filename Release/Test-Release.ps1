@@ -115,11 +115,21 @@ foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
 }
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
 $configSource = Get-Content -LiteralPath $configPath -Raw
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*12') `
-    "DarnMenu schema version 12 was not found."
+Assert-ReleaseCondition (
+    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*13'
+) "DarnMenu schema constant version 13 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*13') `
+    "Embedded DarnMenu schema version 13 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
+Assert-ReleaseCondition (
+    $darnMenuSource -match 'live\s*=\s*false'
+) "Perfect Placement settings must remain marked relaunch-only until runtime reload is implemented."
+Assert-ReleaseCondition (
+    $darnMenuSource -match
+        'applyNote\s*=\s*"Saved\. Restart Palworld to apply changes\."'
+) "DarnMenu must accurately state that every Perfect Placement change requires a restart."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'title\s*=\s*"Movement settings"'
 ) "The plain Movement settings section title was not found."
@@ -142,13 +152,13 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $darnMenuSource -match
         'path\s*=\s*"refresh_frozen_validity"[\s\S]*?kind\s*=\s*"bool"'
-) "DarnMenu must expose the opt-in frozen-validity toggle."
+) "DarnMenu must expose the frozen-validity toggle."
 Assert-ReleaseCondition (
-    $darnMenuSource -match 'refresh_frozen_validity\s*=\s*false'
-) "Frozen-validity feedback must default off in DarnMenu."
+    $darnMenuSource -match 'refresh_frozen_validity\s*=\s*true'
+) "Frozen-validity feedback must default on in DarnMenu."
 Assert-ReleaseCondition (
-    $configSource -match 'refresh_frozen_feedback\s*=\s*false'
-) "Frozen-validity feedback must default off in config.lua."
+    $configSource -match 'refresh_frozen_feedback\s*=\s*true'
+) "Frozen-validity feedback must default on in config.lua."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
 Assert-ReleaseCondition (
@@ -156,8 +166,16 @@ Assert-ReleaseCondition (
 ) "The Lua startup version does not match '$Version'."
 Assert-ReleaseCondition (
     $mainSource -match
+        [regex]::Escape("Companion key-guide UI bridge revision 24 loaded.")
+) "The Lua bridge revision does not match the rc.3 PAK."
+Assert-ReleaseCondition (
+    $mainSource -match
         'register_action\("freeze_to_piece",\s*freeze_to_looked_at_build_piece\)'
 ) "The copy-and-freeze action is not registered."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'freeze_to_piece\s*=\s*\{\s*"CopyFreezeChord"\s*\}'
+) "The companion guide must populate its copy-and-freeze chord widget."
 $keycapRefresh = [regex]::Match(
     $mainSource,
     'local function refresh_keycaps_for_ui_host\(host\)(?<body>[\s\S]*?)\r?\nend'
@@ -200,8 +218,14 @@ Assert-ReleaseCondition (
         'completed_async_callbacks\[callback_id\]\s*=\s*true'
 ) "Executed callbacks must remain retained until bounded-history pruning."
 Assert-ReleaseCondition (
-    $mainSource -match 'EGameThreadMethod\.ProcessEvent'
-) "Immediate PP callbacks must prefer the isolated ProcessEvent queue."
+    $mainSource -match 'EGameThreadMethod\.EngineTick'
+) "Immediate PP callbacks must use the EngineTick queue."
+Assert-ReleaseCondition (
+    $mainSource -notmatch 'EGameThreadMethod\.ProcessEvent'
+) "Perfect Placement must never force work through the shared ProcessEvent queue."
+Assert-ReleaseCondition (
+    $mainSource -match 'ExecuteInGameThreadWithDelay'
+) "Delayed work must prefer UE4SS-owned game-thread actions."
 Assert-ReleaseCondition (
     $mainSource -match 'set_actor_transform_verified'
 ) "Transform calls must verify success after UE4SS FHitResult marshal errors."
@@ -209,11 +233,81 @@ Assert-ReleaseCondition (
     $mainSource -match 'registered_keybind_callbacks'
 ) "Registered keybind callbacks must keep a module-lifetime Lua reference."
 Assert-ReleaseCondition (
-    $mainSource -match
-        'if\s+status_ok\s+and\s+in_building_mode\s+and\s+has_preview\s+then\s+' +
-        '[\s\S]*?construction_ui_active\s*=\s*' +
-        'construction_ui_is_active\(allow_ui_fallback_scan\)'
-) "Normal gameplay must not scan for construction widgets while build mode is inactive."
+    $mainSource -notmatch 'IDLE_UI_REFRESH_TICKS|BUILDER_FALLBACK_RETRY_TICKS'
+) "Normal gameplay must not retain an idle guide-poll cadence."
+$uiHostCallback = [regex]::Match(
+    $mainSource,
+    'ui_host_notify_callback\s*=\s*function\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\nconstruction_ui_notify_callback'
+)
+Assert-ReleaseCondition $uiHostCallback.Success `
+    "The companion UI host callback was not found."
+Assert-ReleaseCondition (
+    $uiHostCallback.Groups["body"].Value -match
+        'find_active_build_context\(false\)[\s\S]*?' +
+        'live_frozen\s*=\s*state\s*==\s*State\.EDITING[\s\S]*?' +
+        'live_unfrozen\s*=\s*is_valid\(active_component\)[\s\S]*?' +
+        'construction_ui_is_active\(false\)\s*==\s*true[\s\S]*?' +
+        'update_perfect_placement_ui\(\s*' +
+        'live_frozen,\s*false,\s*' +
+        'not\s*\(live_frozen\s+or\s+live_unfrozen\)\s*\)'
+) "Companion UI creation must remain hidden without a live local build preview."
+$keyguideHookFunction = [regex]::Match(
+    $mainSource,
+    'local function ensure_keyguide_hook\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function ensure_construction_ui_hooks'
+)
+Assert-ReleaseCondition $keyguideHookFunction.Success `
+    "The construction key-guide hook function was not found."
+Assert-ReleaseCondition (
+    $keyguideHookFunction.Groups["body"].Value -match
+        'RegisterHook\(\s*KEYGUIDE_SETUP_PATH,\s*keyguide_hook_callback\s*\)'
+) "The Blueprint key-guide hook must use one meaningful callback."
+Assert-ReleaseCondition (
+    $keyguideHookFunction.Groups["body"].Value -match
+        'keyguide_hook_registered\s*=\s*\{\s*' +
+        'callback\s*=\s*keyguide_hook_callback,\s*' +
+        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,'
+) "The key-guide hook must retain its callback and both UE4SS hook IDs."
+$constructionHookFunction = [regex]::Match(
+    $mainSource,
+    'local function ensure_construction_ui_hooks\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'update_construction_hotkey_guide\s*='
+)
+Assert-ReleaseCondition $constructionHookFunction.Success `
+    "The construction lifecycle hook function was not found."
+Assert-ReleaseCondition (
+    $constructionHookFunction.Groups["body"].Value -match
+        'RegisterHook\(\s*function_path,\s*callback\s*\)'
+) "Construction lifecycle hooks must use one meaningful Blueprint callback."
+Assert-ReleaseCondition (
+    $constructionHookFunction.Groups["body"].Value -match
+        'construction_ui_hooks\[function_path\]\s*=\s*\{\s*' +
+        'callback\s*=\s*callback,\s*pre_id\s*=\s*pre_id,\s*' +
+        'post_id\s*=\s*post_id,'
+) "Construction lifecycle hooks must retain callbacks and both hook IDs."
+foreach ($eventName in @(
+    "ReturnToMainMenu",
+    "OnEsc",
+    "ChangeMode",
+    "Destruct",
+    "OpenMenu_Internal",
+    "OpenBuildMenu",
+    "OpenBuildRadialMenu",
+    "OpenBuildRadialMenuWithSelectedIndex",
+    "OnTriggerEscape"
+)) {
+    Assert-ReleaseCondition (
+        $constructionHookFunction.Groups["body"].Value -match
+            [regex]::Escape('"' + $eventName + '"')
+    ) "Missing construction close/menu event hook: $eventName."
+}
+Assert-ReleaseCondition (
+    $constructionHookFunction.Groups["body"].Value -match
+        'construction_root\s*\.\.\s*"Setup",\s*"Setup",\s*true'
+) "Construction Setup must restore the verified unfrozen guide."
 $constructionUiFunction = [regex]::Match(
     $mainSource,
     'local function construction_ui_is_active\(allow_fallback_scan\)' +
@@ -251,15 +345,50 @@ $lifecycleMonitorFunction = [regex]::Match(
 Assert-ReleaseCondition $lifecycleMonitorFunction.Success `
     "The lifecycle monitor function was not found."
 Assert-ReleaseCondition (
-    ([regex]::Matches(
-        $lifecycleMonitorFunction.Groups["body"].Value,
-        'if\s+freeze_transition_input_locked\s+or\s+state\s*==\s*State\.SWITCHING'
-    )).Count -eq 2
-) "Both lifecycle monitor stages must pause while Freeze is settling."
+    $lifecycleMonitorFunction.Groups["body"].Value -match
+        'if\s+state\s*~=\s*State\.EDITING\s+then\s+' +
+        'lifecycle_monitor_started\s*=\s*false\s+' +
+        'return\s+true'
+) "The lifecycle worker must stop after leaving frozen editing."
+Assert-ReleaseCondition (
+    $lifecycleMonitorFunction.Groups["body"].Value -match
+        'if\s+state\s*~=\s*State\.EDITING\s+' +
+        'or\s+freeze_transition_input_locked'
+) "A queued lifecycle callback must become a no-op after leaving frozen editing."
 Assert-ReleaseCondition (
     $mainSource -match
         'if\s+lifecycle_game_thread_pending\s+then\s+return'
 ) "The lifecycle monitor must coalesce pending game-thread checks."
+$releaseFunction = [regex]::Match(
+    $mainSource,
+    'release_preview\s*=\s*function\(reason\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function move_preview'
+)
+Assert-ReleaseCondition $releaseFunction.Success `
+    "The preview release function was not found."
+Assert-ReleaseCondition (
+    $releaseFunction.Groups["body"].Value -match
+        'show_unfreeze_toast\s*=\s*reason\s*==\s*"manual"[\s\S]*?' +
+        'update_construction_hotkey_guide\(\s*false,\s*' +
+        'show_unfreeze_toast,\s*left_construction\s+or\s+no_active_preview\s*\)'
+) "Manual Unfreeze must restore the guide while inactive previews stay hidden."
+Assert-ReleaseCondition (
+    $releaseFunction.Groups["body"].Value -match
+        'string\.find\(\s*rendered_reason,\s*"Palworld action:"'
+) "Construction action releases must hide the companion guide."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'construction_ui_notify_callback\s*=\s*function\(\)\s*' +
+        'ensure_keyguide_hook\(\)\s*ensure_construction_ui_hooks\(\)\s*' +
+        'ui_host_notify_callback\(\)'
+) "Construction widget creation must retry event-hook registration."
+Assert-ReleaseCondition (
+    ([regex]::Matches(
+        $mainSource,
+        'start_lifecycle_monitor\(\)'
+    )).Count -eq 2
+) "The lifecycle monitor must start only from the function definition and Freeze."
 
 $requiredSources = @(
     "enabled.txt",
@@ -339,6 +468,32 @@ foreach ($scriptPath in Get-ChildItem -LiteralPath $releaseRoot -Filter "*.ps1")
     ) | Out-Null
     Assert-ReleaseCondition ($errors.Count -eq 0) `
         "PowerShell syntax error in $($scriptPath.Name): $($errors[0].Message)"
+}
+
+foreach ($luaPath in Get-ChildItem -LiteralPath (
+    Join-Path $modRoot "Scripts"
+) -Filter "*.lua") {
+    $persistentMainChunkLocals = 0
+    foreach ($line in Get-Content -LiteralPath $luaPath.FullName) {
+        if ($line -match "^local\s+function\s+[A-Za-z_][A-Za-z0-9_]*") {
+            $persistentMainChunkLocals++
+            continue
+        }
+        if ($line -notmatch "^local\s+(.+?)(?:\s*=|$)") {
+            continue
+        }
+        $declaredNames = @(
+            $Matches[1] -split "," |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -match "^[A-Za-z_][A-Za-z0-9_]*$" }
+        )
+        $persistentMainChunkLocals += $declaredNames.Count
+    }
+    Assert-ReleaseCondition ($persistentMainChunkLocals -le 180) (
+        "$($luaPath.Name) declares $persistentMainChunkLocals persistent " +
+        "main-chunk locals; keep every script at or below 180 so UE4SS " +
+        "stays under Lua's hard 200-local compile limit."
+    )
 }
 
 $luaCompiler = Get-Command "luac" -ErrorAction SilentlyContinue

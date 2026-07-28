@@ -15,6 +15,7 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [*][b]Camera-aware controls[/b] that remain aligned to the piece's own axes.
 [*][b]Reset instantly[/b] to the transform captured when the preview was frozen.
 [*][b]Eyedropper[/b] to copy the targeted build piece into the active preview.
+[*][b]Copy and freeze[/b] to transfer the targeted piece's position and rotation into a replacement preview and freeze it there.
 [/list]
 
 [h2]Requirements[/h2]
@@ -46,14 +47,15 @@ The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palwor
 [*][b]Decrease/increase movement step:[/b] Numpad - / +
 [*][b]Reset to frozen transform:[/b] Numpad 5
 [*][b]Copy targeted build piece:[/b] Shift + Middle mouse
+[*][b]Copy and freeze to targeted piece:[/b] Ctrl + Shift + Middle mouse
 [/list]
 
 Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.
 
 [h2]Configure controls[/h2]
-With optional DarnMenu installed, open [b]ESC → Mod Options → Perfect Placement[/b] to edit key chords. Apply changes and restart Palworld. Without DarnMenu, Perfect Placement uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
+With optional DarnMenu installed, open [b]ESC → Mod Options → Perfect Placement[/b] to edit controls and settings. Apply changes and restart Palworld. Without DarnMenu, Perfect Placement uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
-The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and experimental live frozen-validity feedback. Live validity feedback is disabled by default because its collision and material refresh can cause stutter.
+The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback is enabled by default and can be disabled if its collision and material refresh causes stutter.
 
 [h2]Important beta limitations[/h2]
 [list]

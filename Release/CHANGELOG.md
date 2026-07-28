@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.7-rc.3
+
+Input dispatch, guide lifecycle, and performance hotfix.
+
+### Added
+
+- Officially expose Copy and Freeze to Targeted Piece (`Ctrl+Shift+Middle Mouse`) in the bundled control guide. It copies the targeted build piece into the active preview, transfers its position and rotation, and freezes the replacement preview there.
+
+### Fixed
+
+- Prevent rapid movement, rotation, or Reset input from breaking Perfect Placement's game-thread dispatcher and leaving every placement control unresponsive.
+- Route immediate placement work through UE4SS's EngineTick path and prefer owned delayed game-thread actions when available, while retaining callbacks until completion.
+- Correct construction Blueprint hook registration and retain each callback together with both returned UE4SS hook IDs.
+- Keep the Placement Controls guide hidden on the title screen and whenever no live construction preview exists.
+- Restore the unfrozen guide when a construction preview becomes active, then hide or release it promptly on Escape, build-menu changes, destruction, and construction UI closure.
+
+### Performance
+
+- Remove recurring guide and lifecycle polling during normal gameplay and unfrozen building. Lifecycle monitoring now runs only while a preview is frozen, removing the roughly twice-per-second idle polling path associated with rhythmic microstutter.
+
+### Changed
+
+- Enable live frozen-validity feedback by default so moved previews follow their current placeable state. It can be disabled in DarnMenu or `config.lua` if collision and material refresh causes input-linked stutter.
+- Clarify that every DarnMenu change applies after restarting Palworld.
+
 ## 0.1.7-rc.2
 
 Freeze lifecycle hotfix.

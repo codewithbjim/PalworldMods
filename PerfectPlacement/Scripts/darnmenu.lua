@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 12
+local SCHEMA_VERSION = 13
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -30,12 +30,12 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 12,
+  schemaVersion = 13,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
-  note = "Optional integration for DarnMenu 1.6.2 or newer. Bindings apply after restarting Palworld.",
-  applyNote = "Saved. Restart Palworld to apply binding changes.",
+  note = "Optional integration for DarnMenu 1.6.2 or newer. Changes apply after restarting Palworld.",
+  applyNote = "Saved. Restart Palworld to apply changes.",
   live = false,
   defaults = {
     toggle_freeze = { key = "MIDDLE_MOUSE_BUTTON", modifiers = {} },
@@ -60,7 +60,7 @@ return {
     movement_step_scale = 10,
     movement_maximum_below_cm = 25.0,
     movement_maximum_above_cm = 650.0,
-    refresh_frozen_validity = false,
+    refresh_frozen_validity = true,
     use_palworld_keycaps = true,
     verbose_logging = false,
   },
@@ -72,7 +72,7 @@ return {
         kind = "keychord" },
       { path = "refresh_frozen_validity", label = "Live frozen validity feedback",
         kind = "bool",
-        help = "Experimental. Repaints valid/error state after movement and may cause stutter." },
+        help = "Repaints valid/error state after movement. Disable if this causes stutter." },
     }},
     { title = "Movement bindings", options = {
       { path = "move_left", label = "Move left", kind = "keychord" },

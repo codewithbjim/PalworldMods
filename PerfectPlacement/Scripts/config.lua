@@ -40,9 +40,9 @@ return {
     },
 
     validity = {
-        -- Experimental. Rechecking overlaps and repainting every material after
-        -- frozen movement can cause visible frame-time spikes on large pieces.
-        refresh_frozen_feedback = false,
+        -- Rechecking overlaps and repainting every material after frozen
+        -- movement can cause visible frame-time spikes on large pieces.
+        refresh_frozen_feedback = true,
     },
 
     -- Fallback bindings used when DarnMenu is absent or has no saved override.

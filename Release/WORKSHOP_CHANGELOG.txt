@@ -1,3 +1,22 @@
+Version 0.1.7-rc.3 - Input, guide, and performance hotfix
+
+Added
+- Copy and Freeze to Targeted Piece is now shown in the bundled control guide. Ctrl+Shift+Middle Mouse copies the targeted piece, transfers its position and rotation, and freezes the replacement preview there.
+
+Fixed
+- Prevent rapid movement, rotation, or Reset input from breaking the game-thread dispatcher and leaving every placement control unresponsive.
+- Use EngineTick for immediate placement work and prefer owned delayed game-thread actions while retaining callbacks until completion.
+- Correct construction Blueprint hook registration and keep each callback and both returned hook IDs alive.
+- Hide the Placement Controls guide on the title screen and whenever no live construction preview exists.
+- Restore the unfrozen guide for a live preview, then hide or release it on Escape, build-menu changes, destruction, and construction UI closure.
+
+Performance
+- Remove recurring guide and lifecycle polling during normal gameplay and unfrozen building, eliminating the roughly twice-per-second idle polling path associated with rhythmic microstutter.
+
+Changed
+- Live red/blue frozen-validity feedback now defaults to On and can be disabled in DarnMenu if collision and material refresh causes input-linked stutter.
+- All DarnMenu changes apply after restarting Palworld.
+
 Version 0.1.7-rc.2 - Freeze lifecycle hotfix
 
 Fixed

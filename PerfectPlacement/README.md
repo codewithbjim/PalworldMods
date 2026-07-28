@@ -40,12 +40,13 @@ Additional controls:
 - Middle-click still freezes or unfreezes a preview while Palworld's `Ctrl` or `Alt` build modifier is held
 - Middle mouse: freeze or unfreeze the selected preview
 - `Shift+Middle mouse`: copy the build piece under the cursor
+- `Ctrl+Shift+Middle mouse`: copy the targeted piece, match its position and rotation, and freeze the replacement preview
 
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
 
-Optional: with DarnMenu 1.6.2 or newer installed, Perfect Placement appears under **ESC → Mod Options**. Its native key-chord controls support a primary key plus any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed bindings to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying a binding change because UE4SS cannot unregister startup keybinds safely.
+Optional: with DarnMenu 1.6.2 or newer installed, Perfect Placement appears under **ESC → Mod Options**. Its native key-chord controls support a primary key plus any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed controls and settings to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying changes because Perfect Placement reads that file when its Lua mod starts; startup keybinds also cannot be unregistered safely.
 
-The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; verbose diagnostic logging; and experimental live frozen-validity feedback. Live validity feedback is disabled by default because refreshing collision and materials after each frozen transform can cause stutter. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
+The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; verbose diagnostic logging; and live frozen-validity feedback. Live validity feedback is enabled by default so a moved frozen preview follows its current placeable state. Disable it if refreshing collision and materials causes stutter on your system. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
 
 Without DarnMenu, Perfect Placement's built-in controls remain available. It uses the defaults in `Scripts/config.lua` when no saved `Mods/shared/PerfectPlacement_user.lua` override exists. DarnUI is supplied as DarnMenu's own dependency; Perfect Placement does not require either mod and does not create a separate DarnUI overlay.
 

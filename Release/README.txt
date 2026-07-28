@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.1.7-RC.2
+PERFECT PLACEMENT 0.1.7-RC.3
 ============================
 
 RELEASE CANDIDATE
@@ -39,6 +39,8 @@ Numpad -/+         Decrease / increase movement step
 Numpad 5           Reset to the frozen transform
 Shift + middle mouse
                    Copy targeted build piece
+Ctrl + Shift + middle mouse
+                   Copy targeted piece, match its transform, and freeze
 
 Vertical movement is limited to 25 cm below and 650 cm above the initially frozen position. Numpad 1/3 vertical movement works with NumLock either on or off.
 
@@ -48,10 +50,10 @@ Gamepad placement controls are not supported in this release.
 
 DARNMENU (OPTIONAL)
 -------------------
-Open ESC > Mod Options > Perfect Placement to edit key chords. Apply changes, then restart Palworld. Saved overrides live in:
+Open ESC > Mod Options > Perfect Placement to edit controls and settings. Apply changes, then restart Palworld. Saved overrides live in:
   Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
-The page also configures movement-step values, step multiplier, vertical limits, verbose diagnostic logging, and experimental live frozen-validity feedback. Live validity feedback defaults to Off because its collision and material refresh can cause stutter.
+The page also configures movement-step values, step multiplier, vertical limits, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback defaults to On and can be disabled if its collision and material refresh causes stutter.
 
 Without DarnMenu, the built-in controls remain available. Scripts\config.lua supplies the defaults when no saved override exists.
 
