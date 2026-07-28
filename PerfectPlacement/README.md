@@ -44,9 +44,22 @@ Additional controls:
 
 Default movement increments are 1 cm, 10 cm, and 100 cm. Default rotation increments are 1, 5, and 15 degrees. Edit `Scripts/config.lua` to change them.
 
+Default gamepad controls:
+
+- `L3`: freeze or unfreeze
+- `L3+D-pad Down`: copy the targeted build piece
+- `L3+D-pad Up`: copy the targeted piece, match its transform, and freeze
+- D-pad: move horizontally while frozen
+- `LT+D-pad Up/Down`: move up or down
+- `LT+D-pad Left/Right`: decrease or increase the movement step
+- `LB/RB`: rotate left or right
+- `R3`: reset to the frozen transform
+
+The companion Blueprint reports complete physical controller chords only when pressed, so gamepad input does not use a recurring Lua poll. Advanced controller bindings are available in `Scripts/config.lua`.
+
 Optional: with DarnMenu 1.6.2 or newer installed, Perfect Placement appears under **ESC → Mod Options**. Its native key-chord controls support a primary key plus any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed controls and settings to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying changes because Perfect Placement reads that file when its Lua mod starts; startup keybinds also cannot be unregistered safely.
 
-The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; verbose diagnostic logging; and live frozen-validity feedback. Live validity feedback is enabled by default so a moved frozen preview follows its current placeable state. Disable it if refreshing collision and materials causes stutter on your system. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
+The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; controller preferences; verbose diagnostic logging; and live frozen-validity feedback. Live validity feedback is enabled by default so a moved frozen preview follows its current placeable state. Disable it if refreshing collision and materials causes stutter on your system. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.
 
 Without DarnMenu, Perfect Placement's built-in controls remain available. It uses the defaults in `Scripts/config.lua` when no saved `Mods/shared/PerfectPlacement_user.lua` override exists. DarnUI is supplied as DarnMenu's own dependency; Perfect Placement does not require either mod and does not create a separate DarnUI overlay.
 
@@ -95,6 +108,6 @@ frozen editing -> final confirm -> normal Palworld validation/commit
 
 The final confirmation must call Palworld's original server-authoritative path. The mod must not spawn a completed build object directly.
 
-## Known limitation of the Lua prototype
+## Input compatibility
 
-UE4SS `RegisterKeyBind` observes chorded keys but may not consume the underlying game input on every UE4SS/Palworld build. The production version should add a small Blueprint Logic Mod using a high-priority Enhanced Input Mapping Context. That context should be enabled only during frozen editing and consume only the complete Perfect Placement chords, leaving unmodified player controls alone.
+Keyboard and mouse controls still use UE4SS `RegisterKeyBind`, which may not consume the underlying game input on every UE4SS/Palworld build. Gamepad controls use the bundled Blueprint input bridge, which enables its Enhanced Input Mapping Context only for the applicable preview state and reports complete physical chords to Lua as events.

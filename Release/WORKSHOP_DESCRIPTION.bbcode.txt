@@ -23,7 +23,7 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [*]Palworld 1.0 for Windows through Steam
 [*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] is a hard requirement for the Steam Workshop version.[/b] It must be subscribed to and enabled through Palworld's Mod Management screen.
 [*][b]Optional: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3769456391]DarnMenu 1.6.2 or newer[/url][/b] for in-game Mod Options. DarnUI is installed as DarnMenu's own dependency.
-[*]Keyboard and mouse; gamepad placement controls are not supported yet
+[*]Keyboard, mouse, or gamepad
 [/list]
 
 The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palworld's official mod loader installs both components from this single subscription.
@@ -52,10 +52,25 @@ The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palwor
 
 Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1°, 5°, and 15° increments. Num Lock must be enabled for the keypad controls.
 
+[h2]Gamepad controls[/h2]
+
+[list]
+[*][b]Freeze/release preview:[/b] L3
+[*][b]Copy targeted build piece:[/b] L3 + D-pad Down
+[*][b]Copy and freeze to targeted piece:[/b] L3 + D-pad Up
+[*][b]Move horizontally:[/b] D-pad
+[*][b]Move up/down:[/b] LT + D-pad Up / Down
+[*][b]Decrease/increase movement step:[/b] LT + D-pad Left / Right
+[*][b]Rotate left/right:[/b] LB / RB
+[*][b]Reset to frozen transform:[/b] R3
+[/list]
+
+Controller actions are emitted by the companion Blueprint only when a complete chord is pressed; Perfect Placement does not use a recurring Lua gamepad input poll.
+
 [h2]Configure controls[/h2]
 With optional DarnMenu installed, open [b]ESC → Mod Options → Perfect Placement[/b] to edit controls and settings. Apply changes and restart Palworld. Without DarnMenu, Perfect Placement uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
-The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback is enabled by default and can be disabled if its collision and material refresh causes stutter.
+The optional DarnMenu page also configures movement steps and limits, controller preferences, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback is enabled by default and can be disabled if its collision and material refresh causes stutter.
 
 [h2]Important beta limitations[/h2]
 [list]

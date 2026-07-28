@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.7-rc.3",
+    [string]$Version = "0.2.0-rc.1",
     [switch]$KeepStage
 )
 
@@ -22,7 +22,9 @@ foreach ($required in @(
     (Join-Path $luaSource "enabled.txt"),
     (Join-Path $luaSource "Scripts\main.lua"),
     (Join-Path $luaSource "Scripts\config.lua"),
+    (Join-Path $luaSource "Scripts\gamepad.lua"),
     (Join-Path $luaSource "Scripts\keybindings.lua"),
+    (Join-Path $luaSource "Scripts\runtime.lua"),
     (Join-Path $luaSource "Scripts\darnmenu.lua"),
     $pakSource,
     $pakHashPath,

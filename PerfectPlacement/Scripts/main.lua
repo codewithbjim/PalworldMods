@@ -1,6 +1,8 @@
 local Config = require("config")
 local Keybindings = require("keybindings")
 local DarnMenu = require("darnmenu")
+local Gamepad = require("gamepad")
+local Runtime = require("runtime")
 local UEHelpers = require("UEHelpers")
 
 local MOD = "PerfectPlacement"
@@ -65,6 +67,7 @@ local ui_host_missing_was_logged = false
 local keycap_ui_host = nil
 local resolved_bindings = nil
 local keycap_texture_cache = {}
+local gamepad_controller = nil
 local registered_keybind_callbacks = {}
 local construction_ui_hooks = {}
 
@@ -73,11 +76,6 @@ local FREEZE_TRANSITION_SETTLE_MS = 500
 local VALIDITY_REFRESH_INTERVAL_MS = 50
 local FREEZE_TO_PIECE_RETRY_MS = 50
 local FREEZE_TO_PIECE_MAX_ATTEMPTS = 60
-local retained_async_callbacks = {}
-local retained_async_callback_order = {}
-local completed_async_callbacks = {}
-local retained_async_callback_serial = 0
-local RETAINED_ASYNC_CALLBACK_HISTORY = 256
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
@@ -85,160 +83,7 @@ end
 
 DarnMenu.apply_settings(Config, log)
 current_move_step = Config.movement.normal
-
-local function discard_retained_async_callback(callback_id)
-    retained_async_callbacks[callback_id] = nil
-    completed_async_callbacks[callback_id] = nil
-    for index = #retained_async_callback_order, 1, -1 do
-        if retained_async_callback_order[index] == callback_id then
-            table.remove(retained_async_callback_order, index)
-            return
-        end
-    end
-end
-
-local function prune_completed_async_callbacks(active_callback_id)
-    if #retained_async_callback_order <= RETAINED_ASYNC_CALLBACK_HISTORY then
-        return
-    end
-
-    local index = 1
-    while #retained_async_callback_order > RETAINED_ASYNC_CALLBACK_HISTORY
-        and index <= #retained_async_callback_order
-    do
-        local callback_id = retained_async_callback_order[index]
-        if callback_id ~= active_callback_id
-            and completed_async_callbacks[callback_id]
-        then
-            retained_async_callbacks[callback_id] = nil
-            completed_async_callbacks[callback_id] = nil
-            table.remove(retained_async_callback_order, index)
-        else
-            index = index + 1
-        end
-    end
-end
-
-local function retain_async_callback(callback, label)
-    retained_async_callback_serial = retained_async_callback_serial + 1
-    local callback_id = retained_async_callback_serial
-    local retained_callback
-    retained_callback = function(...)
-        local ok, error_message = pcall(callback, ...)
-        -- Keep a bounded history. Releasing the final Lua reference from
-        -- inside an EngineTick invocation can make UE4SS revisit an invalid
-        -- registry entry while it retires the one-shot callback.
-        completed_async_callbacks[callback_id] = true
-        prune_completed_async_callbacks(callback_id)
-        if not ok then
-            log(string.format(
-                "%s failed: %s",
-                label or "Asynchronous callback",
-                tostring(error_message)
-            ))
-        end
-    end
-    retained_async_callbacks[callback_id] = retained_callback
-    retained_async_callback_order[#retained_async_callback_order + 1] = callback_id
-    return retained_callback, callback_id
-end
-
-local function execute_in_game_thread_retained(callback, label)
-    local retained_callback, callback_id =
-        retain_async_callback(callback, label)
-    local ok, error_message = pcall(function()
-        -- Keep Perfect Placement off UE4SS's shared simple-action dispatcher.
-        -- One invalid registry entry there removes the global hook and strands
-        -- every later placement input. EngineTick isolates this work from it.
-        if EngineTickAvailable == true
-            and EGameThreadMethod ~= nil
-            and EGameThreadMethod.EngineTick ~= nil
-        then
-            ExecuteInGameThread(
-                retained_callback,
-                EGameThreadMethod.EngineTick
-            )
-        else
-            ExecuteInGameThread(retained_callback)
-        end
-    end)
-    if not ok then
-        discard_retained_async_callback(callback_id)
-        log(string.format(
-            "Could not queue %s: %s",
-            label or "game-thread callback",
-            tostring(error_message)
-        ))
-        return false
-    end
-    return true
-end
-
-local function execute_in_game_thread_with_retained_delay(
-    delay_ms,
-    callback,
-    label,
-    enqueue_failure_callback
-)
-    if type(ExecuteInGameThreadWithDelay) == "function" then
-        local retained_callback, callback_id =
-            retain_async_callback(callback, label)
-        local ok, handle_or_error = pcall(
-            ExecuteInGameThreadWithDelay,
-            delay_ms,
-            retained_callback
-        )
-        if ok and handle_or_error ~= nil then
-            return true
-        end
-        discard_retained_async_callback(callback_id)
-        log(string.format(
-            "Could not queue %s: %s",
-            label or "delayed game-thread callback",
-            tostring(handle_or_error)
-        ))
-        return false
-    end
-
-    if type(ExecuteWithDelay) ~= "function" then
-        log(string.format(
-            "Could not queue %s: no delayed-action API is available.",
-            label or "delayed game-thread callback"
-        ))
-        return false
-    end
-
-    local delayed_callback, callback_id =
-        retain_async_callback(function()
-            local enqueued = execute_in_game_thread_retained(callback, label)
-            if not enqueued and enqueue_failure_callback ~= nil then
-                local failure_ok, failure_error =
-                    pcall(enqueue_failure_callback)
-                if not failure_ok then
-                    log(string.format(
-                        "%s enqueue-failure recovery failed: %s",
-                        label or "Delayed game-thread callback",
-                        tostring(failure_error)
-                    ))
-                end
-            end
-        end, label)
-    local ok, error_message = pcall(
-        ExecuteWithDelay,
-        delay_ms,
-        delayed_callback
-    )
-    if not ok then
-        discard_retained_async_callback(callback_id)
-        log(string.format(
-            "Could not queue %s: %s",
-            label or "delayed game-thread callback",
-            tostring(error_message)
-        ))
-        return false
-    end
-    return true
-end
+local runtime = Runtime.new(log)
 
 local function begin_freeze_transition(next_state)
     freeze_transition_generation = freeze_transition_generation + 1
@@ -256,7 +101,7 @@ local function complete_freeze_transition(transition_id, stable_state)
 end
 
 local function settle_freeze_transition(transition_id, stable_state)
-    local queued = execute_in_game_thread_with_retained_delay(
+    local queued = runtime.delay(
         FREEZE_TRANSITION_SETTLE_MS,
         function()
             complete_freeze_transition(transition_id, stable_state)
@@ -696,6 +541,9 @@ local function find_perfect_placement_ui_host()
         perfect_placement_ui_host = host
         ui_host_missing_was_logged = false
         apply_configured_keycaps(host)
+        if gamepad_controller ~= nil then
+            gamepad_controller:attach_host(host)
+        end
         log("Companion UI host found: " .. full_name(host))
         return host
     end
@@ -996,7 +844,7 @@ local function start_transform_loop()
         transform_loop_callback = function()
             if state == State.EDITING and not transform_game_thread_pending then
                 transform_game_thread_pending = true
-                local queued = execute_in_game_thread_retained(
+                local queued = runtime.execute(
                     transform_game_thread_callback,
                     "Frozen transform hold"
                 )
@@ -1314,7 +1162,7 @@ local function start_lifecycle_monitor()
                 end
             end
 
-            local queued = execute_in_game_thread_retained(
+            local queued = runtime.execute(
                 lifecycle_game_thread_callback,
                 "Placement lifecycle monitor"
             )
@@ -1662,7 +1510,7 @@ local function schedule_locked_validity_refresh()
 
     validity_refresh_pending = true
     local refresh_generation = freeze_transition_generation
-    local queued = execute_in_game_thread_with_retained_delay(
+    local queued = runtime.delay(
         VALIDITY_REFRESH_INTERVAL_MS,
         function()
             if state ~= State.EDITING
@@ -2019,7 +1867,7 @@ local function ensure_construction_ui_hooks()
                     if show_unfrozen_guide_for_active_preview() then
                         return
                     end
-                    execute_in_game_thread_with_retained_delay(
+                    runtime.delay(
                         100,
                         function()
                             if not show_unfrozen_guide_for_active_preview() then
@@ -2188,7 +2036,7 @@ local function show_preview_notification(message, color)
         end
         toast:AnmEvent_In()
 
-        execute_in_game_thread_with_retained_delay(
+        runtime.delay(
             1800,
             function()
                 if generation ~= notification_generation then
@@ -3010,7 +2858,7 @@ queue_piece_switch_poll = function(
     attempt,
     stable_preview_name
 )
-    local queued = execute_in_game_thread_with_retained_delay(
+    local queued = runtime.delay(
         FREEZE_TO_PIECE_RETRY_MS,
         function()
             if transition_id ~= freeze_transition_generation
@@ -3103,7 +2951,7 @@ local function switch_to_captured_build_piece(source, freeze_after_switch)
     end
 
     preview_actor = nil
-    local queued = execute_in_game_thread_with_retained_delay(
+    local queued = runtime.delay(
         1,
         function()
             if transition_id ~= freeze_transition_generation
@@ -3223,23 +3071,30 @@ local function freeze_to_looked_at_build_piece()
     switch_to_captured_build_piece(source, true)
 end
 
+local function queue_input_callback(callback, source)
+    local queued_generation = freeze_transition_generation
+    local queued_during_transition =
+        freeze_transition_input_locked
+        or state == State.FREEZING
+        or state == State.UNFREEZING
+        or state == State.SWITCHING
+    return runtime.execute(function()
+        if queued_during_transition
+            or queued_generation ~= freeze_transition_generation
+        then
+            verbose("Discarded stale queued "
+                .. tostring(source or "input")
+                .. " after a placement transition.")
+            return
+        end
+        callback()
+    end, tostring(source or "Input") .. " game-thread callback")
+end
+
 local function register_chord(key, modifiers, callback)
     local ok, error_message = pcall(function()
         local queued_callback = function()
-            local queued_generation = freeze_transition_generation
-            local queued_during_transition =
-                freeze_transition_input_locked
-                or state == State.FREEZING
-                or state == State.UNFREEZING
-            execute_in_game_thread_retained(function()
-                if queued_during_transition
-                    or queued_generation ~= freeze_transition_generation
-                then
-                    verbose("Discarded stale queued input after a placement transition.")
-                    return
-                end
-                callback()
-            end, "Input game-thread callback")
+            queue_input_callback(callback, "Keyboard input")
         end
         if modifiers == nil or #modifiers == 0 then
             RegisterKeyBind(key, queued_callback)
@@ -3279,6 +3134,21 @@ end
 local action_callbacks = {}
 local action_numlock_alternates = {}
 local registered_action_chords = {}
+
+local function dispatch_action(action, source)
+    local callback = action_callbacks[action]
+    if type(callback) ~= "function" then
+        verbose("Ignored unknown "
+            .. tostring(source or "input")
+            .. " action: "
+            .. tostring(action))
+        return false
+    end
+    return queue_input_callback(
+        callback,
+        tostring(source or "Input") .. " action " .. tostring(action)
+    )
+end
 
 local function binding_uses_virtual_key(binding, virtual_key)
     return binding.key_info.virtual_key == virtual_key
@@ -3430,6 +3300,17 @@ register_supplemental_freeze_chord(
 register_action("copy_piece", copy_looked_at_build_piece)
 register_action("freeze_to_piece", freeze_to_looked_at_build_piece)
 
+gamepad_controller = Gamepad.new({
+    config = Config,
+    log = log,
+    is_valid = is_valid,
+    dispatch_action = dispatch_action,
+    enabled_property = (Config.ui or {}).gamepad_enabled_property
+        or "GamepadEnabled",
+    load_keycap_texture = load_keycap_texture,
+})
+gamepad_controller:start()
+
 local function refresh_keycaps_for_ui_host(host)
     keycap_ui_host = nil
     if is_valid(host) then
@@ -3443,11 +3324,14 @@ local UI_HOST_CLASS_PATH =
     .. ".WBP_PerfectPlacement_KeyGuide_C"
 
 ui_host_notify_callback = function()
+    if gamepad_controller ~= nil then
+        gamepad_controller:detach_host()
+    end
     if ui_host_setup_pending then
         return
     end
     ui_host_setup_pending = true
-    local queued = execute_in_game_thread_with_retained_delay(
+    local queued = runtime.delay(
         250,
         function()
             ui_host_setup_pending = false
@@ -3530,6 +3414,6 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.1.7-rc.3")
-log("Companion key-guide UI bridge revision 24 loaded.")
+log("Loaded Perfect Placement 0.2.0-rc.1")
+log("Companion key-guide UI bridge revision 25 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

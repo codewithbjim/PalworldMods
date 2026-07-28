@@ -5,7 +5,7 @@ param(
 
     [string]$ThumbnailSource,
 
-    [string]$Version = "0.1.7-rc.3"
+    [string]$Version = "0.2.0-rc.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +23,9 @@ foreach ($required in @(
     (Join-Path $modRoot "Info.json"),
     (Join-Path $modRoot "Scripts\main.lua"),
     (Join-Path $modRoot "Scripts\config.lua"),
+    (Join-Path $modRoot "Scripts\gamepad.lua"),
     (Join-Path $modRoot "Scripts\keybindings.lua"),
+    (Join-Path $modRoot "Scripts\runtime.lua"),
     (Join-Path $modRoot "Scripts\darnmenu.lua"),
     $pakSource,
     $pakHashPath
@@ -59,7 +61,14 @@ foreach ($legacyPayload in @(
 New-Item -ItemType Directory -Force -Path $scriptsDestination, $logicModsDestination | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $modRoot "Info.json") -Destination $destinationRoot -Force
-foreach ($scriptName in @("main.lua", "config.lua", "keybindings.lua", "darnmenu.lua")) {
+foreach ($scriptName in @(
+    "main.lua",
+    "config.lua",
+    "gamepad.lua",
+    "keybindings.lua",
+    "runtime.lua",
+    "darnmenu.lua"
+)) {
     Copy-Item -LiteralPath (Join-Path $modRoot "Scripts\$scriptName") -Destination $scriptsDestination -Force
 }
 Copy-Item -LiteralPath $pakSource -Destination (Join-Path $logicModsDestination "PerfectPlacement.pak") -Force

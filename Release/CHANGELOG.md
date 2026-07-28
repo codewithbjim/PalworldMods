@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0-rc.1
+
+Event-driven gamepad integration release candidate.
+
+### Added
+
+- Add native gamepad placement controls and matching controller prompts to the companion key guide.
+- Use L3 to freeze or unfreeze, L3 plus D-pad Down to copy a targeted piece, and L3 plus D-pad Up to copy its transform and freeze the replacement preview.
+- Move with the D-pad, use LT plus the D-pad for height and movement-step changes, rotate with LB or RB, and reset with R3 while frozen.
+- Expose gamepad enablement, forward/back and height inversion, and rotation-button swapping through optional DarnMenu settings.
+
+### Fixed
+
+- Route keyboard, mouse, and gamepad actions through the same transition-aware game-thread dispatcher so stale input is discarded during freeze, unfreeze, and piece-switch transitions.
+- Retain the gamepad Blueprint callback and both returned UE4SS hook IDs so callback garbage collection cannot silently remove controller input.
+
+### Performance
+
+- Dispatch controller actions only when the Blueprint reports a physical chord, with no recurring Lua gamepad polling.
+- Keep immediate and delayed game-thread scheduling in a dedicated runtime helper that prefers EngineTick and owned delayed actions.
+
 ## 0.1.7-rc.3
 
 Input dispatch, guide lifecycle, and performance hotfix.

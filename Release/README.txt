@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.1.7-RC.3
+PERFECT PLACEMENT 0.2.0-RC.1
 ============================
 
 RELEASE CANDIDATE
@@ -23,7 +23,9 @@ Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\main.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\config.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\darnmenu.lua
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\gamepad.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\keybindings.lua
+  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\runtime.lua
   Pal\Content\Paks\LogicMods\PerfectPlacement.pak
 
 If your UE4SS build uses mods.txt, add:
@@ -46,14 +48,26 @@ Vertical movement is limited to 25 cm below and 650 cm above the initially froze
 
 Mouse bindings are ignored unless Palworld has an active construction preview. Middle mouse still freezes or releases the preview while Ctrl or Alt is held for Palworld build controls. Normal middle-mouse Pal commands remain unaffected.
 
-Gamepad placement controls are not supported in this release.
+GAMEPAD
+-------
+L3                 Freeze / unfreeze
+L3 + D-pad Down    Copy targeted build piece
+L3 + D-pad Up      Copy targeted piece, match its transform, and freeze
+D-pad              Move horizontally while frozen
+LT + D-pad Up/Down Move up / down while frozen
+LT + D-pad Left/Right
+                   Decrease / increase movement step
+LB / RB            Rotate left / right
+R3                 Reset to the frozen transform
+
+The companion Blueprint reports complete physical controller chords to Lua only when pressed; Perfect Placement does not run a recurring Lua gamepad input poll. Advanced controller bindings are available in Scripts\config.lua.
 
 DARNMENU (OPTIONAL)
 -------------------
 Open ESC > Mod Options > Perfect Placement to edit controls and settings. Apply changes, then restart Palworld. Saved overrides live in:
   Pal\Binaries\Win64\UE4SS\Mods\shared\PerfectPlacement_user.lua
 
-The page also configures movement-step values, step multiplier, vertical limits, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback defaults to On and can be disabled if its collision and material refresh causes stutter.
+The page also configures movement-step values, step multiplier, vertical limits, controller preferences, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback defaults to On and can be disabled if its collision and material refresh causes stutter.
 
 Without DarnMenu, the built-in controls remain available. Scripts\config.lua supplies the defaults when no saved override exists.
 

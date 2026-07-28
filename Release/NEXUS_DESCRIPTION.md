@@ -14,7 +14,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 - **Instant reset.** Return the preview to the exact position and rotation it had when frozen.
 - **Eyedropper.** Copy the build piece under the cursor into the active preview.
 - **Copy and freeze.** Copy the targeted piece, transfer its position and rotation, and freeze the replacement preview there.
-- **Native guide UI.** The on-screen keyboard and mouse controls stay visible while a live construction preview is available.
+- **Native guide UI.** The on-screen keyboard, mouse, and controller controls stay visible while a live construction preview is available.
 - **Scoped behavior.** Perfect Placement only edits the temporary preview. Final construction remains on Palworld's normal validation and placement path.
 
 ---
@@ -29,7 +29,7 @@ Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install 
 
 With DarnMenu installed, configure controls and settings under **ESC → Mod Options → Perfect Placement**. Changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and `Scripts/config.lua` defaults unless a saved `Mods/shared/PerfectPlacement_user.lua` override already exists.
 
-The optional DarnMenu page also configures movement steps and limits, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback is enabled by default and can be disabled if its collision and material refresh causes stutter. DarnUI is installed as DarnMenu's own dependency.
+The optional DarnMenu page also configures movement steps and limits, controller preferences, verbose diagnostic logging, and live frozen-validity feedback. Live validity feedback is enabled by default and can be disabled if its collision and material refresh causes stutter. DarnUI is installed as DarnMenu's own dependency.
 
 ---
 
@@ -65,7 +65,18 @@ PerfectPlacement : 1
 - **Copy targeted build piece:** Shift + Middle mouse
 - **Copy and freeze to targeted piece:** Ctrl + Shift + Middle mouse
 
-The key guide appears only while a live construction preview is available. Mouse bindings are ignored unless Palworld has an active construction preview, so normal middle-mouse Pal commands remain unaffected. Gamepad placement controls are not supported in this release.
+### Gamepad
+
+- **Freeze / unfreeze preview:** L3
+- **Copy targeted build piece:** L3 + D-pad Down
+- **Copy and freeze to targeted piece:** L3 + D-pad Up
+- **Move horizontally:** D-pad
+- **Move up / down:** LT + D-pad Up / Down
+- **Decrease / increase movement step:** LT + D-pad Left / Right
+- **Rotate:** LB / RB
+- **Reset to frozen transform:** R3
+
+The key guide appears only while a live construction preview is available. Mouse bindings are ignored without an active preview, so normal middle-mouse Pal commands remain unaffected. Controller actions are Blueprint events and do not use a recurring Lua input poll.
 
 ---
 

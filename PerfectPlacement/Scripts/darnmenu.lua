@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 13
+local SCHEMA_VERSION = 14
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -30,7 +30,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 13,
+  schemaVersion = 14,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",
@@ -62,6 +62,10 @@ return {
     movement_maximum_above_cm = 650.0,
     refresh_frozen_validity = true,
     use_palworld_keycaps = true,
+    gamepad_enabled = true,
+    gamepad_invert_forward_back = false,
+    gamepad_invert_height = false,
+    gamepad_swap_rotate_buttons = false,
     verbose_logging = false,
   },
   sections = {
@@ -111,6 +115,15 @@ return {
         kind = "number", min = 0, max = 5000, step = 10,
         help = "In centimeters." },
     }},
+    { title = "Controller", options = {
+      { path = "gamepad_enabled", label = "Enable gamepad controls", kind = "bool",
+        help = "Uses the companion Blueprint input bridge. Requires a restart." },
+      { path = "gamepad_invert_forward_back", label = "Invert forward and backward",
+        kind = "bool" },
+      { path = "gamepad_invert_height", label = "Invert up and down", kind = "bool" },
+      { path = "gamepad_swap_rotate_buttons", label = "Swap rotate buttons",
+        kind = "bool" },
+    }},
     { title = "Diagnostics", options = {
       { path = "verbose_logging", label = "Verbose UE4SS logging", kind = "bool",
         help = "Enable only while diagnosing a problem; this can produce many log lines." },
@@ -149,6 +162,18 @@ local SETTING_SPECS = {
     },
     use_palworld_keycaps = {
         section = "ui", field = "use_palworld_keycaps", kind = "boolean",
+    },
+    gamepad_enabled = {
+        section = "gamepad", field = "enabled", kind = "boolean",
+    },
+    gamepad_invert_forward_back = {
+        section = "gamepad", field = "invert_forward_back", kind = "boolean",
+    },
+    gamepad_invert_height = {
+        section = "gamepad", field = "invert_height", kind = "boolean",
+    },
+    gamepad_swap_rotate_buttons = {
+        section = "gamepad", field = "swap_rotate_buttons", kind = "boolean",
     },
     verbose_logging = {
         section = "diagnostics", field = "verbose", kind = "boolean",

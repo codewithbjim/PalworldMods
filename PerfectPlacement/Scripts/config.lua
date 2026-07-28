@@ -14,6 +14,7 @@ return {
         show_unfrozen_toast_function = "ShowUnfrozenToast",
         hide_toast_function = "HideToast",
         move_step_property = "MoveStepCm",
+        gamepad_enabled_property = "GamepadEnabled",
         use_palworld_keycaps = true,
 
         -- Keep the old stock-widget experiment disabled. It is retained in
@@ -37,6 +38,55 @@ return {
         fine = 1.0,
         normal = 5.0,
         coarse = 15.0,
+    },
+
+    -- The companion Blueprint captures controller presses and notifies Lua
+    -- through QueueGamepadPhysicalInput. No recurring Lua input poll is used.
+    gamepad = {
+        enabled = true,
+        invert_forward_back = false,
+        invert_height = false,
+        swap_rotate_buttons = false,
+
+        bindings = {
+            unfrozen = {
+                toggle_freeze = "L3",
+                copy_piece = {
+                    key = "DPAD_DOWN",
+                    modifiers = { "L3" },
+                },
+                freeze_to_piece = {
+                    key = "DPAD_UP",
+                    modifiers = { "L3" },
+                },
+            },
+            frozen = {
+                move_left = "DPAD_LEFT",
+                move_right = "DPAD_RIGHT",
+                move_forward = "DPAD_UP",
+                move_back = "DPAD_DOWN",
+                move_up = {
+                    key = "DPAD_UP",
+                    modifiers = { "LT" },
+                },
+                move_down = {
+                    key = "DPAD_DOWN",
+                    modifiers = { "LT" },
+                },
+                rotate_left = "LB",
+                rotate_right = "RB",
+                step_down = {
+                    key = "DPAD_LEFT",
+                    modifiers = { "LT" },
+                },
+                step_up = {
+                    key = "DPAD_RIGHT",
+                    modifiers = { "LT" },
+                },
+                reset = "R3",
+                toggle_freeze = "L3",
+            },
+        },
     },
 
     validity = {

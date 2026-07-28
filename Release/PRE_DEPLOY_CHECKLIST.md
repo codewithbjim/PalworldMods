@@ -100,7 +100,29 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Confirm configured keycaps and action labels refresh correctly.
 - [ ] Reopen construction mode and reload the world repeatedly; confirm each control fires once per keypress and the log contains only one Perfect Placement startup line.
 
-## 7. Soak and compatibility
+## 7. Gamepad integration
+
+Record `Pass`, `Fail`, or `N/A` for each row. A supported controller release cannot use `N/A` for the default-control rows.
+
+| Scenario | Result |
+| --- | --- |
+| L3 freezes and unfreezes exactly once per press | |
+| L3 + D-pad Down copies without also firing plain L3 | |
+| L3 + D-pad Up copies the targeted transform and freezes without also firing plain L3 | |
+| Plain D-pad moves in all four horizontal directions while frozen | |
+| LT + D-pad Up/Down moves vertically and LT + D-pad Left/Right changes the step | |
+| LB/RB rotates and R3 resets while frozen | |
+| RT and LT+RT D-pad chords dispatch correctly after temporary `config.lua` remapping | |
+| Direction inversion and rotation-button swapping match both behavior and guide icons after relaunch | |
+| Disabling gamepad support keeps the keyboard guide available and prevents controller capture | |
+| Leaving the controller idle for five minutes produces no recurring Lua gamepad work or rhythmic stutter | |
+| Rapid controller movement, rotation, reset, Freeze, and Unfreeze input does not duplicate actions or remove a hook | |
+| Recreating the guide or reloading a world does not replay old serial counters | |
+
+- [ ] Confirm each physical press produces one `QueueGamepadPhysicalInput` callback and one guarded Lua action.
+- [ ] Confirm the UE4SS log has no incomplete-hook, callback-GC, `Ref was not function`, or repeated gamepad error.
+
+## 8. Soak and compatibility
 
 - [ ] Record a frame-time baseline for at least five minutes with Perfect Placement disabled, then repeat outside construction mode with the candidate enabled. Confirm there is no rhythmic hitch near 500 ms intervals.
 - [ ] Remain in construction mode with an unfrozen preview for five minutes, then repeat while frozen. Confirm there is no repeating frame-time spike.
@@ -111,7 +133,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Test host and client behavior if multiplayer support is claimed.
 - [ ] Test a dedicated server if dedicated-server support is claimed.
 
-## 8. Evidence and acceptance
+## 9. Evidence and acceptance
 
 Record the result before publishing:
 
@@ -125,7 +147,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | N/A unless supported |
+| Controller | Required for 0.2.0-rc.1 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |
@@ -140,7 +162,7 @@ Release acceptance requires:
 - [ ] The release commit is tagged with an annotated `<package-name>-v<version>` tag.
 - [ ] The tag resolves to the exact candidate commit.
 
-## 9. Publish safely
+## 10. Publish safely
 
 - [ ] Run the Nexus uploader in dry-run mode and confirm the candidate ZIP remains present with the same SHA-256 afterward.
 - [ ] Confirm the dry run targets the intended mod, existing file, version, category, archive, and description.

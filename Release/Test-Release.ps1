@@ -30,7 +30,9 @@ function Get-Sha256 {
 $manifestPath = Join-Path $modRoot "Info.json"
 $configPath = Join-Path $modRoot "Scripts\config.lua"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
+$gamepadPath = Join-Path $modRoot "Scripts\gamepad.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
+$runtimePath = Join-Path $modRoot "Scripts\runtime.lua"
 $thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
 $pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
 $changelogPath = Join-Path $releaseRoot "CHANGELOG.md"
@@ -44,6 +46,10 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $darnMenuPath -PathType Leaf) `
     "Missing DarnMenu adapter: $darnMenuPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $configPath -PathType Leaf) `
     "Missing default config: $configPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $gamepadPath -PathType Leaf) `
+    "Missing gamepad input adapter: $gamepadPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $runtimePath -PathType Leaf) `
+    "Missing game-thread runtime helper: $runtimePath"
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmSchemaPath)) `
     "Obsolete Mod Config Menu schema must not be shipped."
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
@@ -112,14 +118,36 @@ foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
             $wrappedLine.LineNumber
         )
     }
+    $overlongEntry = Get-Content -LiteralPath $publicChangelog |
+        Where-Object { $_ -match '^-\s+\S' -and $_.Length -gt 255 } |
+        Select-Object -First 1
+    Assert-ReleaseCondition ($null -eq $overlongEntry) (
+        "Changelog entries must remain one line and no more than 255 " +
+        "characters: $publicChangelog"
+    )
+}
+$currentDescriptionPaths = @(
+    (Join-Path $releaseRoot "NEXUS_DESCRIPTION.md"),
+    (Join-Path $releaseRoot "NEXUS_DESCRIPTION.bbcode.txt"),
+    (Join-Path $releaseRoot "WORKSHOP_DESCRIPTION.bbcode.txt"),
+    $releaseReadmePath
+)
+foreach ($descriptionPath in $currentDescriptionPaths) {
+    $descriptionSource = Get-Content -LiteralPath $descriptionPath -Raw
+    Assert-ReleaseCondition (
+        $descriptionSource -notmatch
+            '(?i)gamepad(?:\s+placement)?\s+controls\s+are\s+not\s+supported'
+    ) "Current release copy still says gamepad controls are unsupported: $descriptionPath"
 }
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
 $configSource = Get-Content -LiteralPath $configPath -Raw
+$gamepadSource = Get-Content -LiteralPath $gamepadPath -Raw
+$runtimeSource = Get-Content -LiteralPath $runtimePath -Raw
 Assert-ReleaseCondition (
-    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*13'
-) "DarnMenu schema constant version 13 was not found."
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*13') `
-    "Embedded DarnMenu schema version 13 was not found."
+    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*14'
+) "DarnMenu schema constant version 14 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*14') `
+    "Embedded DarnMenu schema version 14 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -159,15 +187,88 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $configSource -match 'refresh_frozen_feedback\s*=\s*true'
 ) "Frozen-validity feedback must default on in config.lua."
+foreach ($gamepadSetting in @(
+    "gamepad_enabled",
+    "gamepad_invert_forward_back",
+    "gamepad_invert_height",
+    "gamepad_swap_rotate_buttons"
+)) {
+    Assert-ReleaseCondition (
+        $darnMenuSource -match [regex]::Escape($gamepadSetting)
+    ) "DarnMenu gamepad setting '$gamepadSetting' was not found."
+}
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'register_hook\(C\.hook_path,\s*self\.hook_callback\)'
+) "Gamepad input must use one meaningful Blueprint hook callback."
+Assert-ReleaseCondition (
+    $gamepadSource -match 'self\.hook_pre_id\s*=\s*pre_id' -and
+    $gamepadSource -match 'self\.hook_post_id\s*=\s*post_id'
+) "Gamepad input must retain both UE4SS Blueprint hook IDs."
+Assert-ReleaseCondition (
+    $gamepadSource -notmatch
+        '\b(?:LoopAsync|LoopInGameThreadWithDelay|ExecuteWithDelay)\s*\('
+) "Gamepad input must remain event-driven and free of recurring poll loops."
+Assert-ReleaseCondition (
+    $gamepadSource -notmatch
+        '(?i)\b(?:poll_interval|polling_interval|start_poll|poll_loop)\b'
+) "Gamepad input must not add a configurable or permanent polling cadence."
+Assert-ReleaseCondition (
+    $configSource -notmatch
+        '(?i)\b(?:poll_interval|maximum_actions_per_poll)\b'
+) "Gamepad configuration must not expose polling controls."
+Assert-ReleaseCondition (
+    $configSource -match
+        'gamepad\s*=\s*\{[\s\S]*?enabled\s*=\s*true'
+) "Gamepad support must default to enabled for the 0.2.0 controller release."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        '\[22\]\s*=\s*\{[\s\S]*?name\s*=\s*"Unfrozen_L3_DPadUp"' -and
+    $gamepadSource -match
+        'serial\s*=\s*"GamepadUnfrozenCopyFreezeSerial"'
+) "Gamepad input must preserve enum 0-21 and append Freeze into Piece at 22."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'freeze_to_piece\s*=\s*"GP_UnfrozenCopyFreezeChord"'
+) "The gamepad guide must configure the Freeze into Piece chord widget."
+Assert-ReleaseCondition (
+    $gamepadSource -notmatch 'self\.host\s*='
+) "The gamepad adapter must not retain a UI UObject across map transitions."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        '_apply_enabled\(host,\s*self\.enabled\s+and\s+self\.started\)'
+) "The Blueprint gamepad bridge must stay disabled when hook registration fails."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'hook_registration_terminal\s*=\s*true' -and
+    $gamepadSource -match
+        'if\s+self\.hook_registration_terminal\s+then'
+) "Incomplete gamepad hook IDs must fail closed without repeated registration."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'if\s+not\s+self\.enabled\s+or\s+not\s+self\.started\s+then'
+) "A partial or disabled gamepad hook must never dispatch controller actions."
+Assert-ReleaseCondition (
+    $gamepadSource -notmatch 'function\s+Instance:refresh_config'
+) "Gamepad configuration is restart-only and must not expose an unsafe live reload API."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'if\s+dispatched_or_error\s*==\s*false\s+then'
+) "A rejected guarded dispatch must be reported instead of treated as success."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
+Assert-ReleaseCondition (
+    $mainSource -match 'local\s+Gamepad\s*=\s*require\("gamepad"\)' -and
+    $mainSource -match 'Gamepad\.new\s*\(' -and
+    $mainSource -match 'dispatch_action\s*=\s*dispatch_action'
+) "main.lua must compose the event-driven gamepad adapter through its guarded dispatcher."
 Assert-ReleaseCondition (
     $mainSource -match [regex]::Escape("Loaded Perfect Placement $Version")
 ) "The Lua startup version does not match '$Version'."
 Assert-ReleaseCondition (
     $mainSource -match
-        [regex]::Escape("Companion key-guide UI bridge revision 24 loaded.")
-) "The Lua bridge revision does not match the rc.3 PAK."
+        [regex]::Escape("Companion key-guide UI bridge revision 25 loaded.")
+) "The Lua bridge revision does not match the staged gamepad PAK."
 Assert-ReleaseCondition (
     $mainSource -match
         'register_action\("freeze_to_piece",\s*freeze_to_looked_at_build_piece\)'
@@ -205,27 +306,44 @@ Assert-ReleaseCondition (
     )).Count -eq 2
 ) "Both frozen-validity entry points must be disabled unless explicitly enabled."
 Assert-ReleaseCondition (
-    ([regex]::Matches(
-        $mainSource,
-        'ExecuteInGameThread\s*\('
-    )).Count -eq 2
-) "Direct game-thread calls must remain isolated inside the retained wrapper."
-Assert-ReleaseCondition (
-    $mainSource -notmatch 'ExecuteWithDelay\s*\('
-) "All delayed callbacks must use the retained callback wrapper."
-Assert-ReleaseCondition (
-    $mainSource -match
-        'completed_async_callbacks\[callback_id\]\s*=\s*true'
+    $runtimeSource -match
+        'completed_callbacks\[callback_id\]\s*=\s*true'
 ) "Executed callbacks must remain retained until bounded-history pruning."
 Assert-ReleaseCondition (
-    $mainSource -match 'EGameThreadMethod\.EngineTick'
+    ([regex]::Matches(
+        $runtimeSource,
+        '\bExecuteInGameThread\s*\('
+    )).Count -eq 2
+) "Direct game-thread calls must remain isolated inside runtime.lua."
+Assert-ReleaseCondition (
+    $runtimeSource -match 'EGameThreadMethod\.EngineTick'
 ) "Immediate PP callbacks must use the EngineTick queue."
 Assert-ReleaseCondition (
-    $mainSource -notmatch 'EGameThreadMethod\.ProcessEvent'
+    $runtimeSource -notmatch 'EGameThreadMethod\.ProcessEvent'
 ) "Perfect Placement must never force work through the shared ProcessEvent queue."
 Assert-ReleaseCondition (
-    $mainSource -match 'ExecuteInGameThreadWithDelay'
+    $runtimeSource -match 'ExecuteInGameThreadWithDelay'
 ) "Delayed work must prefer UE4SS-owned game-thread actions."
+Assert-ReleaseCondition (
+    $runtimeSource -match 'ExecuteWithDelay'
+) "The runtime helper must retain the legacy delayed-action fallback."
+Assert-ReleaseCondition (
+    $mainSource -match 'local\s+Runtime\s*=\s*require\("runtime"\)'
+) "main.lua must load the centralized game-thread runtime helper."
+foreach ($luaPath in Get-ChildItem -LiteralPath (
+    Join-Path $modRoot "Scripts"
+) -Filter "*.lua") {
+    if ($luaPath.Name -eq "runtime.lua") {
+        continue
+    }
+    $luaSource = Get-Content -LiteralPath $luaPath.FullName -Raw
+    Assert-ReleaseCondition (
+        $luaSource -notmatch
+            '\b(?:ExecuteInGameThread(?:WithDelay)?|ExecuteWithDelay)\s*\('
+    ) (
+        "$($luaPath.Name) bypasses runtime.lua for game-thread scheduling."
+    )
+}
 Assert-ReleaseCondition (
     $mainSource -match 'set_actor_transform_verified'
 ) "Transform calls must verify success after UE4SS FHitResult marshal errors."
@@ -396,8 +514,10 @@ $requiredSources = @(
     "README.md",
     "Scripts\config.lua",
     "Scripts\darnmenu.lua",
+    "Scripts\gamepad.lua",
     "Scripts\keybindings.lua",
-    "Scripts\main.lua"
+    "Scripts\main.lua",
+    "Scripts\runtime.lua"
 )
 foreach ($relativePath in $requiredSources) {
     $sourcePath = Join-Path $modRoot $relativePath
@@ -433,7 +553,14 @@ Assert-ReleaseCondition (
         Join-Path $WorkshopPath "PerfectPlacement.modconfig.json"
     ))
 ) "Workshop package contains the obsolete Mod Config Menu schema."
-foreach ($scriptName in @("main.lua", "config.lua", "keybindings.lua", "darnmenu.lua")) {
+foreach ($scriptName in @(
+    "main.lua",
+    "config.lua",
+    "gamepad.lua",
+    "keybindings.lua",
+    "runtime.lua",
+    "darnmenu.lua"
+)) {
     $sourceScript = Join-Path $modRoot "Scripts\$scriptName"
     $workshopScript = Join-Path $WorkshopPath "Scripts\$scriptName"
     Assert-ReleaseCondition (
@@ -496,17 +623,30 @@ foreach ($luaPath in Get-ChildItem -LiteralPath (
     )
 }
 
-$luaCompiler = Get-Command "luac" -ErrorAction SilentlyContinue
+$luaCompiler = $null
+foreach ($candidate in @("luac5.4", "luac54", "luac")) {
+    $luaCompiler = Get-Command $candidate -ErrorAction SilentlyContinue
+    if ($luaCompiler) {
+        break
+    }
+}
 if ($luaCompiler) {
+    $luaCompilerVersion = (& $luaCompiler.Source -v 2>&1 | Out-String).Trim()
+    Assert-ReleaseCondition (
+        $luaCompilerVersion -match 'Lua 5\.4(?:\.\d+)?'
+    ) (
+        "Lua 5.4 compiler required; '$($luaCompiler.Source)' reported " +
+        "'$luaCompilerVersion'."
+    )
     foreach ($luaPath in Get-ChildItem -LiteralPath (Join-Path $modRoot "Scripts") -Filter "*.lua") {
         & $luaCompiler.Source -p $luaPath.FullName
         Assert-ReleaseCondition ($LASTEXITCODE -eq 0) `
             "Lua syntax validation failed: $($luaPath.FullName)"
     }
 } elseif ($RequireLuaCompiler) {
-    throw "luac is required but was not found on PATH."
+    throw "Lua 5.4 luac is required but was not found on PATH."
 } else {
-    Write-Warning "luac was not found; complete the Lua syntax item in PRE_DEPLOY_CHECKLIST.md."
+    Write-Warning "Lua 5.4 luac was not found; complete the Lua syntax item in PRE_DEPLOY_CHECKLIST.md."
 }
 
 Push-Location $repoRoot
