@@ -33,6 +33,7 @@ $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
 $gamepadPath = Join-Path $modRoot "Scripts\gamepad.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
 $runtimePath = Join-Path $modRoot "Scripts\runtime.lua"
+$runtimeTestPath = Join-Path $releaseRoot "Tests\Test-Runtime.lua"
 $thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
 $pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
 $changelogPath = Join-Path $releaseRoot "CHANGELOG.md"
@@ -50,6 +51,8 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $gamepadPath -PathType Leaf) `
     "Missing gamepad input adapter: $gamepadPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $runtimePath -PathType Leaf) `
     "Missing game-thread runtime helper: $runtimePath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $runtimeTestPath -PathType Leaf) `
+    "Missing game-thread runtime regression harness: $runtimeTestPath"
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmSchemaPath)) `
     "Obsolete Mod Config Menu schema must not be shipped."
 Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
@@ -119,10 +122,10 @@ foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
         )
     }
     $overlongEntry = Get-Content -LiteralPath $publicChangelog |
-        Where-Object { $_ -match '^-\s+\S' -and $_.Length -gt 255 } |
+        Where-Object { $_ -match '^-\s+\S' -and $_.Length -ge 255 } |
         Select-Object -First 1
     Assert-ReleaseCondition ($null -eq $overlongEntry) (
-        "Changelog entries must remain one line and no more than 255 " +
+        "Changelog entries must remain one line and shorter than 255 " +
         "characters: $publicChangelog"
     )
 }
@@ -304,11 +307,11 @@ Assert-ReleaseCondition (
         $mainSource,
         'Config\.validity\.refresh_frozen_feedback\s*~=\s*true'
     )).Count -eq 2
-) "Both frozen-validity entry points must be disabled unless explicitly enabled."
+) "Both frozen-validity entry points must honor the configured validity toggle."
 Assert-ReleaseCondition (
-    $runtimeSource -match
-        'completed_callbacks\[callback_id\]\s*=\s*true'
-) "Executed callbacks must remain retained until bounded-history pruning."
+    $runtimeSource -notmatch
+        'retained_callback|completed_callback|retained_history'
+) "The unsafe rotating callback-retention history must not be restored."
 Assert-ReleaseCondition (
     ([regex]::Matches(
         $runtimeSource,
@@ -322,6 +325,15 @@ Assert-ReleaseCondition (
     $runtimeSource -notmatch 'EGameThreadMethod\.ProcessEvent'
 ) "Perfect Placement must never force work through the shared ProcessEvent queue."
 Assert-ReleaseCondition (
+    ($runtimeSource -match 'LoopInGameThreadAfterFrames') -and
+    ($runtimeSource -match 'PauseDelayedAction') -and
+    ($runtimeSource -match 'UnpauseDelayedAction')
+) "Input dispatch must use a stable paused EngineTick pulse."
+Assert-ReleaseCondition (
+    ($runtimeSource -match 'LoopInGameThreadWithDelay') -and
+    ($runtimeSource -match 'CancelDelayedAction')
+) "Recurring game-thread work must use an owned, cancellable stable loop."
+Assert-ReleaseCondition (
     $runtimeSource -match 'ExecuteInGameThreadWithDelay'
 ) "Delayed work must prefer UE4SS-owned game-thread actions."
 Assert-ReleaseCondition (
@@ -330,6 +342,29 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -match 'local\s+Runtime\s*=\s*require\("runtime"\)'
 ) "main.lua must load the centralized game-thread runtime helper."
+Assert-ReleaseCondition (
+    $mainSource -notmatch '\bLoopAsync\s*\('
+) "main.lua must not bridge recurring async polling into EngineTick."
+Assert-ReleaseCondition (
+    $mainSource -notmatch
+        'start_lifecycle_monitor|should_release_locked_preview|LIFECYCLE_INTERVAL_MS'
+) "Frozen lifecycle handling must remain event-driven instead of polling UObjects."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'runtime\.loop\(\s*FREEZE_TO_PIECE_RETRY_MS,'
+) "Copy-and-freeze readiness must reuse one owned callback."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'validity_refresh_trigger\s*=\s*runtime\.throttle\('
+) "Frozen validity refresh must reuse one stable throttled callback."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'local\s+trigger\s*=\s*runtime\.pulse\('
+) "Keyboard bindings must use stable, coalescing input pulses."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'type\(IsInGameThread\)\s*==\s*"function"'
+) "Blueprint input must avoid redundant game-thread scheduling."
 foreach ($luaPath in Get-ChildItem -LiteralPath (
     Join-Path $modRoot "Scripts"
 ) -Filter "*.lua") {
@@ -406,6 +441,31 @@ Assert-ReleaseCondition (
         'callback\s*=\s*callback,\s*pre_id\s*=\s*pre_id,\s*' +
         'post_id\s*=\s*post_id,'
 ) "Construction lifecycle hooks must retain callbacks and both hook IDs."
+$destructHook = [regex]::Match(
+    $constructionHookFunction.Groups["body"].Value,
+    'local destruct_path\s*=\s*"/Script/UMG\.UserWidget:Destruct"' +
+        '(?<body>[\s\S]*?)\r?\n\s*for _, function_name'
+)
+Assert-ReleaseCondition $destructHook.Success `
+    "The generic construction-widget Destruct hook was not found."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -match
+        'RegisterHook\(\s*destruct_path,\s*destruct_callback\s*\)'
+) "The generic widget Destruct hook must use one meaningful callback."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -match
+        'construction_ui_hooks\[destruct_path\]\s*=\s*\{\s*' +
+        'callback\s*=\s*destruct_callback,\s*' +
+        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,'
+) "The generic widget Destruct hook must retain its callback and both hook IDs."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -match
+        '"WBP_IngameConstruction_C"[\s\S]*?' +
+        'update_perfect_placement_ui\(\s*false,\s*false,\s*true\s*\)'
+) "Widget teardown must filter for construction UI and hide only the companion guide."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -notmatch 'release_preview\s*\('
+) "The generic widget Destruct hook must not release a preview while stock UMG rows are dying."
 foreach ($eventName in @(
     "ReturnToMainMenu",
     "OnEsc",
@@ -430,7 +490,7 @@ $constructionUiFunction = [regex]::Match(
     $mainSource,
     'local function construction_ui_is_active\(allow_fallback_scan\)' +
         '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
-        'local function should_release_locked_preview'
+        'local function refresh_overlap_component'
 )
 Assert-ReleaseCondition $constructionUiFunction.Success `
     "The construction UI lifecycle function was not found."
@@ -445,38 +505,10 @@ Assert-ReleaseCondition (
         'if\s+not\s+allow_fallback_scan\s+then\s+return\s+nil'
 ) "A class-wide construction-widget scan must require a new preview context."
 Assert-ReleaseCondition (
-    $mainSource -match
-        'local\s+ui_reports_exit\s*=\s*locked_construction_ui_was_active\s+' +
-        'and\s+construction_ui_active\s*==\s*false'
-) "Construction UI visibility must be edge-triggered before it can auto-release Freeze."
-Assert-ReleaseCondition (
     $mainSource -notmatch
-        'observed_construction_exit\s*=\s*\(mode_ok\s+and\s+not\s+' +
-        'in_building_mode\)\s+or\s+construction_ui_active\s*==\s*false'
-) "A hidden construction widget must not independently auto-release Freeze."
-$lifecycleMonitorFunction = [regex]::Match(
-    $mainSource,
-    'local function start_lifecycle_monitor\(\)' +
-        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
-        'local function refresh_overlap_component'
-)
-Assert-ReleaseCondition $lifecycleMonitorFunction.Success `
-    "The lifecycle monitor function was not found."
-Assert-ReleaseCondition (
-    $lifecycleMonitorFunction.Groups["body"].Value -match
-        'if\s+state\s*~=\s*State\.EDITING\s+then\s+' +
-        'lifecycle_monitor_started\s*=\s*false\s+' +
-        'return\s+true'
-) "The lifecycle worker must stop after leaving frozen editing."
-Assert-ReleaseCondition (
-    $lifecycleMonitorFunction.Groups["body"].Value -match
-        'if\s+state\s*~=\s*State\.EDITING\s+' +
-        'or\s+freeze_transition_input_locked'
-) "A queued lifecycle callback must become a no-op after leaving frozen editing."
-Assert-ReleaseCondition (
-    $mainSource -match
-        'if\s+lifecycle_game_thread_pending\s+then\s+return'
-) "The lifecycle monitor must coalesce pending game-thread checks."
+        'construction_ui_scan_context_name|locked_construction_ui_was_active|' +
+        'building_mode_exit_checks|locked_preview_name'
+) "The retired frozen lifecycle polling state must not be restored."
 $releaseFunction = [regex]::Match(
     $mainSource,
     'release_preview\s*=\s*function\(reason\)' +
@@ -501,13 +533,6 @@ Assert-ReleaseCondition (
         'ensure_keyguide_hook\(\)\s*ensure_construction_ui_hooks\(\)\s*' +
         'ui_host_notify_callback\(\)'
 ) "Construction widget creation must retry event-hook registration."
-Assert-ReleaseCondition (
-    ([regex]::Matches(
-        $mainSource,
-        'start_lifecycle_monitor\(\)'
-    )).Count -eq 2
-) "The lifecycle monitor must start only from the function definition and Freeze."
-
 $requiredSources = @(
     "enabled.txt",
     "Info.json",
@@ -643,10 +668,57 @@ if ($luaCompiler) {
         Assert-ReleaseCondition ($LASTEXITCODE -eq 0) `
             "Lua syntax validation failed: $($luaPath.FullName)"
     }
+    & $luaCompiler.Source -p $runtimeTestPath
+    Assert-ReleaseCondition ($LASTEXITCODE -eq 0) `
+        "Lua syntax validation failed: $runtimeTestPath"
 } elseif ($RequireLuaCompiler) {
     throw "Lua 5.4 luac is required but was not found on PATH."
 } else {
     Write-Warning "Lua 5.4 luac was not found; complete the Lua syntax item in PRE_DEPLOY_CHECKLIST.md."
+}
+
+$luaRuntimePath = $null
+if ($luaCompiler) {
+    $siblingRuntimePath = Join-Path (
+        Split-Path -Parent $luaCompiler.Source
+    ) "lua.exe"
+    if (Test-Path -LiteralPath $siblingRuntimePath -PathType Leaf) {
+        $luaRuntimePath = $siblingRuntimePath
+    }
+}
+if (-not $luaRuntimePath) {
+    foreach ($candidate in @("lua5.4", "lua54", "lua")) {
+        $luaRuntime = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($luaRuntime) {
+            $luaRuntimePath = $luaRuntime.Source
+            break
+        }
+    }
+}
+if ($luaRuntimePath) {
+    $luaRuntimeVersion = (
+        & $luaRuntimePath -e "io.write(_VERSION)" 2>&1 |
+            Out-String
+    ).Trim()
+    Assert-ReleaseCondition ($LASTEXITCODE -eq 0) (
+        "Could not execute the Lua runtime at '$luaRuntimePath'."
+    )
+    Assert-ReleaseCondition ($luaRuntimeVersion -eq "Lua 5.4") (
+        "Lua 5.4 runtime required; '$luaRuntimePath' reported " +
+        "'$luaRuntimeVersion'."
+    )
+    & $luaRuntimePath $runtimeTestPath $repoRoot
+    Assert-ReleaseCondition ($LASTEXITCODE -eq 0) `
+        "Perfect Placement runtime regression tests failed."
+} elseif ($RequireLuaCompiler) {
+    throw (
+        "A Lua 5.4 interpreter is required for the runtime regression tests. " +
+        "Place lua.exe beside luac.exe or add lua5.4, lua54, or lua to PATH."
+    )
+} else {
+    Write-Warning (
+        "Lua 5.4 was not found; the runtime regression harness was not run."
+    )
 }
 
 Push-Location $repoRoot

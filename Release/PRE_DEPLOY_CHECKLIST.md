@@ -17,7 +17,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
     -Version <version>
   ```
 
-- [ ] Run the automated release gate:
+- [ ] Run the automated release gate and confirm the Lua 5.4 scheduler stress suite passes:
 
   ```powershell
   powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -40,13 +40,13 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 
 ## 3. Freeze lifecycle stress test
 
-- [ ] Freeze a preview and leave all controls untouched for at least five seconds. Confirm it remains frozen and no `Auto-releasing frozen preview` entry appears in `UE4SS.log`.
+- [ ] Freeze a preview and leave all controls untouched for at least two minutes. Confirm it remains frozen, frame pacing stays even, and no recurring lifecycle work or `Auto-releasing frozen preview` entry appears in `UE4SS.log`.
 - [ ] Freeze and Unfreeze normally at least 20 consecutive times.
 - [ ] Rapidly press Freeze for at least 10 seconds. Only one transition should occur at a time, with no crash or stuck preview.
 - [ ] Press movement, rotation, reset, step-up, and step-down repeatedly during the first second after Freeze.
 - [ ] Repeat the previous test during Unfreeze.
 - [ ] Hold `Ctrl`, `Alt`, and `Ctrl+Alt` while repeatedly using the default middle-mouse Freeze binding.
-- [ ] Move vertically for at least 30 seconds, then Unfreeze and Freeze again. Confirm controls still respond and the UE4SS log has no `Ref was not function`, `removing hook`, or invalid-callback cleanup message.
+- [ ] Spam movement, rotation, Reset, validity changes, and Copy and Freeze for 30 seconds. Then Unfreeze and Freeze again; controls must respond and the log must have no EngineTick exception, callback-ref error, hook removal, or access violation.
 - [ ] Confirm the preview never becomes permanently frozen, duplicated, invisible, detached from Palworld control, or impossible to place.
 
 ## 4. Transform-control stress test

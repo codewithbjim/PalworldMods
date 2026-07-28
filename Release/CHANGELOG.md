@@ -2,7 +2,7 @@
 
 ## 0.2.0-rc.1
 
-Event-driven gamepad integration release candidate.
+Event-driven gamepad integration and callback-lifecycle hardening release candidate.
 
 ### Added
 
@@ -15,11 +15,20 @@ Event-driven gamepad integration release candidate.
 
 - Route keyboard, mouse, and gamepad actions through the same transition-aware game-thread dispatcher so stale input is discarded during freeze, unfreeze, and piece-switch transitions.
 - Retain the gamepad Blueprint callback and both returned UE4SS hook IDs so callback garbage collection cannot silently remove controller input.
+- Prevent the known UE4SS EngineTick callback-reference failure path by replacing per-action callback churn with stable, owned game-thread actions.
+- Coalesce rapid keyboard input and frozen-validity refreshes through reusable game-thread callbacks instead of registering a new callback for every action.
+- Reuse one owned, cancellable game-thread loop while Copy and Freeze waits for the replacement preview to become ready.
+- Hide the companion Placement Controls guide when Palworld destroys its construction widget without touching stock widget rows during teardown.
 
 ### Performance
 
 - Dispatch controller actions only when the Blueprint reports a physical chord, with no recurring Lua gamepad polling.
 - Keep immediate and delayed game-thread scheduling in a dedicated runtime helper that prefers EngineTick and owned delayed actions.
+- Remove the frozen preview's 10 Hz lifecycle watchdog; Palworld construction events now drive release and guide visibility without recurring UObject polling.
+
+### Testing
+
+- Add Lua 5.4 scheduler stress tests for callback identity, 10,000-input bursts, throttling, cancellation recovery, failure isolation, and bounded FIFO fallback behavior.
 
 ## 0.1.7-rc.3
 

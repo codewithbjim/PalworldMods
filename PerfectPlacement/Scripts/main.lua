@@ -25,24 +25,14 @@ local desired_location = nil
 local desired_rotation = nil
 local current_move_step = nil
 local transform_loop_started = false
-local transform_game_thread_pending = false
 local transform_loop_callback = nil
-local transform_game_thread_callback = nil
 local preview_tick_was_enabled = nil
 local builder_component = nil
 local cached_builder_component = nil
 local cached_pal_utility = nil
 local cached_construction_widget = nil
-local construction_ui_scan_context_name = nil
 local builder_tick_was_enabled = nil
-local lifecycle_monitor_started = false
-local lifecycle_game_thread_pending = false
-local lifecycle_loop_callback = nil
-local lifecycle_game_thread_callback = nil
-local building_mode_exit_checks = 0
-local locked_construction_ui_was_active = false
 local notification_generation = 0
-local locked_preview_name = nil
 local release_preview
 local update_construction_hotkey_guide
 local locked_origin_location = nil
@@ -50,6 +40,8 @@ local locked_origin_rotation = nil
 local locked_origin_pivot = nil
 local last_preview_overlap_state = nil
 local validity_refresh_pending = false
+local validity_refresh_generation = 0
+local validity_refresh_trigger = nil
 local rotation_pivot = nil
 local rotation_pivot_local_offset = nil
 local preview_relative_location = nil
@@ -71,7 +63,6 @@ local gamepad_controller = nil
 local registered_keybind_callbacks = {}
 local construction_ui_hooks = {}
 
-local LIFECYCLE_INTERVAL_MS = 100
 local FREEZE_TRANSITION_SETTLE_MS = 500
 local VALIDITY_REFRESH_INTERVAL_MS = 50
 local FREEZE_TO_PIECE_RETRY_MS = 50
@@ -832,29 +823,33 @@ local function start_transform_loop()
     if transform_loop_started or not Config.hold_locked_transform then
         return
     end
-    transform_loop_started = true
 
-    if transform_game_thread_callback == nil then
-        transform_game_thread_callback = function()
-            transform_game_thread_pending = false
-            apply_preview_transform()
-        end
-    end
     if transform_loop_callback == nil then
         transform_loop_callback = function()
-            if state == State.EDITING and not transform_game_thread_pending then
-                transform_game_thread_pending = true
-                local queued = runtime.execute(
-                    transform_game_thread_callback,
-                    "Frozen transform hold"
-                )
-                if not queued then
-                    transform_game_thread_pending = false
-                end
+            if state ~= State.EDITING then
+                transform_loop_started = false
+                return true
             end
+            local refresh_ok, refresh_error =
+                pcall(apply_preview_transform)
+            if not refresh_ok then
+                transform_loop_started = false
+                log("Frozen transform hold failed: "
+                    .. tostring(refresh_error))
+                return true
+            end
+            return false
         end
     end
-    LoopAsync(Config.transform_refresh_ms, transform_loop_callback)
+
+    local cancel = runtime.loop(
+        Config.transform_refresh_ms,
+        transform_loop_callback,
+        "Frozen transform hold"
+    )
+    if cancel ~= nil then
+        transform_loop_started = true
+    end
 end
 
 local function set_preview_tick_enabled(enabled)
@@ -986,11 +981,8 @@ local function set_builder_tick_enabled(enabled)
 end
 
 local function construction_ui_is_active(allow_fallback_scan)
-    -- The builder component and preview can remain valid after construction
-    -- mode closes, particularly while their ticks are suspended for Freeze.
-    -- Live construction widgets supply an independent lifecycle signal.
-    -- Reuse the known live widget so this 10 Hz frozen safety check never
-    -- performs a class-wide UObject scan on every pass.
+    -- Reuse the known widget whenever possible. The fallback scan runs only
+    -- when entering Freeze so ordinary gameplay remains event-driven.
     local function query_widget_visibility(construction)
         local visibility_ok, visible = pcall(function()
             return construction:IsVisible()
@@ -1043,135 +1035,6 @@ local function construction_ui_is_active(allow_fallback_scan)
     end
     cached_construction_widget = nil
     return false
-end
-
-local function should_release_locked_preview()
-    if state ~= State.EDITING then
-        return false, nil
-    end
-    if freeze_transition_input_locked then
-        return false, nil
-    end
-    if not is_valid(preview_actor) then
-        return true, "preview object was destroyed"
-    end
-    if builder_component == nil or not builder_component:IsValid() then
-        return true, "builder component became invalid"
-    end
-
-    local mode_ok, in_building_mode = pcall(function()
-        return builder_component:IsInBuildingMode()
-    end)
-    local scan_context_name = locked_preview_name
-    local allow_ui_fallback_scan = scan_context_name ~= nil
-        and scan_context_name ~= construction_ui_scan_context_name
-    local construction_ui_active =
-        construction_ui_is_active(allow_ui_fallback_scan)
-    if allow_ui_fallback_scan then
-        construction_ui_scan_context_name = scan_context_name
-    end
-    if construction_ui_active == true then
-        locked_construction_ui_was_active = true
-    end
-    -- A stale/template widget can report hidden while construction is active.
-    -- Treat false as a close edge only after this frozen preview observed its
-    -- live construction UI, while keeping builder mode independently valid.
-    local builder_reports_exit = mode_ok and not in_building_mode
-    local ui_reports_exit = locked_construction_ui_was_active
-        and construction_ui_active == false
-    local observed_construction_exit = builder_reports_exit or ui_reports_exit
-    if observed_construction_exit then
-        building_mode_exit_checks = building_mode_exit_checks + 1
-        if building_mode_exit_checks >= 5 then
-            if ui_reports_exit and not builder_reports_exit then
-                return true, "Palworld closed the construction UI"
-            end
-            return true, "Palworld exited building mode"
-        end
-    elseif (mode_ok and in_building_mode) or construction_ui_active == true then
-        building_mode_exit_checks = 0
-    end
-
-    local target_ok, current_target = pcall(function()
-        local checker = builder_component.InstallChecker
-        if checker == nil or not checker:IsValid() then
-            return nil
-        end
-        return checker.TargetBuildObject
-    end)
-    if target_ok then
-        if not is_valid(current_target) then
-            return true, "Palworld cleared the build preview"
-        end
-        if locked_preview_name ~= nil and full_name(current_target) ~= locked_preview_name then
-            return true, "Palworld replaced the selected build preview"
-        end
-    end
-
-    local state_ok, preview_state = pcall(function()
-        return preview_actor.CurrentState
-    end)
-    if state_ok and preview_state ~= nil then
-        local rendered_state = tostring(preview_state)
-        if preview_state ~= 1 and string.find(rendered_state, "Simulation", 1, true) == nil then
-            return true, "Palworld committed the build preview"
-        end
-    end
-    return false, nil
-end
-
-local function start_lifecycle_monitor()
-    if lifecycle_monitor_started then
-        return
-    end
-    lifecycle_monitor_started = true
-    if lifecycle_loop_callback == nil then
-        lifecycle_loop_callback = function()
-            -- The monitor exists only to release a frozen preview safely.
-            -- Normal gameplay and unfrozen building are driven by UI creation
-            -- and input events, so they never enqueue recurring game-thread work.
-            if state ~= State.EDITING then
-                lifecycle_monitor_started = false
-                return true
-            end
-            if freeze_transition_input_locked then
-                return
-            end
-
-            if lifecycle_game_thread_pending then
-                return
-            end
-            lifecycle_game_thread_pending = true
-            if lifecycle_game_thread_callback == nil then
-                lifecycle_game_thread_callback = function()
-                    lifecycle_game_thread_pending = false
-                    if state ~= State.EDITING
-                        or freeze_transition_input_locked
-                        or state == State.SWITCHING
-                        or state == State.FREEZING
-                        or state == State.UNFREEZING
-                    then
-                        return
-                    end
-
-                    local should_release, reason = should_release_locked_preview()
-                    if should_release then
-                        log("Auto-releasing frozen preview: " .. tostring(reason) .. ".")
-                        release_preview(reason)
-                    end
-                end
-            end
-
-            local queued = runtime.execute(
-                lifecycle_game_thread_callback,
-                "Placement lifecycle monitor"
-            )
-            if not queued then
-                lifecycle_game_thread_pending = false
-            end
-        end
-    end
-    LoopAsync(LIFECYCLE_INTERVAL_MS, lifecycle_loop_callback)
 end
 
 local function refresh_overlap_component(component, refreshed_components)
@@ -1499,6 +1362,32 @@ local function refresh_locked_validity()
     ))
 end
 
+local function ensure_validity_refresh_trigger()
+    if validity_refresh_trigger ~= nil then
+        return true
+    end
+    validity_refresh_trigger = runtime.throttle(
+        VALIDITY_REFRESH_INTERVAL_MS,
+        function()
+            if not validity_refresh_pending then
+                return
+            end
+
+            validity_refresh_pending = false
+            if state ~= State.EDITING
+                or validity_refresh_generation ~= freeze_transition_generation
+            then
+                return
+            end
+            refresh_locked_validity()
+        end,
+        "Frozen validity refresh"
+    )
+    return type(validity_refresh_trigger) == "function"
+end
+
+ensure_validity_refresh_trigger()
+
 local function schedule_locked_validity_refresh()
     if Config.validity == nil
         or Config.validity.refresh_frozen_feedback ~= true
@@ -1507,28 +1396,13 @@ local function schedule_locked_validity_refresh()
     then
         return
     end
+    if not ensure_validity_refresh_trigger() then
+        return
+    end
 
     validity_refresh_pending = true
-    local refresh_generation = freeze_transition_generation
-    local queued = runtime.delay(
-        VALIDITY_REFRESH_INTERVAL_MS,
-        function()
-            if state ~= State.EDITING
-                or refresh_generation ~= freeze_transition_generation
-            then
-                return
-            end
-            validity_refresh_pending = false
-            refresh_locked_validity()
-        end,
-        "Frozen validity refresh",
-        function()
-            if refresh_generation == freeze_transition_generation then
-                validity_refresh_pending = false
-            end
-        end
-    )
-    if not queued then
+    validity_refresh_generation = freeze_transition_generation
+    if not validity_refresh_trigger() then
         validity_refresh_pending = false
     end
 end
@@ -1910,6 +1784,58 @@ local function ensure_construction_ui_hooks()
         return true
     end
 
+    local destruct_path = "/Script/UMG.UserWidget:Destruct"
+    if construction_ui_hooks[destruct_path] == nil then
+        local destruct_callback = function(context)
+            local callback_ok, callback_error = pcall(function()
+                local widget = context
+                local unwrap_ok, unwrapped = pcall(function()
+                    return context:get()
+                end)
+                if unwrap_ok and unwrapped ~= nil then
+                    widget = unwrapped
+                end
+
+                local is_construction_widget =
+                    widget == cached_construction_widget
+                if not is_construction_widget then
+                    local widget_name = full_name(widget)
+                    is_construction_widget = string.find(
+                        widget_name,
+                        "WBP_IngameConstruction_C",
+                        1,
+                        true
+                    ) ~= nil
+                end
+                if not is_construction_widget then
+                    return
+                end
+
+                -- Destruct is a hide signal only. Releasing Freeze here would
+                -- make release_preview touch stock rows on a dying UMG widget.
+                cached_construction_widget = nil
+                update_perfect_placement_ui(false, false, true)
+            end)
+            if not callback_ok then
+                log("Construction UI Destruct event failed: "
+                    .. tostring(callback_error))
+            end
+        end
+        local hook_ok, pre_id, post_id = pcall(function()
+            return RegisterHook(destruct_path, destruct_callback)
+        end)
+        if hook_ok and pre_id ~= nil and post_id ~= nil then
+            construction_ui_hooks[destruct_path] = {
+                callback = destruct_callback,
+                pre_id = pre_id,
+                post_id = post_id,
+            }
+        else
+            all_registered = false
+            verbose("Construction UI Destruct hook is not loaded yet.")
+        end
+    end
+
     for _, function_name in ipairs({
         "ReturnToMainMenu",
         "OnEsc",
@@ -2086,8 +2012,6 @@ local function cancel_begin_editing(transition_id, previous_state, reason)
     preview_root_previous_mobility = nil
     preview_tick_was_enabled = nil
     builder_tick_was_enabled = nil
-    locked_preview_name = nil
-    locked_construction_ui_was_active = false
     locked_origin_location = nil
     locked_origin_rotation = nil
     locked_origin_pivot = nil
@@ -2111,8 +2035,7 @@ local function begin_editing(defer_initial_validity)
     if active_component == nil then
         return false
     end
-    local construction_ui_active_at_freeze =
-        construction_ui_is_active(true)
+    construction_ui_is_active(true)
     local previous_state = state
     local transition_id = begin_freeze_transition(State.FREEZING)
 
@@ -2267,15 +2190,9 @@ local function begin_editing(defer_initial_validity)
         )
     end
 
-    locked_construction_ui_was_active =
-        construction_ui_active_at_freeze == true
-    construction_ui_scan_context_name = nil
     state = State.EDITING
-    building_mode_exit_checks = 0
-    locked_preview_name = full_name(preview_actor)
     update_construction_hotkey_guide(true)
     start_transform_loop()
-    start_lifecycle_monitor()
     log(string.format(
         "Preview frozen. Move step %.1f cm; rotation step %.1f degrees.",
         current_move_step,
@@ -2296,7 +2213,6 @@ release_preview = function(reason)
     end
     local transition_id = begin_freeze_transition(State.UNFREEZING)
     validity_refresh_pending = false
-    building_mode_exit_checks = 0
     local rendered_reason = tostring(reason)
     local show_unfreeze_toast = reason == "manual"
     local no_active_preview = reason == "preview object was destroyed"
@@ -2323,8 +2239,6 @@ release_preview = function(reason)
     end
     preview_root_component = nil
     preview_root_previous_mobility = nil
-    locked_preview_name = nil
-    locked_construction_ui_was_active = false
     locked_origin_location = nil
     locked_origin_rotation = nil
     locked_origin_pivot = nil
@@ -2858,16 +2772,19 @@ queue_piece_switch_poll = function(
     attempt,
     stable_preview_name
 )
-    local queued = runtime.delay(
+    local current_attempt = attempt
+    local current_stable_preview_name = stable_preview_name
+    local cancel = runtime.loop(
         FREEZE_TO_PIECE_RETRY_MS,
         function()
             if transition_id ~= freeze_transition_generation
                 or state ~= State.SWITCHING
             then
-                return
+                return true
             end
 
             local ok, error_message = pcall(function()
+                current_attempt = current_attempt + 1
                 local component, checker, active_preview =
                     find_active_build_context(false)
                 local _, active_id_name = build_object_id_details(active_preview)
@@ -2879,7 +2796,7 @@ queue_piece_switch_poll = function(
                     and current_preview_name ~= nil
 
                 if expected_preview_is_ready
-                    and current_preview_name == stable_preview_name
+                    and current_preview_name == current_stable_preview_name
                 then
                     finish_piece_switch(
                         transition_id,
@@ -2889,10 +2806,10 @@ queue_piece_switch_poll = function(
                         checker,
                         active_preview
                     )
-                    return
+                    return true
                 end
 
-                if attempt >= FREEZE_TO_PIECE_MAX_ATTEMPTS then
+                if current_attempt >= FREEZE_TO_PIECE_MAX_ATTEMPTS then
                     abort_piece_switch(
                         transition_id,
                         "replacement preview did not become ready within "
@@ -2902,30 +2819,22 @@ queue_piece_switch_poll = function(
                             )
                             .. " ms"
                     )
-                    return
+                    return true
                 end
 
-                queue_piece_switch_poll(
-                    transition_id,
-                    source,
-                    freeze_after_switch,
-                    attempt + 1,
+                current_stable_preview_name =
                     expected_preview_is_ready and current_preview_name or nil
-                )
+                return false
             end)
             if not ok then
                 abort_piece_switch(transition_id, error_message)
+                return true
             end
+            return error_message == true
         end,
-        "Build-piece switch readiness check",
-        function()
-            abort_piece_switch(
-                transition_id,
-                "could not enter the game thread for a readiness check"
-            )
-        end
+        "Build-piece switch readiness check"
     )
-    if not queued then
+    if cancel == nil then
         abort_piece_switch(transition_id, "could not queue the readiness check")
     end
 end
@@ -2973,7 +2882,7 @@ local function switch_to_captured_build_piece(source, freeze_after_switch)
                     transition_id,
                     source,
                     freeze_after_switch,
-                    1,
+                    0,
                     nil
                 )
             end)
@@ -3071,30 +2980,68 @@ local function freeze_to_looked_at_build_piece()
     switch_to_captured_build_piece(source, true)
 end
 
-local function queue_input_callback(callback, source)
-    local queued_generation = freeze_transition_generation
-    local queued_during_transition =
+local function input_transition_is_locked()
+    return
         freeze_transition_input_locked
         or state == State.FREEZING
         or state == State.UNFREEZING
         or state == State.SWITCHING
+end
+
+local function invoke_guarded_input(
+    callback,
+    source,
+    queued_generation,
+    queued_during_transition
+)
+    if queued_during_transition
+        or queued_generation ~= freeze_transition_generation
+    then
+        verbose("Discarded stale queued "
+            .. tostring(source or "input")
+            .. " after a placement transition.")
+        return false
+    end
+    callback()
+    return true
+end
+
+local function queue_input_callback(callback, source)
+    local queued_generation = freeze_transition_generation
+    local queued_during_transition = input_transition_is_locked()
     return runtime.execute(function()
-        if queued_during_transition
-            or queued_generation ~= freeze_transition_generation
-        then
-            verbose("Discarded stale queued "
-                .. tostring(source or "input")
-                .. " after a placement transition.")
-            return
-        end
-        callback()
+        invoke_guarded_input(
+            callback,
+            source,
+            queued_generation,
+            queued_during_transition
+        )
     end, tostring(source or "Input") .. " game-thread callback")
 end
 
 local function register_chord(key, modifiers, callback)
     local ok, error_message = pcall(function()
+        local queued_generation = freeze_transition_generation
+        local queued_during_transition = false
+        local pulse_callback = function()
+            invoke_guarded_input(
+                callback,
+                "Keyboard input",
+                queued_generation,
+                queued_during_transition
+            )
+        end
+        local trigger = runtime.pulse(
+            pulse_callback,
+            string.format("Keyboard input 0x%X", key)
+        )
+        if type(trigger) ~= "function" then
+            error("could not create a stable game-thread input pulse")
+        end
         local queued_callback = function()
-            queue_input_callback(callback, "Keyboard input")
+            queued_generation = freeze_transition_generation
+            queued_during_transition = input_transition_is_locked()
+            trigger()
         end
         if modifiers == nil or #modifiers == 0 then
             RegisterKeyBind(key, queued_callback)
@@ -3143,6 +3090,17 @@ local function dispatch_action(action, source)
             .. " action: "
             .. tostring(action))
         return false
+    end
+    if type(IsInGameThread) == "function" then
+        local thread_ok, on_game_thread = pcall(IsInGameThread)
+        if thread_ok and on_game_thread == true then
+            return invoke_guarded_input(
+                callback,
+                tostring(source or "Input") .. " action " .. tostring(action),
+                freeze_transition_generation,
+                input_transition_is_locked()
+            )
+        end
     end
     return queue_input_callback(
         callback,
@@ -3349,8 +3307,6 @@ ui_host_notify_callback = function()
 
             ui_host_missing_was_logged = false
             cached_builder_component = nil
-            construction_ui_scan_context_name = nil
-            locked_construction_ui_was_active = false
             refresh_keycaps_for_ui_host(host)
             -- ModActor also creates this host on the main menu. Never infer
             -- construction mode from host creation alone; require the local
