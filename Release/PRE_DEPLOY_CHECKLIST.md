@@ -165,7 +165,9 @@ Release acceptance requires:
 ## 10. Publish safely
 
 - [ ] Run the Nexus uploader in dry-run mode and confirm the candidate ZIP remains present with the same SHA-256 afterward.
-- [ ] Confirm the dry run targets the intended mod, existing file, version, category, archive, and description.
+- [ ] Confirm the dry run targets the intended mod, existing file, version, category, archive, description, and version changelog.
 - [ ] Publish the same SHA-256-verified archive without rebuilding it.
+- [ ] Confirm Nexus reports the new release as the current mod version instead of leaving the previous version current.
+- [ ] Confirm the published Nexus version changelog matches `NEXUS_VERSION_CHANGELOG.txt` and was not appended twice.
 - [ ] Push the release commit and annotated tag.
 - [ ] Download the published file once and compare its SHA-256 or extracted payload hashes with the local candidate.

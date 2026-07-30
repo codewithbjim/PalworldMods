@@ -25,6 +25,8 @@ pushed.
 ## Release file formatting
 
 - Keep each prose paragraph and list item on one physical line in every human-authored release text file, including changelogs, descriptions, readmes, and checklists.
-- Keep every public changelog entry on one physical line and at or below 255 characters.
+- For public changelogs other than the Nexus version changelog, keep each entry on one physical line and at or below 255 characters.
+- For the Nexus version changelog, keep the entire value at or below 255 characters total, including all lines and line breaks.
+- Format Nexus version changelogs as plain newline-separated sentences with no headings, bullets, or leading hyphens.
 - Use extra line breaks only for structural Markdown or BBCode, code blocks, tables, and intentionally preformatted layouts.
 - Review release diffs for accidental hard-wrapped sentences before committing or publishing.
