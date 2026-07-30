@@ -147,7 +147,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | Required for 0.2.0-rc.1 |
+| Controller | Required for 0.2.0-rc.2 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |

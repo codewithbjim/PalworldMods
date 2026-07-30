@@ -52,6 +52,7 @@ local keyguide_hook_registered = false
 local keyguide_hook_callback = nil
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
 local perfect_placement_ui_host = nil
+local perfect_placement_ui_mode = nil
 local ui_host_notify_callback = nil
 local construction_ui_notify_callback = nil
 local ui_host_setup_pending = false
@@ -523,6 +524,8 @@ local function find_perfect_placement_ui_host()
         return perfect_placement_ui_host
     end
 
+    perfect_placement_ui_host = nil
+    perfect_placement_ui_mode = nil
     local ui_config = Config.ui or {}
     local class_name = ui_config.host_class_name or "WBP_PerfectPlacement_KeyGuide_C"
     local ok, host = pcall(function()
@@ -558,6 +561,17 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
     local host = find_perfect_placement_ui_host()
     if not is_valid(host) then
         return false
+    end
+
+    local requested_mode = hide_all and "hidden"
+        or (is_locked and "frozen" or "unfrozen")
+    -- SetupKeyGuide can run repeatedly while Palworld updates a live preview.
+    -- Re-entering the same Blueprint state also rebuilds the input guide and
+    -- toggles its gamepad input actors, so keep ordinary refreshes edge-driven.
+    if requested_mode == perfect_placement_ui_mode
+        and not show_transition_toast
+    then
+        return true
     end
 
     local ui_config = Config.ui or {}
@@ -606,8 +620,10 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
     if not ok then
         log("Companion UI update failed: " .. tostring(error_message))
         perfect_placement_ui_host = nil
+        perfect_placement_ui_mode = nil
         return false
     end
+    perfect_placement_ui_mode = requested_mode
     return true
 end
 
@@ -631,6 +647,7 @@ local function refresh_perfect_placement_ui()
     if not ok then
         log("Companion UI refresh failed: " .. tostring(error_message))
         perfect_placement_ui_host = nil
+        perfect_placement_ui_mode = nil
     end
 end
 
@@ -3299,6 +3316,7 @@ ui_host_notify_callback = function()
             -- the game thread avoids retaining a UObject wrapper across a map
             -- transition and delayed callback.
             perfect_placement_ui_host = nil
+            perfect_placement_ui_mode = nil
             keycap_ui_host = nil
             local host = find_perfect_placement_ui_host()
             if not is_valid(host) then
@@ -3370,6 +3388,6 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.2.0-rc.1")
+log("Loaded Perfect Placement 0.2.0-rc.2")
 log("Companion key-guide UI bridge revision 25 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

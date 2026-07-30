@@ -388,6 +388,22 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -notmatch 'IDLE_UI_REFRESH_TICKS|BUILDER_FALLBACK_RETRY_TICKS'
 ) "Normal gameplay must not retain an idle guide-poll cadence."
+$companionUiUpdate = [regex]::Match(
+    $mainSource,
+    'local function update_perfect_placement_ui\(' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function refresh_perfect_placement_ui'
+)
+Assert-ReleaseCondition $companionUiUpdate.Success `
+    "The companion UI update function was not found."
+Assert-ReleaseCondition (
+    $companionUiUpdate.Groups["body"].Value -match
+        'requested_mode\s*==\s*perfect_placement_ui_mode\s*' +
+        'and\s+not\s+show_transition_toast[\s\S]*?' +
+        'return\s+true' -and
+    $companionUiUpdate.Groups["body"].Value -match
+        'perfect_placement_ui_mode\s*=\s*requested_mode'
+) "Repeated stock key-guide events must not rebuild an unchanged companion guide."
 $uiHostCallback = [regex]::Match(
     $mainSource,
     'ui_host_notify_callback\s*=\s*function\(\)' +
@@ -397,6 +413,7 @@ Assert-ReleaseCondition $uiHostCallback.Success `
     "The companion UI host callback was not found."
 Assert-ReleaseCondition (
     $uiHostCallback.Groups["body"].Value -match
+        'perfect_placement_ui_mode\s*=\s*nil[\s\S]*?' +
         'find_active_build_context\(false\)[\s\S]*?' +
         'live_frozen\s*=\s*state\s*==\s*State\.EDITING[\s\S]*?' +
         'live_unfrozen\s*=\s*is_valid\(active_component\)[\s\S]*?' +

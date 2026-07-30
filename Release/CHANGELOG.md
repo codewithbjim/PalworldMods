@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0-rc.2
+
+Unfrozen-preview performance hotfix release candidate.
+
+### Fixed
+
+- Keep companion guide updates edge-triggered so repeated Palworld construction key-guide events do not rebuild the same unfrozen UI state or reactivate its gamepad input actor every update.
+- Reset the cached guide state when the companion UI host is replaced or an update fails so world transitions still initialize the new widget correctly.
+
+### Testing
+
+- Add a release-gate regression check that requires unchanged companion guide states to bypass Blueprint UI rebuilding and requires recreated UI hosts to invalidate that state.
+
 ## 0.2.0-rc.1
 
 Event-driven gamepad integration and callback-lifecycle hardening release candidate.
