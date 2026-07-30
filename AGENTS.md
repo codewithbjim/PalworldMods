@@ -25,8 +25,14 @@ pushed.
 ## Release file formatting
 
 - Keep each prose paragraph and list item on one physical line in every human-authored release text file, including changelogs, descriptions, readmes, and checklists.
-- For public changelogs other than the Nexus version changelog, keep each entry on one physical line and at or below 255 characters.
-- For the Nexus version changelog, keep the entire value at or below 255 characters total, including all lines and line breaks.
-- Format Nexus version changelogs as plain newline-separated sentences with no headings, bullets, or leading hyphens.
+- For public changelogs other than the Nexus version changelog, keep each entry on one physical line containing fewer than 255 characters.
 - Use extra line breaks only for structural Markdown or BBCode, code blocks, tables, and intentionally preformatted layouts.
 - Review release diffs for accidental hard-wrapped sentences before committing or publishing.
+
+## Nexus changelog field
+
+- Treat the Nexus file-version changelog as one plain-text value, even when it contains multiple lines.
+- Keep the entire value at or below 255 characters total, including all lines and line breaks.
+- Use plain newline-separated sentences with no headings, bullets, or leading hyphens.
+- Keep the full release notes in `Release/CHANGELOG.md`; the Nexus value is a concise summary only.
+- Count the entire value before deployment and reject it when it exceeds 255 characters.
