@@ -39,6 +39,8 @@ $pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
 $changelogPath = Join-Path $releaseRoot "CHANGELOG.md"
 $releaseReadmePath = Join-Path $releaseRoot "README.txt"
 $workshopChangelogPath = Join-Path $releaseRoot "WORKSHOP_CHANGELOG.txt"
+$nexusChangelogPath = Join-Path $releaseRoot "NEXUS_VERSION_CHANGELOG.txt"
+$nexusPublisherPath = Join-Path $releaseRoot "publish-nexus.ps1"
 $obsoleteMcmSchemaPath = Join-Path $modRoot "PerfectPlacement.modconfig.json"
 $obsoleteMcmReaderPath = Join-Path $modRoot "Scripts\modconfig.lua"
 Assert-ReleaseCondition (Test-Path -LiteralPath $manifestPath -PathType Leaf) `
@@ -61,6 +63,10 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $thumbnailPath -PathType Leaf) `
     "Missing release thumbnail: $thumbnailPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $pakHashPath -PathType Leaf) `
     "Missing release PAK checksum: $pakHashPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nexusPublisherPath -PathType Leaf) `
+    "Missing Nexus publisher: $nexusPublisherPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nexusChangelogPath -PathType Leaf) `
+    "Missing compact Nexus version changelog: $nexusChangelogPath"
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if (-not $Version) {
@@ -109,6 +115,31 @@ $firstWorkshopChangelogLine = (
 Assert-ReleaseCondition (
     $firstWorkshopChangelogLine -match [regex]::Escape($Version)
 ) "WORKSHOP_CHANGELOG.txt does not begin with $Version."
+$nexusPublisherSource = Get-Content -LiteralPath $nexusPublisherPath -Raw
+$nexusChangelogSource = (
+    Get-Content -LiteralPath $nexusChangelogPath -Raw
+).TrimEnd("`r", "`n") -replace "`r`n", "`n"
+Assert-ReleaseCondition (-not [string]::IsNullOrWhiteSpace($nexusChangelogSource)) `
+    "Nexus version changelog must not be empty."
+Assert-ReleaseCondition ($nexusChangelogSource.Length -le 255) `
+    "The entire Nexus version changelog must be 255 characters or fewer."
+Assert-ReleaseCondition ($nexusChangelogSource -notmatch '(?m)^\s*$') `
+    "Nexus version changelog must not contain blank lines."
+Assert-ReleaseCondition (
+    $nexusChangelogSource -notmatch '(?m)^\s*(?:[-*#]|\d+[.)])\s*'
+) "Nexus version changelog must use plain lines without headings or bullets."
+Assert-ReleaseCondition (
+    $nexusPublisherSource -match
+        'Invoke-RestMethod\s+-Method\s+Post\s+-Uri\s+"\$baseUrl/mods/\$modGlobalId/changelogs"'
+) "Nexus publisher must publish the version changelog through the dedicated v3 endpoint."
+Assert-ReleaseCondition (
+    $nexusPublisherSource -match
+        '\$existing\.PSObject\.Properties\.Name\s+-contains\s+\$Version'
+) "Nexus publisher must refuse to append duplicate changelog entries."
+Assert-ReleaseCondition (
+    $nexusPublisherSource -match
+        'NEXUS_VERSION_CHANGELOG\.txt'
+) "Nexus publisher must load the compact version changelog file by default."
 foreach ($publicChangelog in @($changelogPath, $workshopChangelogPath)) {
     $wrappedLine = Select-String `
         -LiteralPath $publicChangelog `
@@ -388,6 +419,22 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -notmatch 'IDLE_UI_REFRESH_TICKS|BUILDER_FALLBACK_RETRY_TICKS'
 ) "Normal gameplay must not retain an idle guide-poll cadence."
+$companionUiUpdate = [regex]::Match(
+    $mainSource,
+    'local function update_perfect_placement_ui\(' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function refresh_perfect_placement_ui'
+)
+Assert-ReleaseCondition $companionUiUpdate.Success `
+    "The companion UI update function was not found."
+Assert-ReleaseCondition (
+    $companionUiUpdate.Groups["body"].Value -match
+        'requested_mode\s*==\s*perfect_placement_ui_mode\s*' +
+        'and\s+not\s+show_transition_toast[\s\S]*?' +
+        'return\s+true' -and
+    $companionUiUpdate.Groups["body"].Value -match
+        'perfect_placement_ui_mode\s*=\s*requested_mode'
+) "Repeated stock key-guide events must not rebuild an unchanged companion guide."
 $uiHostCallback = [regex]::Match(
     $mainSource,
     'ui_host_notify_callback\s*=\s*function\(\)' +
@@ -397,6 +444,7 @@ Assert-ReleaseCondition $uiHostCallback.Success `
     "The companion UI host callback was not found."
 Assert-ReleaseCondition (
     $uiHostCallback.Groups["body"].Value -match
+        'perfect_placement_ui_mode\s*=\s*nil[\s\S]*?' +
         'find_active_build_context\(false\)[\s\S]*?' +
         'live_frozen\s*=\s*state\s*==\s*State\.EDITING[\s\S]*?' +
         'live_unfrozen\s*=\s*is_valid\(active_component\)[\s\S]*?' +

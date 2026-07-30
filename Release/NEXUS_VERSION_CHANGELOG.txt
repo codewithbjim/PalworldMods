@@ -1,0 +1,3 @@
+Fixed severe FPS loss while holding an unfrozen build preview.
+Companion guide updates now run only when the state changes, preventing repeated UI rebuilds.
+Guide state now resets after UI replacement or update failure.

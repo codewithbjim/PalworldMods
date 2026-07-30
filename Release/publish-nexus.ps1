@@ -21,12 +21,18 @@
 #   .\publish-nexus.ps1                     # dry run
 #   .\publish-nexus.ps1 -Publish            # actually upload
 #   .\publish-nexus.ps1 -Publish -Description "Hotfix for ..."
+#
+# The file description and compact Nexus version changelog are separate values.
+# By default, the changelog comes from NEXUS_VERSION_CHANGELOG.txt and must be
+# at most 255 characters with plain lines and no bullet markers. Nexus
+# changelogs are additive, so the script refuses to append when that version
+# already has entries.
 
 [CmdletBinding()]
 param(
     [string]$ZipPath,
     [string]$ModName = 'PerfectPlacement',
-    [string]$Version = '0.2.0-rc.1',
+    [string]$Version = '0.2.0-rc.2',
     [string]$ApiKey = $env:NEXUS_APIKEY,
     [string]$ApiKeyFile,
     [string]$GameDomain = 'palworld',
@@ -34,6 +40,8 @@ param(
     [string]$FileId,
     [string]$Category = 'main',
     [string]$Description,
+    [string]$NexusChangelog,
+    [string]$NexusChangelogPath,
     [bool]$PrimaryModManagerDownload = $true,
     [bool]$AllowModManagerDownload = $true,
     [bool]$UpdateModVersion = $true,
@@ -58,6 +66,9 @@ if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
 
 if (-not $ZipPath)        { $ZipPath        = Join-Path $ScriptDir "Dist\PerfectPlacement-$Version.zip" }
 if (-not $ApiKeyFile)      { $ApiKeyFile      = Join-Path $ScriptDir '.nexus-apikey' }
+if (-not $NexusChangelogPath) {
+    $NexusChangelogPath = Join-Path $ScriptDir 'NEXUS_VERSION_CHANGELOG.txt'
+}
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -142,6 +153,55 @@ if (-not $Description) {
     }
 }
 
+if (-not $NexusChangelog -and (Test-Path -LiteralPath $NexusChangelogPath)) {
+    $NexusChangelog = (Get-Content -LiteralPath $NexusChangelogPath -Raw).Trim()
+}
+if ($NexusChangelog) {
+    $canonicalNexusChangelog = $NexusChangelog -replace "`r`n", "`n"
+    if ($canonicalNexusChangelog.Length -gt 255) {
+        throw "Nexus version changelog is $($canonicalNexusChangelog.Length) characters; the entire value must be 255 or fewer."
+    }
+    if ($canonicalNexusChangelog -match '(?m)^\s*$') {
+        throw "Nexus version changelog must not contain blank lines."
+    }
+    if ($canonicalNexusChangelog -match '(?m)^\s*(?:[-*#]|\d+[.)])\s*') {
+        throw "Nexus version changelog must use plain lines without headings, bullets, or leading list numbers."
+    }
+}
+
+function Publish-NexusChangelog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Text
+    )
+
+    $legacyChangelogUrl = "https://api.nexusmods.com/v1/games/$GameDomain/mods/$ModId/changelogs.json"
+    $existing = Invoke-RestMethod -Method Get -Uri $legacyChangelogUrl -Headers $authHeaders
+    if ($existing.PSObject.Properties.Name -contains $Version) {
+        Write-Warning "Nexus already has changelog entries for $Version; refusing an additive duplicate."
+        return
+    }
+
+    $payload = @{
+        version   = $Version
+        changelog = $Text
+    }
+    $body = [System.Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
+    $result = Invoke-RestMethod -Method Post -Uri "$baseUrl/mods/$modGlobalId/changelogs" `
+        -Headers $authHeaders -ContentType 'application/json; charset=utf-8' -Body $body
+    if ($result.data.version -ne $Version) {
+        throw "Nexus returned changelog version '$($result.data.version)' instead of '$Version'."
+    }
+
+    $verified = Invoke-RestMethod -Method Get -Uri $legacyChangelogUrl -Headers $authHeaders
+    if (-not ($verified.PSObject.Properties.Name -contains $Version)) {
+        throw "Nexus accepted the changelog request but $Version was not returned by the changelog feed."
+    }
+
+    $entryCount = @($verified.PSObject.Properties[$Version].Value).Count
+    Write-Host "  changelog : added and verified ($entryCount entries)"
+}
+
 $ZipPath = (Resolve-Path -LiteralPath $ZipPath).Path
 $zipName = Split-Path -Leaf $ZipPath
 $zipSize = (Get-Item -LiteralPath $ZipPath).Length
@@ -163,6 +223,7 @@ if ($DryRun) {
     Write-Host "  update page : $UpdateModVersion"
     Write-Host "  archive old : $([bool]$ArchiveExisting)"
     Write-Host "  description : $(if ($Description) { "$($Description.Length) chars (from CHANGELOG.md)" } else { '<none>' })"
+    Write-Host "  changelog   : $(if ($NexusChangelog) { "$($canonicalNexusChangelog.Length) chars (from $NexusChangelogPath)" } else { '<none>' })"
     Write-Host ""
     Write-Host "Re-run with -Publish to upload."
     return
@@ -308,6 +369,23 @@ try {
         if ($result.data.file.id) {
             Write-Host "  file id    : $($result.data.file.id)"
         }
+    }
+
+    if ($NexusChangelog) {
+        Write-Host "Publishing version changelog..."
+        Publish-NexusChangelog -Text $NexusChangelog
+    } else {
+        Write-Warning "No changelog text was found; the Nexus version changelog was not published."
+    }
+
+    if ($UpdateModVersion) {
+        $publishedMod = Invoke-RestMethod -Method Get `
+            -Uri "https://api.nexusmods.com/v1/games/$GameDomain/mods/$ModId.json" `
+            -Headers $authHeaders
+        if ($publishedMod.version -ne $Version) {
+            throw "Nexus still reports current mod version '$($publishedMod.version)' instead of '$Version'; update it manually before announcing the release."
+        }
+        Write-Host "  mod version : $Version (verified current)"
     }
 }
 catch {
