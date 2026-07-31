@@ -57,6 +57,8 @@ Default gamepad controls:
 
 The companion Blueprint reports complete physical controller chords only when pressed, so gamepad input does not use a recurring Lua poll. Advanced controller bindings are available in `Scripts/config.lua`.
 
+For troubleshooting construction UI churn, temporarily set `diagnostics.ui_lifecycle_counters = true` in `Scripts/config.lua`. Perfect Placement then logs aggregate Setup, Destruct, host, and guide-transition counts every five seconds; restore the default `false` value for normal play and release builds.
+
 Optional: with DarnMenu 1.6.2 or newer installed, Perfect Placement appears under **ESC → Mod Options**. Its native key-chord controls support a primary key plus any combination of `Ctrl`, `Alt`, and `Shift`. DarnMenu saves changed controls and settings to `Mods/shared/PerfectPlacement_user.lua`. Restart Palworld after applying changes because Perfect Placement reads that file when its Lua mod starts; startup keybinds also cannot be unregistered safely.
 
 The same page exposes the starting, minimum, and maximum movement steps; the step multiplier; vertical movement limits; controller preferences; verbose diagnostic logging; and live frozen-validity feedback. Live validity feedback is enabled by default so a moved frozen preview follows its current placeable state. Disable it if refreshing collision and materials causes stutter on your system. These settings are validated both by DarnMenu and again when Perfect Placement loads the shared file.

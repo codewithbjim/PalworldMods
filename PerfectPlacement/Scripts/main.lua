@@ -37,13 +37,10 @@ local release_preview
 local update_construction_hotkey_guide
 local locked_origin_location = nil
 local locked_origin_rotation = nil
-local locked_origin_pivot = nil
 local last_preview_overlap_state = nil
 local validity_refresh_pending = false
 local validity_refresh_generation = 0
 local validity_refresh_trigger = nil
-local rotation_pivot = nil
-local rotation_pivot_local_offset = nil
 local preview_relative_location = nil
 local preview_relative_rotation = nil
 local freeze_transition_generation = 0
@@ -51,18 +48,24 @@ local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
 local keyguide_hook_callback = nil
 local KEYGUIDE_SETUP_PATH = "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/WBP_IngameConstruction.WBP_IngameConstruction_C:SetupKeyGuide"
+local CONSTRUCTION_WIDGET_CLASS_NAME = "WBP_IngameConstruction_C"
 local perfect_placement_ui_host = nil
 local perfect_placement_ui_mode = nil
 local ui_host_notify_callback = nil
 local construction_ui_notify_callback = nil
 local ui_host_setup_pending = false
 local ui_host_missing_was_logged = false
+local ui_host_lookup_blocked = false
+local ui_host_fault_retry_allowed = true
+local preferred_ui_host_full_name = nil
 local keycap_ui_host = nil
 local resolved_bindings = nil
 local keycap_texture_cache = {}
 local gamepad_controller = nil
 local registered_keybind_callbacks = {}
 local construction_ui_hooks = {}
+local construction_ui_generation = 0
+local construction_setup_retry_pending = false
 
 local FREEZE_TRANSITION_SETTLE_MS = 500
 local VALIDITY_REFRESH_INTERVAL_MS = 50
@@ -76,6 +79,42 @@ end
 DarnMenu.apply_settings(Config, log)
 current_move_step = Config.movement.normal
 local runtime = Runtime.new(log)
+
+local ui_lifecycle_metrics_enabled = Config.diagnostics ~= nil
+    and Config.diagnostics.ui_lifecycle_counters == true
+local ui_lifecycle_metrics = {}
+
+local function count_ui_lifecycle_metric(name)
+    if not ui_lifecycle_metrics_enabled then
+        return
+    end
+    ui_lifecycle_metrics[name] = (ui_lifecycle_metrics[name] or 0) + 1
+end
+
+if ui_lifecycle_metrics_enabled then
+    local interval_ms = math.max(
+        1000,
+        math.floor(tonumber(Config.diagnostics.ui_lifecycle_log_interval_ms) or 5000)
+    )
+    runtime.loop(interval_ms, function()
+        local names = {}
+        for name, count in pairs(ui_lifecycle_metrics) do
+            if count > 0 then
+                names[#names + 1] = name
+            end
+        end
+        table.sort(names)
+        if #names > 0 then
+            local values = {}
+            for _, name in ipairs(names) do
+                values[#values + 1] = name .. "=" .. tostring(ui_lifecycle_metrics[name])
+                ui_lifecycle_metrics[name] = 0
+            end
+            log("UI lifecycle counters: " .. table.concat(values, ", "))
+        end
+        return false
+    end, "UI lifecycle diagnostics")
+end
 
 local function begin_freeze_transition(next_state)
     freeze_transition_generation = freeze_transition_generation + 1
@@ -159,6 +198,30 @@ local function full_name(object)
         return tostring(value)
     end
     return "<name unavailable>"
+end
+
+local function class_name_from_full_name(name)
+    return string.match(tostring(name), "^([^%s]+)") or tostring(name)
+end
+
+local function full_name_is_available(name)
+    return type(name) == "string"
+        and name ~= "<invalid>"
+        and name ~= "<name unavailable>"
+end
+
+local function full_name_is_live_exact_class(name, expected_class_name)
+    return full_name_is_available(name)
+        and class_name_from_full_name(name) == expected_class_name
+        and string.find(name, "/Engine/Transient.", 1, true) ~= nil
+        and string.find(name, "Default__", 1, true) == nil
+end
+
+local function is_live_object_of_exact_class(object, expected_class_name)
+    return full_name_is_live_exact_class(
+        full_name(object),
+        expected_class_name
+    )
 end
 
 local KEYCAP_IMAGE_SLOTS = {
@@ -519,8 +582,35 @@ local function safe_find_all_of(class_name)
     return objects
 end
 
+local function live_companion_ui_host_name(host)
+    local ui_config = Config.ui or {}
+    local expected_class_name =
+        ui_config.host_class_name or "WBP_PerfectPlacement_KeyGuide_C"
+    local name = full_name(host)
+    if full_name_is_live_exact_class(name, expected_class_name)
+        and string.find(name, "WidgetTree", 1, true) == nil
+    then
+        return name
+    end
+    return nil
+end
+
+local function is_live_companion_ui_host(host)
+    return live_companion_ui_host_name(host) ~= nil
+end
+
 local function find_perfect_placement_ui_host()
-    if is_valid(perfect_placement_ui_host) then
+    if ui_host_setup_pending or ui_host_lookup_blocked then
+        return nil
+    end
+
+    local preferred_name = preferred_ui_host_full_name
+    local require_preferred = full_name_is_available(preferred_name)
+    local cached_host_name =
+        live_companion_ui_host_name(perfect_placement_ui_host)
+    if cached_host_name ~= nil
+        and (not require_preferred or cached_host_name == preferred_name)
+    then
         return perfect_placement_ui_host
     end
 
@@ -528,12 +618,38 @@ local function find_perfect_placement_ui_host()
     perfect_placement_ui_mode = nil
     local ui_config = Config.ui or {}
     local class_name = ui_config.host_class_name or "WBP_PerfectPlacement_KeyGuide_C"
+    local host_name = nil
+
+    local function accept_candidate(candidate)
+        local candidate_name = live_companion_ui_host_name(candidate)
+        if candidate_name == nil
+            or (require_preferred and candidate_name ~= preferred_name)
+        then
+            return false
+        end
+        host_name = candidate_name
+        return true
+    end
+
+    count_ui_lifecycle_metric("host_search")
     local ok, host = pcall(function()
         return FindFirstOf(class_name)
     end)
-    if ok and is_valid(host) then
+    if not ok or not accept_candidate(host) then
+        host = nil
+        for _, candidate in ipairs(safe_find_all_of(class_name)) do
+            if accept_candidate(candidate) then
+                host = candidate
+                break
+            end
+        end
+    end
+    if host ~= nil and host_name ~= nil then
         perfect_placement_ui_host = host
+        preferred_ui_host_full_name = host_name
         ui_host_missing_was_logged = false
+        ui_host_lookup_blocked = false
+        count_ui_lifecycle_metric("host_acquired")
         apply_configured_keycaps(host)
         if gamepad_controller ~= nil then
             gamepad_controller:attach_host(host)
@@ -546,6 +662,8 @@ local function find_perfect_placement_ui_host()
         log("Companion UI host is not loaded yet (expected " .. class_name .. ").")
         ui_host_missing_was_logged = true
     end
+    ui_host_lookup_blocked = true
+    count_ui_lifecycle_metric("host_missing")
     return nil
 end
 
@@ -557,12 +675,24 @@ local function call_ui_host_function(host, function_name)
     callback(host)
 end
 
-local function update_perfect_placement_ui(is_locked, show_transition_toast, hide_all)
-    local host = find_perfect_placement_ui_host()
-    if not is_valid(host) then
-        return false
+local function quarantine_companion_ui_host(metric_name)
+    if gamepad_controller ~= nil then
+        gamepad_controller:detach_host()
     end
+    perfect_placement_ui_host = nil
+    perfect_placement_ui_mode = nil
+    ui_host_lookup_blocked = true
+    count_ui_lifecycle_metric(metric_name)
+    if ui_host_fault_retry_allowed
+        and ui_host_notify_callback ~= nil
+        and not ui_host_setup_pending
+    then
+        ui_host_fault_retry_allowed = false
+        ui_host_notify_callback()
+    end
+end
 
+local function update_perfect_placement_ui(is_locked, show_transition_toast, hide_all)
     local requested_mode = hide_all and "hidden"
         or (is_locked and "frozen" or "unfrozen")
     -- SetupKeyGuide can run repeatedly while Palworld updates a live preview.
@@ -570,16 +700,26 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
     -- toggles its gamepad input actors, so keep ordinary refreshes edge-driven.
     if requested_mode == perfect_placement_ui_mode
         and not show_transition_toast
+        and is_live_companion_ui_host(perfect_placement_ui_host)
     then
         return true
     end
 
+    local host = find_perfect_placement_ui_host()
+    if not is_live_companion_ui_host(host) then
+        return false
+    end
+
     local ui_config = Config.ui or {}
+    local previous_mode = perfect_placement_ui_mode
+    perfect_placement_ui_mode = requested_mode
+    count_ui_lifecycle_metric("mode_" .. tostring(previous_mode) .. "_to_" .. requested_mode)
     local ok, error_message = pcall(function()
         local move_step_property = ui_config.move_step_property or "MoveStepCm"
         host[move_step_property] = current_move_step
 
         if hide_all then
+            count_ui_lifecycle_metric("hide_guide")
             call_ui_host_function(
                 host,
                 ui_config.hide_function or "HideGuide"
@@ -589,6 +729,7 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
                 ui_config.hide_toast_function or "HideToast"
             )
         elseif is_locked then
+            count_ui_lifecycle_metric("show_frozen_guide")
             call_ui_host_function(
                 host,
                 ui_config.show_frozen_guide_function or "ShowFrozenGuide"
@@ -600,6 +741,7 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
                 )
             end
         else
+            count_ui_lifecycle_metric("show_unfrozen_guide")
             call_ui_host_function(
                 host,
                 ui_config.show_unfrozen_guide_function or "ShowUnfrozenGuide"
@@ -619,11 +761,10 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
     end)
     if not ok then
         log("Companion UI update failed: " .. tostring(error_message))
-        perfect_placement_ui_host = nil
-        perfect_placement_ui_mode = nil
+        quarantine_companion_ui_host("host_update_failure")
         return false
     end
-    perfect_placement_ui_mode = requested_mode
+    ui_host_fault_retry_allowed = true
     return true
 end
 
@@ -646,8 +787,7 @@ local function refresh_perfect_placement_ui()
     end)
     if not ok then
         log("Companion UI refresh failed: " .. tostring(error_message))
-        perfect_placement_ui_host = nil
-        perfect_placement_ui_mode = nil
+        quarantine_companion_ui_host("host_refresh_failure")
     end
 end
 
@@ -1017,7 +1157,10 @@ local function construction_ui_is_active(allow_fallback_scan)
         return nil
     end
 
-    if is_valid(cached_construction_widget) then
+    if is_live_object_of_exact_class(
+        cached_construction_widget,
+        CONSTRUCTION_WIDGET_CLASS_NAME
+    ) then
         local cached_visibility =
             query_widget_visibility(cached_construction_widget)
         if cached_visibility == true or not allow_fallback_scan then
@@ -1034,7 +1177,10 @@ local function construction_ui_is_active(allow_fallback_scan)
     -- SetupKeyGuide's hook refreshes the cache if Palworld replaces the widget.
     local fallback_widget = nil
     for _, construction in ipairs(safe_find_all_of("WBP_IngameConstruction_C")) do
-        if is_valid(construction) and construction ~= cached_construction_widget then
+        if is_live_object_of_exact_class(
+            construction,
+            CONSTRUCTION_WIDGET_CLASS_NAME
+        ) and construction ~= cached_construction_widget then
             local visible = query_widget_visibility(construction)
             if visible == true then
                 cached_construction_widget = construction
@@ -1637,13 +1783,25 @@ local function hide_locked_keyguide(construction)
     end
 end
 
-local function show_unfrozen_guide_for_active_preview()
-    if freeze_transition_input_locked
+local function unfrozen_guide_transition_is_locked()
+    return freeze_transition_input_locked
         or state == State.EDITING
         or state == State.FREEZING
         or state == State.UNFREEZING
         or state == State.SWITCHING
-    then
+end
+
+local function unfrozen_guide_is_stable()
+    return perfect_placement_ui_mode == "unfrozen"
+        and perfect_placement_ui_host ~= nil
+        and not unfrozen_guide_transition_is_locked()
+end
+
+local function show_unfrozen_guide_for_active_preview()
+    if unfrozen_guide_transition_is_locked() then
+        return false
+    end
+    if construction_ui_is_active(false) ~= true then
         return false
     end
 
@@ -1659,11 +1817,23 @@ local function show_unfrozen_guide_for_active_preview()
 end
 
 local function ensure_keyguide_hook()
-    if keyguide_hook_registered then
-        return true
+    if keyguide_hook_registered ~= false then
+        return keyguide_hook_registered.complete == true
     end
     if keyguide_hook_callback == nil then
         keyguide_hook_callback = function(context)
+            count_ui_lifecycle_metric("setup_keyguide")
+            if unfrozen_guide_is_stable() then
+                return
+            end
+            if state ~= State.EDITING
+                and (unfrozen_guide_transition_is_locked()
+                    or ui_host_lookup_blocked
+                    or ui_host_setup_pending)
+            then
+                count_ui_lifecycle_metric("setup_keyguide_suppressed")
+                return
+            end
             local construction = context
             local unwrap_ok, unwrapped = pcall(function()
                 return context:get()
@@ -1686,7 +1856,15 @@ local function ensure_keyguide_hook()
                     return
                 end
 
-                if not show_unfrozen_guide_for_active_preview() then
+                -- SetupKeyGuide can observe the builder between Palworld's
+                -- checker and preview assignments. Do not turn that transient
+                -- false negative into an unfrozen -> hidden -> unfrozen input
+                -- actor cycle. Explicit exit and Destruct hooks still hide it.
+                if perfect_placement_ui_mode ~= "unfrozen"
+                    and not show_unfrozen_guide_for_active_preview()
+                    and not ui_host_lookup_blocked
+                    and not ui_host_setup_pending
+                then
                     update_perfect_placement_ui(false, false, true)
                 end
             end)
@@ -1701,7 +1879,7 @@ local function ensure_keyguide_hook()
             keyguide_hook_callback
         )
     end)
-    if not ok or pre_id == nil or post_id == nil then
+    if not ok then
         verbose("Construction key-guide hook is not loaded yet.")
         return false
     end
@@ -1709,9 +1887,62 @@ local function ensure_keyguide_hook()
         callback = keyguide_hook_callback,
         pre_id = pre_id,
         post_id = post_id,
+        complete = pre_id ~= nil and post_id ~= nil,
     }
+    if not keyguide_hook_registered.complete then
+        log("Construction key-guide registration returned incomplete IDs; retries are disabled.")
+        return false
+    end
     log("Construction key-guide event hook registered.")
     return true
+end
+
+local function schedule_construction_setup_retry(construction)
+    if construction_setup_retry_pending then
+        count_ui_lifecycle_metric("setup_retry_coalesced")
+        return true
+    end
+
+    construction_setup_retry_pending = true
+    local queued_freeze_generation = freeze_transition_generation
+    local queued_construction_generation = construction_ui_generation
+    local queued_construction_name = full_name(construction)
+    count_ui_lifecycle_metric("setup_retry_queued")
+    local queued = runtime.delay(
+        100,
+        function()
+            construction_setup_retry_pending = false
+            if queued_freeze_generation ~= freeze_transition_generation
+                or queued_construction_generation ~= construction_ui_generation
+                or unfrozen_guide_transition_is_locked()
+                or ui_host_lookup_blocked
+                or ui_host_setup_pending
+            then
+                count_ui_lifecycle_metric("setup_retry_stale")
+                return
+            end
+            if not full_name_is_available(queued_construction_name)
+                or queued_construction_name ~= full_name(cached_construction_widget)
+            then
+                count_ui_lifecycle_metric("setup_retry_replaced")
+                return
+            end
+            if unfrozen_guide_is_stable() then
+                return
+            end
+            -- Setup is a resume signal, not an authoritative exit signal. A
+            -- failed retry must never hide the frozen guide or disable input.
+            show_unfrozen_guide_for_active_preview()
+        end,
+        "Construction guide Setup retry",
+        function()
+            construction_setup_retry_pending = false
+        end
+    )
+    if not queued then
+        construction_setup_retry_pending = false
+    end
+    return queued
 end
 
 local function ensure_construction_ui_hooks()
@@ -1727,20 +1958,22 @@ local function ensure_construction_ui_hooks()
     local all_registered = true
 
     local function register_event_hook(function_path, event_name, resumes_guide)
-        if construction_ui_hooks[function_path] ~= nil then
-            return true
+        local existing = construction_ui_hooks[function_path]
+        if existing ~= nil then
+            return existing.complete == true
         end
 
         local captured_name = event_name
         local callback = function(context)
             local callback_ok, callback_error = pcall(function()
                 if resumes_guide then
-                    if freeze_transition_input_locked
-                        or state == State.EDITING
-                        or state == State.FREEZING
-                        or state == State.UNFREEZING
-                        or state == State.SWITCHING
+                    count_ui_lifecycle_metric("construction_setup")
+                    if unfrozen_guide_is_stable()
+                        or unfrozen_guide_transition_is_locked()
+                        or ui_host_lookup_blocked
+                        or ui_host_setup_pending
                     then
+                        count_ui_lifecycle_metric("construction_setup_suppressed")
                         return
                     end
 
@@ -1758,18 +1991,12 @@ local function ensure_construction_ui_hooks()
                     if show_unfrozen_guide_for_active_preview() then
                         return
                     end
-                    runtime.delay(
-                        100,
-                        function()
-                            if not show_unfrozen_guide_for_active_preview() then
-                                update_perfect_placement_ui(false, false, true)
-                            end
-                        end,
-                        "Construction guide Setup retry"
-                    )
+                    schedule_construction_setup_retry(construction)
                     return
                 end
 
+                construction_ui_generation = construction_ui_generation + 1
+                count_ui_lifecycle_metric("construction_exit")
                 if state == State.EDITING and release_preview ~= nil then
                     log("Auto-releasing frozen preview after Palworld action: "
                         .. captured_name .. ".")
@@ -1787,7 +2014,7 @@ local function ensure_construction_ui_hooks()
         local hook_ok, pre_id, post_id = pcall(function()
             return RegisterHook(function_path, callback)
         end)
-        if not hook_ok or pre_id == nil or post_id == nil then
+        if not hook_ok then
             verbose("Construction UI event is not loaded yet: "
                 .. function_path)
             return false
@@ -1797,7 +2024,13 @@ local function ensure_construction_ui_hooks()
             callback = callback,
             pre_id = pre_id,
             post_id = post_id,
+            complete = pre_id ~= nil and post_id ~= nil,
         }
+        if pre_id == nil or post_id == nil then
+            log("Construction UI event registration returned incomplete IDs; retries are disabled: "
+                .. function_path)
+            return false
+        end
         return true
     end
 
@@ -1817,12 +2050,36 @@ local function ensure_construction_ui_hooks()
                     widget == cached_construction_widget
                 if not is_construction_widget then
                     local widget_name = full_name(widget)
-                    is_construction_widget = string.find(
-                        widget_name,
-                        "WBP_IngameConstruction_C",
-                        1,
-                        true
-                    ) ~= nil
+                    if class_name_from_full_name(widget_name)
+                        ~= CONSTRUCTION_WIDGET_CLASS_NAME
+                    then
+                        if ui_lifecycle_metrics_enabled
+                            and string.find(
+                                widget_name,
+                                CONSTRUCTION_WIDGET_CLASS_NAME,
+                                1,
+                                true
+                            ) ~= nil
+                        then
+                            count_ui_lifecycle_metric(
+                                "construction_child_destruct"
+                            )
+                        end
+                        return
+                    end
+
+                    local cached_widget_name =
+                        full_name(cached_construction_widget)
+                    if full_name_is_available(cached_widget_name) then
+                        is_construction_widget =
+                            cached_widget_name == widget_name
+                    else
+                        is_construction_widget =
+                            full_name_is_live_exact_class(
+                                widget_name,
+                                CONSTRUCTION_WIDGET_CLASS_NAME
+                            )
+                    end
                 end
                 if not is_construction_widget then
                     return
@@ -1830,7 +2087,9 @@ local function ensure_construction_ui_hooks()
 
                 -- Destruct is a hide signal only. Releasing Freeze here would
                 -- make release_preview touch stock rows on a dying UMG widget.
+                construction_ui_generation = construction_ui_generation + 1
                 cached_construction_widget = nil
+                count_ui_lifecycle_metric("construction_root_destruct")
                 update_perfect_placement_ui(false, false, true)
             end)
             if not callback_ok then
@@ -1841,16 +2100,23 @@ local function ensure_construction_ui_hooks()
         local hook_ok, pre_id, post_id = pcall(function()
             return RegisterHook(destruct_path, destruct_callback)
         end)
-        if hook_ok and pre_id ~= nil and post_id ~= nil then
+        if hook_ok then
             construction_ui_hooks[destruct_path] = {
                 callback = destruct_callback,
                 pre_id = pre_id,
                 post_id = post_id,
+                complete = pre_id ~= nil and post_id ~= nil,
             }
+            if pre_id == nil or post_id == nil then
+                all_registered = false
+                log("Construction UI Destruct registration returned incomplete IDs; retries are disabled.")
+            end
         else
             all_registered = false
             verbose("Construction UI Destruct hook is not loaded yet.")
         end
+    elseif construction_ui_hooks[destruct_path].complete ~= true then
+        all_registered = false
     end
 
     for _, function_name in ipairs({
@@ -1906,10 +2172,31 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
             ensure_keyguide_hook()
         end
         local construction = cached_construction_widget
-        if not is_valid(construction) then
+        if not is_live_object_of_exact_class(
+            construction,
+            CONSTRUCTION_WIDGET_CLASS_NAME
+        ) then
             construction = FindFirstOf("WBP_IngameConstruction_C")
         end
-        if not is_valid(construction) then
+        if not is_live_object_of_exact_class(
+            construction,
+            CONSTRUCTION_WIDGET_CLASS_NAME
+        ) then
+            construction = nil
+            for _, candidate in ipairs(safe_find_all_of("WBP_IngameConstruction_C")) do
+                if is_live_object_of_exact_class(
+                    candidate,
+                    CONSTRUCTION_WIDGET_CLASS_NAME
+                ) then
+                    construction = candidate
+                    break
+                end
+            end
+        end
+        if not is_live_object_of_exact_class(
+            construction,
+            CONSTRUCTION_WIDGET_CLASS_NAME
+        ) then
             log("Construction key-guide widget instance was not found.")
             return
         end
@@ -2031,10 +2318,7 @@ local function cancel_begin_editing(transition_id, previous_state, reason)
     builder_tick_was_enabled = nil
     locked_origin_location = nil
     locked_origin_rotation = nil
-    locked_origin_pivot = nil
     last_preview_overlap_state = nil
-    rotation_pivot = nil
-    rotation_pivot_local_offset = nil
     preview_relative_location = nil
     preview_relative_rotation = nil
     desired_location = nil
@@ -2125,47 +2409,12 @@ local function begin_editing(defer_initial_validity)
         Yaw = desired_rotation.Yaw,
         Roll = desired_rotation.Roll,
     }
-    local bounds_ok, bounds_origin = pcall(function()
-        local origin = {}
-        local extent = {}
-        preview_actor:GetActorBounds(false, origin, extent, false)
-        return origin
-    end)
-    if bounds_ok and bounds_origin ~= nil
-        and bounds_origin.X ~= nil and bounds_origin.Y ~= nil and bounds_origin.Z ~= nil then
-        rotation_pivot = {
-            X = bounds_origin.X,
-            Y = bounds_origin.Y,
-            Z = bounds_origin.Z,
-        }
-        local offset_x = rotation_pivot.X - desired_location.X
-        local offset_y = rotation_pivot.Y - desired_location.Y
-        local yaw = math.rad(desired_rotation.Yaw)
-        rotation_pivot_local_offset = {
-            X = (math.cos(yaw) * offset_x) + (math.sin(yaw) * offset_y),
-            Y = (-math.sin(yaw) * offset_x) + (math.cos(yaw) * offset_y),
-            Z = rotation_pivot.Z - desired_location.Z,
-        }
-        log(string.format(
-            "Rotation pivot captured at bounds center (%.1f, %.1f, %.1f).",
-            rotation_pivot.X,
-            rotation_pivot.Y,
-            rotation_pivot.Z
-        ))
-    else
-        rotation_pivot = nil
-        rotation_pivot_local_offset = nil
-        log("Could not capture preview bounds; rotation will use Palworld's install pivot.")
-    end
-    if rotation_pivot ~= nil then
-        locked_origin_pivot = {
-            X = rotation_pivot.X,
-            Y = rotation_pivot.Y,
-            Z = rotation_pivot.Z,
-        }
-    else
-        locked_origin_pivot = nil
-    end
+    log(string.format(
+        "Rotation anchored at Palworld install pivot (%.1f, %.1f, %.1f).",
+        desired_location.X,
+        desired_location.Y,
+        desired_location.Z
+    ))
     last_preview_overlap_state = nil
     local tick_query_ok, tick_enabled = pcall(function()
         return preview_actor:IsActorTickEnabled()
@@ -2258,10 +2507,7 @@ release_preview = function(reason)
     preview_root_previous_mobility = nil
     locked_origin_location = nil
     locked_origin_rotation = nil
-    locked_origin_pivot = nil
     last_preview_overlap_state = nil
-    rotation_pivot = nil
-    rotation_pivot_local_offset = nil
     preview_relative_location = nil
     preview_relative_rotation = nil
     desired_location = nil
@@ -2351,9 +2597,6 @@ local function move_preview(forward_amount, right_amount, up_amount, distance_ov
         forward_y
     ))
 
-    local previous_x = desired_location.X
-    local previous_y = desired_location.Y
-    local previous_z = desired_location.Z
     desired_location.X = desired_location.X
         + (forward_x * forward_amount * distance)
         + (right_x * right_amount * distance)
@@ -2373,12 +2616,6 @@ local function move_preview(forward_amount, right_amount, up_amount, distance_ov
             ))
         end
     end
-    if rotation_pivot ~= nil then
-        rotation_pivot.X = rotation_pivot.X + (desired_location.X - previous_x)
-        rotation_pivot.Y = rotation_pivot.Y + (desired_location.Y - previous_y)
-        rotation_pivot.Z = rotation_pivot.Z + (desired_location.Z - previous_z)
-    end
-
     if apply_preview_transform() then
         schedule_locked_validity_refresh()
     end
@@ -2404,16 +2641,6 @@ local function rotate_preview(yaw_amount, degrees_override)
     end
     desired_rotation.Yaw = desired_rotation.Yaw
         + (yaw_amount * (degrees_override or Config.rotation.normal))
-    if rotation_pivot ~= nil and rotation_pivot_local_offset ~= nil then
-        local yaw = math.rad(desired_rotation.Yaw)
-        local rotated_offset_x = (math.cos(yaw) * rotation_pivot_local_offset.X)
-            - (math.sin(yaw) * rotation_pivot_local_offset.Y)
-        local rotated_offset_y = (math.sin(yaw) * rotation_pivot_local_offset.X)
-            + (math.cos(yaw) * rotation_pivot_local_offset.Y)
-        desired_location.X = rotation_pivot.X - rotated_offset_x
-        desired_location.Y = rotation_pivot.Y - rotated_offset_y
-        desired_location.Z = rotation_pivot.Z - rotation_pivot_local_offset.Z
-    end
 
     if apply_preview_transform() then
         schedule_locked_validity_refresh()
@@ -2443,13 +2670,6 @@ local function reset_preview_transform()
         Yaw = locked_origin_rotation.Yaw,
         Roll = locked_origin_rotation.Roll,
     }
-    if locked_origin_pivot ~= nil then
-        rotation_pivot = {
-            X = locked_origin_pivot.X,
-            Y = locked_origin_pivot.Y,
-            Z = locked_origin_pivot.Z,
-        }
-    end
 
     if apply_preview_transform() then
         schedule_locked_validity_refresh()
@@ -3286,23 +3506,26 @@ gamepad_controller = Gamepad.new({
 })
 gamepad_controller:start()
 
-local function refresh_keycaps_for_ui_host(host)
-    keycap_ui_host = nil
-    if is_valid(host) then
-        apply_configured_keycaps(host)
-    end
-    log("Refreshed placement keycaps for the new UI host.")
-end
-
 local UI_HOST_CLASS_PATH =
     "/Game/Mods/PerfectPlacement/WBP_PerfectPlacement_KeyGuide"
     .. ".WBP_PerfectPlacement_KeyGuide_C"
 
-ui_host_notify_callback = function()
-    if gamepad_controller ~= nil then
-        gamepad_controller:detach_host()
+ui_host_notify_callback = function(new_object)
+    count_ui_lifecycle_metric("host_notify")
+    ui_host_lookup_blocked = false
+    ui_host_missing_was_logged = false
+    if new_object ~= nil then
+        local notified_name = live_companion_ui_host_name(new_object)
+        if notified_name ~= nil then
+            preferred_ui_host_full_name = notified_name
+        end
+        ui_host_fault_retry_allowed = true
     end
+    -- Invalidate the local fast path immediately. Repeated Setup callbacks are
+    -- suppressed while the coalesced reacquisition is pending.
+    perfect_placement_ui_mode = nil
     if ui_host_setup_pending then
+        count_ui_lifecycle_metric("host_notify_coalesced")
         return
     end
     ui_host_setup_pending = true
@@ -3315,6 +3538,9 @@ ui_host_notify_callback = function()
             -- Treat NotifyOnNewObject only as a wake-up signal. Reacquiring on
             -- the game thread avoids retaining a UObject wrapper across a map
             -- transition and delayed callback.
+            if gamepad_controller ~= nil then
+                gamepad_controller:detach_host()
+            end
             perfect_placement_ui_host = nil
             perfect_placement_ui_mode = nil
             keycap_ui_host = nil
@@ -3325,7 +3551,6 @@ ui_host_notify_callback = function()
 
             ui_host_missing_was_logged = false
             cached_builder_component = nil
-            refresh_keycaps_for_ui_host(host)
             -- ModActor also creates this host on the main menu. Never infer
             -- construction mode from host creation alone; require the local
             -- player's live BuilderComponent preview before showing the guide.
@@ -3354,10 +3579,26 @@ ui_host_notify_callback = function()
     end
 end
 
-construction_ui_notify_callback = function()
+construction_ui_notify_callback = function(construction)
+    construction_ui_generation = construction_ui_generation + 1
+    count_ui_lifecycle_metric("construction_notify")
+    if is_live_object_of_exact_class(
+        construction,
+        CONSTRUCTION_WIDGET_CLASS_NAME
+    ) then
+        cached_construction_widget = construction
+    end
     ensure_keyguide_hook()
     ensure_construction_ui_hooks()
-    ui_host_notify_callback()
+    if not is_live_companion_ui_host(perfect_placement_ui_host)
+        and not ui_host_setup_pending
+    then
+        -- A construction lifecycle wake-up is the recovery path when the
+        -- companion notification was missed. Do not pin discovery to an
+        -- identity that has already disappeared.
+        preferred_ui_host_full_name = nil
+        ui_host_notify_callback()
+    end
 end
 
 do
@@ -3388,6 +3629,6 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.2.0-rc.2")
-log("Companion key-guide UI bridge revision 25 loaded.")
+log("Loaded Perfect Placement 0.2.0-rc.3")
+log("Companion key-guide UI bridge revision 26 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")
