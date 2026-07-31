@@ -1,3 +1,15 @@
+Version 0.2.0-rc.3 - Unfrozen preview lifecycle and rotation hotfix
+
+Fixed
+- Match only the live top-level construction widget during teardown so rebuilt child key-guide rows cannot cycle the guide and gamepad input actors.
+- Bypass repeated UObject discovery after the unfrozen guide stabilizes, coalesce Setup retries, and discard stale or replacement-bound retries.
+- Retain incomplete hook registrations without retrying them, back off missing or faulted companion hosts, and avoid duplicate host and keycap initialization.
+- Refresh controller prompts only when the detected input device changes, make gamepad mode activation idempotent, clean up input actors, and restore LT/RT chord tracking.
+- Match native Palworld rotation by using its install pivot, preventing offset-heavy pieces such as High Quality Hot Spring from jumping while frozen.
+
+Testing
+- Extend the release gate for child-widget teardown, safe Setup retries, incomplete hooks, exact live-host discovery, and host initialization deduplication.
+
 Version 0.2.0-rc.2 - Unfrozen preview performance hotfix
 
 Fixed

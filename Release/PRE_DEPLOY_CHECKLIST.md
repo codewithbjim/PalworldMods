@@ -53,6 +53,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 
 - [ ] Move in all six directions at every supported movement step.
 - [ ] Rotate left and right through at least one complete 360-degree cycle.
+- [ ] Rotate High Quality Hot Spring through a complete 360-degree cycle while frozen and confirm its Palworld install point remains fixed.
 - [ ] Alternate movement and rotation rapidly for at least 30 seconds.
 - [ ] Spam Reset while alternating movement and rotation.
 - [ ] Verify the vertical lower and upper clamps.
@@ -66,6 +67,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Freeze, then press Escape. Confirm the Perfect Placement guide and toast disappear within one second and remain hidden during normal gameplay.
 - [ ] Freeze, then open and close the build menu. Confirm no frozen or unfrozen control menu remains after construction mode closes.
 - [ ] Return to construction after each exit test and confirm the unfrozen guide appears only when a live placement preview exists.
+- [ ] Hold an unfrozen preview for at least two minutes while moving the camera, rotating, and changing pieces; confirm frame pacing remains stable and the companion guide never hides and reappears.
 - [ ] Freeze, then select a different build piece.
 - [ ] Freeze, then place the current piece through Palworld's normal path.
 - [ ] Freeze, then cancel or destroy the active preview.
@@ -118,8 +120,10 @@ Record `Pass`, `Fail`, or `N/A` for each row. A supported controller release can
 | Leaving the controller idle for five minutes produces no recurring Lua gamepad work or rhythmic stutter | |
 | Rapid controller movement, rotation, reset, Freeze, and Unfreeze input does not duplicate actions or remove a hook | |
 | Recreating the guide or reloading a world does not replay old serial counters | |
+| Alternating mouse and controller input refreshes the displayed device guide once per device change rather than once per axis event | |
 
 - [ ] Confirm each physical press produces one `QueueGamepadPhysicalInput` callback and one guarded Lua action.
+- [ ] Inspect the compiled ModActor `ReceiveEndPlay` graph and confirm the two `Destroy Actor` Target pins are `UnfrozenInputActor` and `FrozenInputActor`, never `Self`.
 - [ ] Confirm the UE4SS log has no incomplete-hook, callback-GC, `Ref was not function`, or repeated gamepad error.
 
 ## 8. Soak and compatibility
@@ -127,6 +131,8 @@ Record `Pass`, `Fail`, or `N/A` for each row. A supported controller release can
 - [ ] Record a frame-time baseline for at least five minutes with Perfect Placement disabled, then repeat outside construction mode with the candidate enabled. Confirm there is no rhythmic hitch near 500 ms intervals.
 - [ ] Remain in construction mode with an unfrozen preview for five minutes, then repeat while frozen. Confirm there is no repeating frame-time spike.
 - [ ] Enter and exit construction mode at least 20 times and travel or reload the world. Confirm the guide still follows the current live widget without periodic UObject-scan stutter.
+- [ ] Temporarily enable `diagnostics.ui_lifecycle_counters`, confirm repeated Setup callbacks produce no additional mode transitions, host acquisitions, or hide/show calls after convergence, then restore the default `false` value before rebuilding.
+- [ ] With lifecycle counters enabled, repeatedly enter and leave construction mode and confirm child key-guide Destruct events are counted but only the top-level construction root transitions the companion guide to hidden.
 - [ ] Remain in construction mode and edit pieces continuously for 10 minutes.
 - [ ] Watch frame time and confirm there is no progressive slowdown.
 - [ ] Review the complete UE4SS log for errors, stale-object warnings, or rapidly repeated messages.
@@ -147,7 +153,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | Required for 0.2.0-rc.2 |
+| Controller | Required for 0.2.0-rc.3 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |
