@@ -34,19 +34,30 @@ for index = 0, 9 do
     add_keyboard("NUMPAD_" .. tostring(index), 0x60 + index, "Num" .. tostring(index))
 end
 
--- Windows reports navigation virtual keys for numpad digits while NumLock is
--- off and while Shift temporarily reverses NumLock. Shift-modified numpad
--- bindings therefore need these alternates even when NumLock is enabled.
-keys.NUMPAD_0.alternate_virtual_key = 0x2D -- Insert
+-- With NumLock on, Windows translates Shift + Numpad digit presses into
+-- navigation-key events and temporarily removes Shift from the event state.
+-- Keep the translated virtual key so main.lua can register an equivalent
+-- compatibility chord while preserving any Control and Alt modifiers.
+local shifted_numpad_virtual_keys = {
+    [0] = 0x2D, -- Insert
+    [1] = 0x23, -- End
+    [2] = 0x28, -- Down Arrow
+    [3] = 0x22, -- Page Down
+    [4] = 0x25, -- Left Arrow
+    [5] = 0x0C, -- Clear
+    [6] = 0x27, -- Right Arrow
+    [7] = 0x24, -- Home
+    [8] = 0x26, -- Up Arrow
+    [9] = 0x21, -- Page Up
+}
+for index, virtual_key in pairs(shifted_numpad_virtual_keys) do
+    keys["NUMPAD_" .. tostring(index)].shifted_virtual_key = virtual_key
+end
+
+-- These two vertical-edit keys are also registered with the navigation-key
+-- codes Windows reports for the same physical keys while NumLock is off.
 keys.NUMPAD_1.alternate_virtual_key = 0x23 -- End
-keys.NUMPAD_2.alternate_virtual_key = 0x28 -- Down Arrow
 keys.NUMPAD_3.alternate_virtual_key = 0x22 -- Page Down
-keys.NUMPAD_4.alternate_virtual_key = 0x25 -- Left Arrow
-keys.NUMPAD_5.alternate_virtual_key = 0x0C -- Clear
-keys.NUMPAD_6.alternate_virtual_key = 0x27 -- Right Arrow
-keys.NUMPAD_7.alternate_virtual_key = 0x24 -- Home
-keys.NUMPAD_8.alternate_virtual_key = 0x26 -- Up Arrow
-keys.NUMPAD_9.alternate_virtual_key = 0x21 -- Page Up
 
 for index = 0, 25 do
     local letter = string.char(string.byte("A") + index)
@@ -79,6 +90,7 @@ add_keyboard("NUMPAD_ADD", 0x6B, "NumPlus")
 add_keyboard("NUMPAD_SUBTRACT", 0x6D, "NumMinus")
 add_keyboard("NUMPAD_DECIMAL", 0x6E, "NumPeriod")
 add_keyboard("NUMPAD_DIVIDE", 0x6F, "NumSlash")
+keys.NUMPAD_DECIMAL.shifted_virtual_key = 0x2E -- Delete
 add_keyboard("SEMICOLON", 0xBA, "Semicolon")
 add_keyboard("EQUALS", 0xBB, "And")
 add_keyboard("COMMA", 0xBC, "Comma")
@@ -397,6 +409,34 @@ end
 
 function M.get_key_info(key)
     return keys[canonical_name(key)]
+end
+
+function M.get_shifted_keypad_registration(binding)
+    if type(binding) ~= "table"
+        or type(binding.key_info) ~= "table"
+        or binding.key_info.shifted_virtual_key == nil
+        or type(binding.modifiers) ~= "table"
+    then
+        return nil
+    end
+
+    local has_shift = false
+    local translated_modifiers = {}
+    for _, modifier in ipairs(binding.modifiers) do
+        if modifier == "SHIFT" then
+            has_shift = true
+        else
+            translated_modifiers[#translated_modifiers + 1] = modifier
+        end
+    end
+    if not has_shift then
+        return nil
+    end
+
+    return {
+        virtual_key = binding.key_info.shifted_virtual_key,
+        modifiers = translated_modifiers,
+    }
 end
 
 M.action_order = action_order

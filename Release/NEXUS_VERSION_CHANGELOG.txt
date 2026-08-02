@@ -1,3 +1,2 @@
-Adds native construction guides with grouped Palworld keycaps, action separators, and the current step.
-Consolidates UI and controller assets into one _P.pak, retiring LogicMods.
-Includes all 0.2.0-rc.4 snapping, validity, and lifecycle fixes.
+Shift-modified Numpad controls now handle Windows-translated keys, including Decimal and Ctrl/Alt chords.
+Frozen previews now block Palworld Replacement Mode so top-row 4 cannot hide the preview.

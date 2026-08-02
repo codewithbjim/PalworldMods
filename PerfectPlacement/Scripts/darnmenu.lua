@@ -7,7 +7,7 @@ local M = {}
 
 local SCHEMA_NAME = "PerfectPlacement"
 local USER_CONFIG_NAME = "PerfectPlacement_user"
-local SCHEMA_VERSION = 14
+local SCHEMA_VERSION = 15
 
 local SUPPORTED_ACTIONS = {
     move_left = true,
@@ -30,7 +30,7 @@ local SUPPORTED_ACTIONS = {
 -- CONTROL/ALT/SHIFT toggles. keybindings.lua canonicalizes those names.
 local SCHEMA_SOURCE = [==[
 return {
-  schemaVersion = 14,
+  schemaVersion = 15,
   tab = "Perfect Placement",
   order = 100,
   target = "PerfectPlacement_user",

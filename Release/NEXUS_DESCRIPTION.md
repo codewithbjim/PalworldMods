@@ -83,7 +83,6 @@ The key guide appears only while a live construction preview is available. Mouse
 ## Notes and limitations
 
 - Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
-- In this experimental alpha, Palworld's top-row `4` Replacement Mode input can still fire while a foundation preview is frozen; avoid that key while frozen. Numpad 4 movement is unaffected.
 - Install on each client that wants to use the placement controls.
 - Test new mod versions in a disposable world before using an important save.
 - Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
