@@ -1,3 +1,2 @@
-Frozen rotation now preserves the visible build-piece origin while snapped.
-Automatic foundation, wall, and roof snapping is detected even when Palworld does not expose snap state.
-Ordinary unsnapped placement keeps the RC.3 native install pivot.
+Shift-modified Numpad controls now work with Num Lock enabled, including Ctrl and Alt combinations.
+Frozen previews now block Palworld Replacement Mode so top-row 4 cannot hide the preview.

@@ -1,3 +1,13 @@
+Version 0.2.0-rc.5 - Shifted keypad and frozen Replacement Mode hotfix
+
+Fixed
+- Make Shift-modified Numpad controls work with Num Lock enabled while preserving Ctrl and Alt in multi-modifier chords.
+- Block Palworld Replacement Mode while a preview is frozen so an unassigned top-row 4 action cannot hide the preview.
+- Keep Perfect Placement actions bound to top-row 4 available while the vanilla Replacement Mode action is blocked.
+
+Testing
+- Add regression coverage for translated Shift keypad events and require the frozen Replacement Mode guard in the release gate.
+
 Version 0.2.0-rc.4 - Snapped rotation pivot hotfix
 
 Fixed

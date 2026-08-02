@@ -1965,6 +1965,52 @@ local function ensure_construction_ui_hooks()
         .. "WBP_IngameConstruction.WBP_IngameConstruction_C:"
     local all_registered = true
 
+    -- Foundation replacement mode rebuilds the active preview. Report it as
+    -- unavailable while Perfect Placement owns a frozen preview; PP keybinds
+    -- still run through their own callbacks, but Palworld's unbound action is
+    -- prevented from changing modes beneath the paused preview.
+    local can_change_replace_path =
+        "/Script/Pal.PalUIBuildingModel:CanChangeReplaceModeForBuildObject"
+    local replacement_hook = construction_ui_hooks[can_change_replace_path]
+    if replacement_hook == nil then
+        local pre_callback = function()
+            if state == State.EDITING then
+                verbose("Blocked Replacement Mode while preview is frozen.")
+                return false
+            end
+            return nil
+        end
+        -- Supplying a post callback keeps native hooks compatible with UE4SS
+        -- builds that require both hook slots, even though this one is a no-op.
+        local post_callback = function() end
+        local hook_ok, pre_id, post_id = pcall(function()
+            return RegisterHook(
+                can_change_replace_path,
+                pre_callback,
+                post_callback
+            )
+        end)
+        if hook_ok then
+            replacement_hook = {
+                callback = pre_callback,
+                post_callback = post_callback,
+                pre_id = pre_id,
+                post_id = post_id,
+                complete = pre_id ~= nil and post_id ~= nil,
+            }
+            construction_ui_hooks[can_change_replace_path] = replacement_hook
+            if not replacement_hook.complete then
+                log("Replacement Mode blocker registration returned incomplete IDs; retries are disabled.")
+            end
+        else
+            verbose("Replacement Mode availability query is not loaded yet: "
+                .. tostring(pre_id))
+        end
+    end
+    if replacement_hook == nil or replacement_hook.complete ~= true then
+        all_registered = false
+    end
+
     local function register_event_hook(function_path, event_name, resumes_guide)
         local existing = construction_ui_hooks[function_path]
         if existing ~= nil then
@@ -3475,6 +3521,47 @@ local function register_current_action_binding(action)
             registered_action_chords[action][registration_signature] = true
         end
     end
+
+    -- Windows does not report Shift + Numpad digits as Shift-bearing keypad
+    -- events. With NumLock on it emits the matching navigation key while Shift
+    -- is temporarily absent, so register that translated chord as well.
+    local shifted_keypad =
+        Keybindings.get_shifted_keypad_registration(binding)
+    if shifted_keypad ~= nil then
+        local translated_modifier_values = {}
+        for _, modifier_name in ipairs(shifted_keypad.modifiers) do
+            translated_modifier_values[#translated_modifier_values + 1] =
+                MODIFIER_VALUES[modifier_name]
+        end
+        local registration_signature = tostring(shifted_keypad.virtual_key)
+            .. ":WINDOWS_SHIFT_KEYPAD:"
+            .. table.concat(shifted_keypad.modifiers, "+")
+        if not registered_action_chords[action][registration_signature] then
+            local captured_key = binding.key
+            local captured_modifiers = {}
+            for index, value in ipairs(binding.modifiers) do
+                captured_modifiers[index] = value
+            end
+            register_chord(
+                shifted_keypad.virtual_key,
+                translated_modifier_values,
+                function()
+                    local current = resolved_bindings[action]
+                    if current ~= nil
+                        and not current.disabled
+                        and current.key == captured_key
+                        and same_modifier_names(
+                            current.modifiers,
+                            captured_modifiers
+                        )
+                    then
+                        action_callbacks[action]()
+                    end
+                end
+            )
+            registered_action_chords[action][registration_signature] = true
+        end
+    end
     return binding
 end
 
@@ -3708,6 +3795,6 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.2.0-rc.4")
+log("Loaded Perfect Placement 0.2.0-rc.5")
 log("Companion key-guide UI bridge revision 26 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

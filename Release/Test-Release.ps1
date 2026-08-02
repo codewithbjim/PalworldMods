@@ -178,10 +178,10 @@ $configSource = Get-Content -LiteralPath $configPath -Raw
 $gamepadSource = Get-Content -LiteralPath $gamepadPath -Raw
 $runtimeSource = Get-Content -LiteralPath $runtimePath -Raw
 Assert-ReleaseCondition (
-    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*14'
-) "DarnMenu schema constant version 14 was not found."
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*14') `
-    "Embedded DarnMenu schema version 14 was not found."
+    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*15'
+) "DarnMenu schema constant version 15 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*15') `
+    "Embedded DarnMenu schema version 15 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -330,6 +330,17 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $mainSource -match 'widget:UpdateDisplay\(\)'
 ) "Frozen validity refresh must update Palworld's placement warning."
+Assert-ReleaseCondition (
+    $mainSource -match [regex]::Escape(
+        '/Script/Pal.PalUIBuildingModel:CanChangeReplaceModeForBuildObject'
+    ) -and
+    $mainSource -match
+        'if state == State\.EDITING then\s*' +
+        'verbose\("Blocked Replacement Mode while preview is frozen\."\)\s*' +
+        'return false' -and
+    $mainSource -match
+        'RegisterHook\(\s*can_change_replace_path,\s*pre_callback,\s*post_callback'
+) "Replacement Mode must be unavailable while the preview is frozen."
 Assert-ReleaseCondition (
     ([regex]::Matches(
         $mainSource,

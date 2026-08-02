@@ -11,6 +11,7 @@ package.path = repo_root .. "/PerfectPlacement/Scripts/?.lua;" .. package.path
 
 package.loaded.runtime = nil
 local Runtime = require("runtime")
+local Keybindings = require("keybindings")
 
 local function fail(message)
     error(message, 2)
@@ -256,6 +257,62 @@ local function new_mock(options)
 end
 
 local tests = {}
+
+tests["shifted keypad chords use Windows navigation events"] = function()
+    local bindings = Keybindings.resolve({
+        move_right = {
+            key = "NUMPAD_6",
+            modifiers = { "SHIFT" },
+        },
+        move_up = {
+            key = "NUMPAD_3",
+            modifiers = { "ALT", "SHIFT" },
+        },
+        move_down = {
+            key = "NUMPAD_1",
+            modifiers = { "CONTROL", "ALT", "SHIFT" },
+        },
+        step_down = {
+            key = "NUMPAD_DECIMAL",
+            modifiers = { "SHIFT" },
+        },
+    })
+
+    local right = Keybindings.get_shifted_keypad_registration(
+        bindings.move_right
+    )
+    assert_equal(right.virtual_key, 0x27, "Numpad 6 must translate to Right")
+    assert_equal(#right.modifiers, 0, "translated Right must omit Shift")
+
+    local up = Keybindings.get_shifted_keypad_registration(bindings.move_up)
+    assert_equal(up.virtual_key, 0x22, "Numpad 3 must translate to Page Down")
+    assert_equal(#up.modifiers, 1, "translated Page Down modifier count")
+    assert_equal(up.modifiers[1], "ALT", "translated Page Down must keep Alt")
+
+    local down = Keybindings.get_shifted_keypad_registration(
+        bindings.move_down
+    )
+    assert_equal(down.virtual_key, 0x23, "Numpad 1 must translate to End")
+    assert_equal(#down.modifiers, 2, "translated End modifier count")
+    assert_equal(down.modifiers[1], "CONTROL", "translated End must keep Control")
+    assert_equal(down.modifiers[2], "ALT", "translated End must keep Alt")
+
+    local decimal = Keybindings.get_shifted_keypad_registration(
+        bindings.step_down
+    )
+    assert_equal(
+        decimal.virtual_key,
+        0x2E,
+        "Numpad Decimal must translate to Delete"
+    )
+    assert_equal(#decimal.modifiers, 0, "translated Delete must omit Shift")
+
+    assert_equal(
+        Keybindings.get_shifted_keypad_registration(bindings.move_left),
+        nil,
+        "plain keypad chords must not get a Shift translation"
+    )
+end
 
 tests["pulse owns one paused callback through 10k GC cycles"] = function()
     local mock = new_mock()

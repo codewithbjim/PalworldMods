@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0-rc.5
+
+Shifted keypad input and frozen replacement-mode guard release candidate.
+
+### Fixed
+
+- Make Shift-modified Numpad controls work with Num Lock enabled by registering the navigation-key events Windows emits for those physical keys while preserving Ctrl and Alt in multi-modifier chords.
+- Keep a frozen preview under Perfect Placement control by making Palworld Replacement Mode unavailable until the preview is released, so an unassigned top-row 4 action cannot hide the preview while Perfect Placement actions on that key still work.
+
+### Testing
+
+- Add regression coverage for Shift, Alt+Shift, Ctrl+Alt+Shift, and Shift+Numpad Decimal event translation while confirming plain Numpad bindings remain unchanged.
+- Extend the release gate to require the frozen Replacement Mode availability guard.
+
 ## 0.2.0-rc.4
 
 Snapped rotation pivot hotfix release candidate.
