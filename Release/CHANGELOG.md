@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.0-rc.4
+
+Snapped rotation pivot hotfix release candidate.
+
+### Fixed
+
+- Preserve the visible build-piece origin during frozen rotation when Palworld snaps the preview away from its install checker.
+- Detect automatic foundation, wall, and roof structural snapping even when Palworld exposes neither snap mode nor a retained snap target, while keeping ordinary unsnapped placement on the RC.3 native install pivot.
+
+### Testing
+
+- Extend the release gate to require explicit and inferred structural-snap detection plus checker compensation that keeps the visible preview origin fixed during rotation.
+
+## 0.2.0-rc.3
+
+Unfrozen preview lifecycle, input, and rotation hotfix release candidate.
+
+### Fixed
+
+- Match only the live top-level construction widget in the global Destruct hook so rebuilt child key-guide rows cannot cycle the companion guide and gamepad input actors.
+- Bypass UObject discovery after the unfrozen guide converges, coalesce delayed Setup retries, and discard retries from stale placement transitions or replaced construction widgets.
+- Treat partial UE4SS hook registration as terminal so lifecycle notifications cannot multiply callbacks that may already be installed.
+- Cache missing or faulted companion hosts until a bounded lifecycle wake-up and avoid repeating keycap application or reinitializing a valid host.
+- Refresh the companion input guide only when the detected device changes, make gamepad input-mode activation idempotent, clean up spawned input actors on shutdown, and restore frozen LT/RT chord tracking.
+- Rotate frozen previews around Palworld's native install pivot instead of the visual bounds center, preventing offset-heavy pieces such as High Quality Hot Spring from jumping to another location.
+
+### Testing
+
+- Extend the release gate for child-widget destruction, coalesced and generation-safe retries, incomplete hook registration, exact live-host discovery, and host-setup deduplication.
+
 ## 0.2.0-rc.2
 
 Unfrozen-preview performance hotfix release candidate.

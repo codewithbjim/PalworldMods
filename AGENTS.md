@@ -43,15 +43,16 @@ These instructions preserve established decisions and repeatable workflows for t
 
 Every published release must have an annotated Git tag so its exact source can be recovered later for maintenance or a forked update.
 
-- Create the tag only after the release commit contains the exact files and version that were shipped.
+- Finalize the release on a release branch, then merge or fast-forward it onto `main`; the resulting `main` commit must contain the exact files and version to be shipped.
+- Push `main` and verify `origin/main` resolves to that exact release commit before creating the release tag.
+- Create the annotated tag on the verified `main` release commit, then push the tag. Never publish or tag a release that exists only on a task or release branch.
 - Use `<package-name>-v<version>` for new tags in this multi-mod repository, for example `perfect-placement-v0.1.5-crashfix.1`.
 - Do not move, replace, or reuse a published release tag.
 - Verify the tag resolves to the intended release commit before publishing.
-- Push the release commit and its tag to the remote as part of the release workflow.
 - Run `Release/Test-Release.ps1` against the final archive and complete `Release/PRE_DEPLOY_CHECKLIST.md` before publishing.
 - When making a maintenance update for an older release line, create the branch from its release tag rather than reconstructing the release from changelog notes or a newer commit.
 
-Treat a release as incomplete until its annotated tag has been verified and pushed.
+Treat a release as incomplete until its release commit is verified on `origin/main` and its annotated tag has been verified and pushed.
 
 ## Release file formatting
 

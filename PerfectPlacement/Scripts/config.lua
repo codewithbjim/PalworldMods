@@ -136,6 +136,11 @@ return {
     diagnostics = {
         verbose = false,
 
+        -- Optional aggregate counters for diagnosing construction UI churn.
+        -- Disabled by default so production builds add no recurring logger.
+        ui_lifecycle_counters = false,
+        ui_lifecycle_log_interval_ms = 5000,
+
         -- These are intentionally isolated here because Palworld 1.0 class
         -- names must be confirmed from a live UE4SS header/actor dump.
         preview_class_names = {

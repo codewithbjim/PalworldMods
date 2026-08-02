@@ -301,7 +301,7 @@ Assert-ReleaseCondition (
 ) "The Lua startup version does not match '$Version'."
 Assert-ReleaseCondition (
     $mainSource -match
-        [regex]::Escape("Companion key-guide UI bridge revision 25 loaded.")
+        [regex]::Escape("Companion key-guide UI bridge revision 26 loaded.")
 ) "The Lua bridge revision does not match the staged gamepad PAK."
 Assert-ReleaseCondition (
     $mainSource -match
@@ -311,19 +311,16 @@ Assert-ReleaseCondition (
     $mainSource -match
         'freeze_to_piece\s*=\s*\{\s*"CopyFreezeChord"\s*\}'
 ) "The companion guide must populate its copy-and-freeze chord widget."
-$keycapRefresh = [regex]::Match(
-    $mainSource,
-    'local function refresh_keycaps_for_ui_host\(host\)(?<body>[\s\S]*?)\r?\nend'
-)
-Assert-ReleaseCondition $keycapRefresh.Success `
-    "The UI-host keycap refresh function was not found."
 Assert-ReleaseCondition (
-    $keycapRefresh.Groups["body"].Value -notmatch
-        'load_resolved_bindings|register_current_action_binding|register_action'
-) "UI-host recreation must not reload or register keybindings."
+    $mainSource -notmatch 'refresh_keycaps_for_ui_host'
+) "UI-host recreation must not apply configured keycaps a second time."
 Assert-ReleaseCondition (
     $mainSource -notmatch 'refresh_bindings_from_darnmenu'
 ) "The obsolete per-UI-host binding refresh must not be restored."
+Assert-ReleaseCondition (
+    $configSource -match 'ui_lifecycle_counters\s*=\s*false' -and
+    $configSource -match 'ui_lifecycle_log_interval_ms\s*=\s*5000'
+) "UI lifecycle counters must remain optional and disabled by default."
 Assert-ReleaseCondition (
     $mainSource -match 'BuildingSurfaceMaterialSet'
 ) "Frozen validity refresh must use Palworld's live surface material set."
@@ -414,11 +411,57 @@ Assert-ReleaseCondition (
     $mainSource -match 'set_actor_transform_verified'
 ) "Transform calls must verify success after UE4SS FHitResult marshal errors."
 Assert-ReleaseCondition (
+    $mainSource -notmatch 'rotation_pivot|locked_origin_pivot' -and
+    $mainSource -notmatch 'GetActorBounds'
+) "Frozen rotation must use Palworld's install pivot instead of a visual-bounds pivot."
+Assert-ReleaseCondition (
+    $mainSource -match 'preserve_preview_origin_during_rotation' -and
+    $mainSource -match 'builder_component:IsSnapMode\(\)' -and
+    $mainSource -match 'SnapHitBuildObjectCache' -and
+    $mainSource -match 'SnapHitActorCache' -and
+    $mainSource -match 'AUTOMATIC_SNAP_OFFSET_THRESHOLD_CM' -and
+    $mainSource -match 'inferred_structural_snap'
+) "Snapped rotation must detect explicit snap state and automatic structural snap offsets."
+$rotatePreviewFunction = [regex]::Match(
+    $mainSource,
+    'local function rotate_preview\(' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function reset_preview_transform'
+)
+Assert-ReleaseCondition $rotatePreviewFunction.Success `
+    "The frozen preview rotation function was not found."
+Assert-ReleaseCondition (
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'if\s+preserve_preview_origin_during_rotation' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'preview_anchor_x\s*=\s*desired_location\.X' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'desired_location\.X\s*=\s*preview_anchor_x' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'desired_location\.Y\s*=\s*preview_anchor_y'
+) "Snapped rotation must preserve the preview origin by compensating the install checker."
+Assert-ReleaseCondition (
     $mainSource -match 'registered_keybind_callbacks'
 ) "Registered keybind callbacks must keep a module-lifetime Lua reference."
 Assert-ReleaseCondition (
     $mainSource -notmatch 'IDLE_UI_REFRESH_TICKS|BUILDER_FALLBACK_RETRY_TICKS'
 ) "Normal gameplay must not retain an idle guide-poll cadence."
+$stableGuideHelper = [regex]::Match(
+    $mainSource,
+    'local function unfrozen_guide_is_stable\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function show_unfrozen_guide_for_active_preview'
+)
+Assert-ReleaseCondition $stableGuideHelper.Success `
+    "The stable unfrozen-guide fast path was not found."
+Assert-ReleaseCondition (
+    $stableGuideHelper.Groups["body"].Value -match
+        'perfect_placement_ui_mode\s*==\s*"unfrozen"' -and
+    $stableGuideHelper.Groups["body"].Value -match
+        'perfect_placement_ui_host\s*~=\s*nil' -and
+    $stableGuideHelper.Groups["body"].Value -match
+        'not\s+unfrozen_guide_transition_is_locked\(\)'
+) "Stable unfrozen callbacks must bypass UObject discovery."
 $companionUiUpdate = [regex]::Match(
     $mainSource,
     'local function update_perfect_placement_ui\(' +
@@ -430,21 +473,122 @@ Assert-ReleaseCondition $companionUiUpdate.Success `
 Assert-ReleaseCondition (
     $companionUiUpdate.Groups["body"].Value -match
         'requested_mode\s*==\s*perfect_placement_ui_mode\s*' +
-        'and\s+not\s+show_transition_toast[\s\S]*?' +
+        'and\s+not\s+show_transition_toast\s*' +
+        'and\s+is_live_companion_ui_host\(perfect_placement_ui_host\)[\s\S]*?' +
         'return\s+true' -and
     $companionUiUpdate.Groups["body"].Value -match
         'perfect_placement_ui_mode\s*=\s*requested_mode'
 ) "Repeated stock key-guide events must not rebuild an unchanged companion guide."
+$companionUpdateBody = $companionUiUpdate.Groups["body"].Value
+$sameModeGuardStart = $companionUpdateBody.IndexOf(
+    'if requested_mode == perfect_placement_ui_mode'
+)
+$sameModeHostDiscovery = $companionUpdateBody.IndexOf(
+    'local host = find_perfect_placement_ui_host()'
+)
+$sameModeReturnsEarly = $false
+if ($sameModeGuardStart -ge 0 -and $sameModeHostDiscovery -gt $sameModeGuardStart) {
+    $sameModeGuardSegment = $companionUpdateBody.Substring(
+        $sameModeGuardStart,
+        $sameModeHostDiscovery - $sameModeGuardStart
+    )
+    $sameModeReturnsEarly = $sameModeGuardSegment -match
+        'then\s*return\s+true\s*end'
+}
+Assert-ReleaseCondition (
+    $sameModeGuardStart -ge 0 -and
+    $sameModeGuardStart -lt $sameModeHostDiscovery -and
+    $sameModeReturnsEarly
+) "The stable companion mode must return before host discovery."
+$exactClassHelper = [regex]::Match(
+    $mainSource,
+    'local function full_name_is_live_exact_class\(' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\nlocal KEYCAP_IMAGE_SLOTS'
+)
+Assert-ReleaseCondition $exactClassHelper.Success `
+    "The exact live-object name and class helpers were not found."
+Assert-ReleaseCondition (
+    $exactClassHelper.Groups["body"].Value -match
+        'full_name_is_available\(name\)' -and
+    $exactClassHelper.Groups["body"].Value -match
+        'class_name_from_full_name\(name\)\s*==\s*expected_class_name' -and
+    $exactClassHelper.Groups["body"].Value -match '/Engine/Transient\.' -and
+    $exactClassHelper.Groups["body"].Value -match 'Default__' -and
+    $exactClassHelper.Groups["body"].Value -match
+        'is_live_object_of_exact_class\([\s\S]*?' +
+        'full_name_is_live_exact_class\(\s*full_name\(object\)'
+) "Live UMG discovery must require an exact transient instance and reject templates."
+function Test-LiveExactClassName {
+    param([string]$Name, [string]$ExpectedClassName)
+    $classToken = ($Name -split '\s+', 2)[0]
+    return $classToken -eq $ExpectedClassName -and
+        $Name.Contains('/Engine/Transient.') -and
+        -not $Name.Contains('Default__')
+}
+$constructionClassName = 'WBP_IngameConstruction_C'
+$liveConstructionName =
+    'WBP_IngameConstruction_C /Engine/Transient.PalGameEngine:WBP_PlayerUI_C.WidgetTree.WBP_IngameConstruction_C_1'
+$childConstructionName =
+    'WBP_Ingameconstruction_KeyGuide_C /Engine/Transient.PalGameEngine:WBP_IngameConstruction_C_1.WidgetTree.KeyGuide_1'
+$templateConstructionName =
+    'WBP_IngameConstruction_C /Game/Pal/UI/WBP_IngameConstruction.Default__WBP_IngameConstruction_C'
+Assert-ReleaseCondition (
+    (Test-LiveExactClassName $liveConstructionName $constructionClassName) -and
+    -not (Test-LiveExactClassName $childConstructionName $constructionClassName) -and
+    -not (Test-LiveExactClassName $templateConstructionName $constructionClassName)
+) "Exact construction classification must accept a nested live root and reject child and template names."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'local function full_name_is_available\(name\)[\s\S]*?' +
+        'type\(name\)\s*==\s*"string"[\s\S]*?' +
+        'name\s*~=\s*"<invalid>"\s+and\s+name\s*~=\s*"<name unavailable>"'
+) "Lifecycle identity checks must reject every full-name sentinel."
+$hostFinder = [regex]::Match(
+    $mainSource,
+    'local function find_perfect_placement_ui_host\(\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function call_ui_host_function'
+)
+Assert-ReleaseCondition $hostFinder.Success `
+    "The companion UI host finder was not found."
+Assert-ReleaseCondition (
+    $hostFinder.Groups["body"].Value -match
+        'ui_host_setup_pending\s+or\s+ui_host_lookup_blocked[\s\S]*?' +
+        'return\s+nil[\s\S]*?' +
+        'live_companion_ui_host_name\(perfect_placement_ui_host\)[\s\S]*?' +
+        'FindFirstOf' -and
+    $hostFinder.Groups["body"].Value -match
+        'preferred_name\s*=\s*preferred_ui_host_full_name[\s\S]*?' +
+        'candidate_name\s*~=\s*preferred_name' -and
+    $hostFinder.Groups["body"].Value -match
+        'if\s+cached_host_name\s*~=\s*nil\s*' +
+        'and\s*\(not\s+require_preferred\s+or\s+' +
+        'cached_host_name\s*==\s*preferred_name\)\s*' +
+        'then\s*return\s+perfect_placement_ui_host\s*end' -and
+    $hostFinder.Groups["body"].Value -match
+        'if\s+candidate_name\s*==\s*nil\s*' +
+        'or\s*\(require_preferred\s+and\s+' +
+        'candidate_name\s*~=\s*preferred_name\)\s*' +
+        'then\s*return\s+false\s*end' -and
+    $hostFinder.Groups["body"].Value -match
+        'preferred_ui_host_full_name\s*=\s*host_name' -and
+    $hostFinder.Groups["body"].Value -match
+        'ui_host_lookup_blocked\s*=\s*true'
+) "Host discovery must back off misses and prefer the latest notified live instance."
 $uiHostCallback = [regex]::Match(
     $mainSource,
-    'ui_host_notify_callback\s*=\s*function\(\)' +
+    'ui_host_notify_callback\s*=\s*function\([^)]*\)' +
         '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\nconstruction_ui_notify_callback'
 )
 Assert-ReleaseCondition $uiHostCallback.Success `
     "The companion UI host callback was not found."
 Assert-ReleaseCondition (
     $uiHostCallback.Groups["body"].Value -match
+        'ui_host_lookup_blocked\s*=\s*false[\s\S]*?' +
+        'notified_name\s*=\s*live_companion_ui_host_name\(new_object\)[\s\S]*?' +
+        'preferred_ui_host_full_name\s*=\s*notified_name[\s\S]*?' +
         'perfect_placement_ui_mode\s*=\s*nil[\s\S]*?' +
+        'if\s+ui_host_setup_pending\s+then[\s\S]*?' +
         'find_active_build_context\(false\)[\s\S]*?' +
         'live_frozen\s*=\s*state\s*==\s*State\.EDITING[\s\S]*?' +
         'live_unfrozen\s*=\s*is_valid\(active_component\)[\s\S]*?' +
@@ -452,12 +596,18 @@ Assert-ReleaseCondition (
         'update_perfect_placement_ui\(\s*' +
         'live_frozen,\s*false,\s*' +
         'not\s*\(live_frozen\s+or\s+live_unfrozen\)\s*\)'
-) "Companion UI creation must remain hidden without a live local build preview."
+) "Companion UI creation must retain the newest host identity and remain hidden without a live preview."
+Assert-ReleaseCondition (
+    $uiHostCallback.Groups["body"].Value -match
+        'if\s+ui_host_setup_pending\s+then\s*' +
+        'count_ui_lifecycle_metric\("host_notify_coalesced"\)\s*' +
+        'return\s*end'
+) "Coalesced host notifications must return before scheduling another reacquisition."
 $keyguideHookFunction = [regex]::Match(
     $mainSource,
     'local function ensure_keyguide_hook\(\)' +
         '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
-        'local function ensure_construction_ui_hooks'
+        'local function schedule_construction_setup_retry'
 )
 Assert-ReleaseCondition $keyguideHookFunction.Success `
     "The construction key-guide hook function was not found."
@@ -469,8 +619,136 @@ Assert-ReleaseCondition (
     $keyguideHookFunction.Groups["body"].Value -match
         'keyguide_hook_registered\s*=\s*\{\s*' +
         'callback\s*=\s*keyguide_hook_callback,\s*' +
-        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,'
-) "The key-guide hook must retain its callback and both UE4SS hook IDs."
+        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,\s*' +
+        'complete\s*=\s*pre_id\s*~=\s*nil\s+and\s+post_id\s*~=\s*nil,' -and
+    $keyguideHookFunction.Groups["body"].Value -match
+        'return\s+keyguide_hook_registered\.complete\s*==\s*true'
+) "The key-guide hook must retain complete and partial registrations without retrying them."
+$keyguideCallbackStart = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'keyguide_hook_callback = function(context)'
+)
+$keyguideStableCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'if unfrozen_guide_is_stable() then',
+    $keyguideCallbackStart
+)
+$keyguideContextRead = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'return context:get()',
+    $keyguideCallbackStart
+)
+$keyguideBlockedCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'or ui_host_lookup_blocked',
+    $keyguideCallbackStart
+)
+$keyguidePendingCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'or ui_host_setup_pending',
+    $keyguideCallbackStart
+)
+Assert-ReleaseCondition (
+    $keyguideCallbackStart -ge 0 -and
+    $keyguideStableCheck -gt $keyguideCallbackStart -and
+    $keyguideStableCheck -lt $keyguideContextRead -and
+    $keyguideBlockedCheck -gt $keyguideStableCheck -and
+    $keyguideBlockedCheck -lt $keyguideContextRead -and
+    $keyguidePendingCheck -gt $keyguideStableCheck -and
+    $keyguidePendingCheck -lt $keyguideContextRead
+) "Stable or quarantined SetupKeyGuide callbacks must return before reading UObjects."
+Assert-ReleaseCondition (
+    $keyguideHookFunction.Groups["body"].Value -match
+        'if\s+unfrozen_guide_is_stable\(\)\s*then\s*return\s*end' -and
+    $keyguideHookFunction.Groups["body"].Value -match
+        'if\s+state\s*~=\s*State\.EDITING\s*' +
+        'and\s*\([\s\S]*?ui_host_lookup_blocked[\s\S]*?' +
+        'ui_host_setup_pending[\s\S]*?\)\s*then[\s\S]*?' +
+        'return\s*end\s*local\s+construction\s*=\s*context'
+) "Stable and quarantined SetupKeyGuide branches must explicitly stop before unwrapping context."
+$setupRetryFunction = [regex]::Match(
+    $mainSource,
+    'local function schedule_construction_setup_retry\(' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\n' +
+        'local function ensure_construction_ui_hooks'
+)
+Assert-ReleaseCondition $setupRetryFunction.Success `
+    "The construction Setup retry function was not found."
+$setupRetryBody = $setupRetryFunction.Groups["body"].Value
+$setupRetryFreezeComparison = $setupRetryBody.IndexOf(
+    'queued_freeze_generation ~= freeze_transition_generation'
+)
+$setupRetryConstructionComparison = $setupRetryBody.IndexOf(
+    'queued_construction_generation ~= construction_ui_generation'
+)
+$setupRetryShow = $setupRetryBody.IndexOf(
+    'show_unfrozen_guide_for_active_preview()'
+)
+$setupRetryStaleGuard = $setupRetryBody.IndexOf(
+    'if queued_freeze_generation ~= freeze_transition_generation'
+)
+$setupRetryIdentityGuard = $setupRetryBody.IndexOf(
+    'if not full_name_is_available(queued_construction_name)'
+)
+$setupRetryStableGuard = $setupRetryBody.IndexOf(
+    'if unfrozen_guide_is_stable() then'
+)
+$setupRetryStaleReturns = $false
+if ($setupRetryStaleGuard -ge 0 -and
+    $setupRetryIdentityGuard -gt $setupRetryStaleGuard) {
+    $setupRetryStaleSegment = $setupRetryBody.Substring(
+        $setupRetryStaleGuard,
+        $setupRetryIdentityGuard - $setupRetryStaleGuard
+    )
+    $setupRetryStaleReturns = $setupRetryStaleSegment -match '\breturn\b'
+}
+$setupRetryIdentityReturns = $false
+if ($setupRetryIdentityGuard -ge 0 -and
+    $setupRetryStableGuard -gt $setupRetryIdentityGuard) {
+    $setupRetryIdentitySegment = $setupRetryBody.Substring(
+        $setupRetryIdentityGuard,
+        $setupRetryStableGuard - $setupRetryIdentityGuard
+    )
+    $setupRetryIdentityReturns = $setupRetryIdentitySegment -match '\breturn\b'
+}
+Assert-ReleaseCondition (
+    $setupRetryBody -match 'if\s+construction_setup_retry_pending\s+then' -and
+    $setupRetryBody -match
+        'queued_freeze_generation\s*=\s*freeze_transition_generation' -and
+    $setupRetryBody -match
+        'queued_construction_generation\s*=\s*construction_ui_generation' -and
+    $setupRetryFreezeComparison -ge 0 -and
+    $setupRetryFreezeComparison -lt $setupRetryShow -and
+    $setupRetryConstructionComparison -ge 0 -and
+    $setupRetryConstructionComparison -lt $setupRetryShow -and
+    $setupRetryStaleReturns -and
+    $setupRetryIdentityReturns -and
+    $setupRetryBody -match
+        'unfrozen_guide_transition_is_locked\(\)[\s\S]*?' +
+        'or\s+ui_host_lookup_blocked[\s\S]*?' +
+        'or\s+ui_host_setup_pending' -and
+    $setupRetryBody -match
+        'not\s+full_name_is_available\(queued_construction_name\)\s*or\s*' +
+        'queued_construction_name\s*~=\s*full_name\(cached_construction_widget\)' -and
+    ([regex]::Matches(
+        $setupRetryBody,
+        'construction_setup_retry_pending\s*=\s*false'
+    )).Count -ge 3
+) "Construction Setup retries must be single-flight, identity-bound, and generation-safe."
+Assert-ReleaseCondition (
+    $setupRetryBody -match
+        'if\s+construction_setup_retry_pending\s+then[\s\S]*?' +
+        'return\s+true\s*end' -and
+    $setupRetryBody -match
+        'if\s+queued_freeze_generation\s*~=\s*freeze_transition_generation' +
+        '[\s\S]*?ui_host_setup_pending\s*then[\s\S]*?' +
+        'return\s*end' -and
+    $setupRetryBody -match
+        'if\s+not\s+full_name_is_available\(queued_construction_name\)' +
+        '[\s\S]*?queued_construction_name\s*~=\s*' +
+        'full_name\(cached_construction_widget\)\s*then[\s\S]*?' +
+        'return\s*end'
+) "Every coalesced, stale, or replacement-bound Setup retry must stop before guide work."
+Assert-ReleaseCondition (
+    $setupRetryBody -match 'show_unfrozen_guide_for_active_preview\(\)' -and
+    $setupRetryBody -notmatch
+        'update_perfect_placement_ui\(\s*false,\s*false,\s*true\s*\)'
+) "A delayed Setup retry must be show-only and never hide a guide or input actor."
 $constructionHookFunction = [regex]::Match(
     $mainSource,
     'local function ensure_construction_ui_hooks\(\)' +
@@ -479,6 +757,31 @@ $constructionHookFunction = [regex]::Match(
 )
 Assert-ReleaseCondition $constructionHookFunction.Success `
     "The construction lifecycle hook function was not found."
+$constructionHookBody = $constructionHookFunction.Groups["body"].Value
+$constructionStableCheck = $constructionHookBody.IndexOf(
+    'unfrozen_guide_is_stable()'
+)
+$constructionBlockedCheck = $constructionHookBody.IndexOf(
+    'or ui_host_lookup_blocked'
+)
+$constructionPendingCheck = $constructionHookBody.IndexOf(
+    'or ui_host_setup_pending'
+)
+$constructionContextRead = $constructionHookBody.IndexOf('return context:get()')
+Assert-ReleaseCondition (
+    $constructionStableCheck -ge 0 -and
+    $constructionContextRead -gt $constructionStableCheck -and
+    $constructionBlockedCheck -gt $constructionStableCheck -and
+    $constructionBlockedCheck -lt $constructionContextRead -and
+    $constructionPendingCheck -gt $constructionStableCheck -and
+    $constructionPendingCheck -lt $constructionContextRead
+) "Stable or quarantined construction Setup must return before reading UObjects."
+Assert-ReleaseCondition (
+    $constructionHookBody -match
+        'if\s+unfrozen_guide_is_stable\(\)[\s\S]*?' +
+        'ui_host_lookup_blocked[\s\S]*?ui_host_setup_pending\s*' +
+        'then[\s\S]*?return\s*end\s*local\s+construction\s*=\s*context'
+) "Suppressed construction Setup callbacks must stop before unwrapping context."
 Assert-ReleaseCondition (
     $constructionHookFunction.Groups["body"].Value -match
         'RegisterHook\(\s*function_path,\s*callback\s*\)'
@@ -487,8 +790,17 @@ Assert-ReleaseCondition (
     $constructionHookFunction.Groups["body"].Value -match
         'construction_ui_hooks\[function_path\]\s*=\s*\{\s*' +
         'callback\s*=\s*callback,\s*pre_id\s*=\s*pre_id,\s*' +
-        'post_id\s*=\s*post_id,'
-) "Construction lifecycle hooks must retain callbacks and both hook IDs."
+        'post_id\s*=\s*post_id,\s*' +
+        'complete\s*=\s*pre_id\s*~=\s*nil\s+and\s+post_id\s*~=\s*nil,' -and
+    $constructionHookFunction.Groups["body"].Value -match
+        'return\s+existing\.complete\s*==\s*true'
+) "Construction lifecycle hooks must retain complete and partial registrations."
+Assert-ReleaseCondition (
+    $constructionHookFunction.Groups["body"].Value -notmatch
+        'not\s+hook_ok\s+or\s+pre_id\s*==\s*nil' -and
+    $keyguideHookFunction.Groups["body"].Value -notmatch
+        'not\s+ok\s+or\s+pre_id\s*==\s*nil'
+) "Successful partial hook registrations must never be registered again."
 $destructHook = [regex]::Match(
     $constructionHookFunction.Groups["body"].Value,
     'local destruct_path\s*=\s*"/Script/UMG\.UserWidget:Destruct"' +
@@ -504,13 +816,66 @@ Assert-ReleaseCondition (
     $destructHook.Groups["body"].Value -match
         'construction_ui_hooks\[destruct_path\]\s*=\s*\{\s*' +
         'callback\s*=\s*destruct_callback,\s*' +
-        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,'
-) "The generic widget Destruct hook must retain its callback and both hook IDs."
+        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,\s*' +
+        'complete\s*=\s*pre_id\s*~=\s*nil\s+and\s+post_id\s*~=\s*nil,'
+) "The generic widget Destruct hook must retain complete and partial registrations."
 Assert-ReleaseCondition (
     $destructHook.Groups["body"].Value -match
-        '"WBP_IngameConstruction_C"[\s\S]*?' +
+        'widget\s*==\s*cached_construction_widget[\s\S]*?' +
+        'class_name_from_full_name\(widget_name\)[\s\S]*?' +
+        '~=\s*CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?' +
+        'full_name_is_available\(cached_widget_name\)[\s\S]*?' +
+        'cached_widget_name\s*==\s*widget_name[\s\S]*?' +
+        'full_name_is_live_exact_class\([\s\S]*?' +
+        'CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?' +
         'update_perfect_placement_ui\(\s*false,\s*false,\s*true\s*\)'
-) "Widget teardown must filter for construction UI and hide only the companion guide."
+) "Widget teardown must require cached identity or an exact live construction class."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -match
+        'if\s+full_name_is_available\(cached_widget_name\)\s*then\s*' +
+        'is_construction_widget\s*=\s*' +
+        'cached_widget_name\s*==\s*widget_name\s*else\s*' +
+        'is_construction_widget\s*=\s*' +
+        'full_name_is_live_exact_class\([\s\S]*?' +
+        'CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?\)\s*end'
+) "A cached construction identity must take precedence over the exact-class fallback."
+$destructBody = $destructHook.Groups["body"].Value
+$destructIdentityCheck = $destructBody.IndexOf(
+    'widget == cached_construction_widget'
+)
+$destructWidgetNameRead = $destructBody.IndexOf('full_name(widget)')
+$destructClassCheck = $destructBody.IndexOf(
+    'class_name_from_full_name(widget_name)'
+)
+$destructCachedNameRead = $destructBody.IndexOf(
+    'full_name(cached_construction_widget)'
+)
+$destructClassRejectsEarly = $false
+if ($destructClassCheck -ge 0 -and $destructCachedNameRead -gt $destructClassCheck) {
+    $destructClassRejectSegment = $destructBody.Substring(
+        $destructClassCheck,
+        $destructCachedNameRead - $destructClassCheck
+    )
+    $destructClassRejectsEarly = $destructClassRejectSegment -match '\breturn\b'
+}
+Assert-ReleaseCondition (
+    $destructIdentityCheck -ge 0 -and
+    $destructIdentityCheck -lt $destructWidgetNameRead -and
+    $destructWidgetNameRead -lt $destructClassCheck -and
+    $destructClassCheck -lt $destructCachedNameRead -and
+    $destructClassRejectsEarly -and
+    $destructBody -match
+        'if\s+ui_lifecycle_metrics_enabled[\s\S]*?' +
+        'string\.find\([\s\S]*?CONSTRUCTION_WIDGET_CLASS_NAME' -and
+    $destructBody -match
+        'count_ui_lifecycle_metric\([\s\S]*?' +
+        '"construction_child_destruct"[\s\S]*?' +
+        'end\s*return\s*end\s*local\s+cached_widget_name'
+) "Global widget teardown must reject unrelated classes before cached-name work or diagnostics."
+Assert-ReleaseCondition (
+    $destructHook.Groups["body"].Value -notmatch
+        'is_construction_widget\s*=\s*string\.find'
+) "Child outer paths must never classify a widget as the construction root."
 Assert-ReleaseCondition (
     $destructHook.Groups["body"].Value -notmatch 'release_preview\s*\('
 ) "The generic widget Destruct hook must not release a preview while stock UMG rows are dying."
@@ -553,6 +918,11 @@ Assert-ReleaseCondition (
         'if\s+not\s+allow_fallback_scan\s+then\s+return\s+nil'
 ) "A class-wide construction-widget scan must require a new preview context."
 Assert-ReleaseCondition (
+    $constructionUiFunction.Groups["body"].Value -match
+        'is_live_object_of_exact_class\([\s\S]*?' +
+        'CONSTRUCTION_WIDGET_CLASS_NAME'
+) "Construction fallback scans must reject CDO and cooked WidgetTree templates."
+Assert-ReleaseCondition (
     $mainSource -notmatch
         'construction_ui_scan_context_name|locked_construction_ui_was_active|' +
         'building_mode_exit_checks|locked_preview_name'
@@ -575,12 +945,25 @@ Assert-ReleaseCondition (
     $releaseFunction.Groups["body"].Value -match
         'string\.find\(\s*rendered_reason,\s*"Palworld action:"'
 ) "Construction action releases must hide the companion guide."
+$constructionNotifyCallback = [regex]::Match(
+    $mainSource,
+    'construction_ui_notify_callback\s*=\s*function\([^)]*\)' +
+        '(?<body>[\s\S]*?)\r?\nend\r?\n\r?\ndo'
+)
+Assert-ReleaseCondition $constructionNotifyCallback.Success `
+    "The construction UI notification callback was not found."
 Assert-ReleaseCondition (
-    $mainSource -match
-        'construction_ui_notify_callback\s*=\s*function\(\)\s*' +
-        'ensure_keyguide_hook\(\)\s*ensure_construction_ui_hooks\(\)\s*' +
+    $constructionNotifyCallback.Groups["body"].Value -match
+        'is_live_object_of_exact_class\([\s\S]*?' +
+        'CONSTRUCTION_WIDGET_CLASS_NAME' -and
+    $constructionNotifyCallback.Groups["body"].Value -match
+        'ensure_keyguide_hook\(\)[\s\S]*?ensure_construction_ui_hooks\(\)' -and
+    $constructionNotifyCallback.Groups["body"].Value -match
+        'if\s+not\s+is_live_companion_ui_host\(' +
+        'perfect_placement_ui_host\)[\s\S]*?' +
+        'preferred_ui_host_full_name\s*=\s*nil[\s\S]*?' +
         'ui_host_notify_callback\(\)'
-) "Construction widget creation must retry event-hook registration."
+) "Construction creation must cache a live root, preserve a valid host, and clear stale host identity before fallback discovery."
 $requiredSources = @(
     "enabled.txt",
     "Info.json",

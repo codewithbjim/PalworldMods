@@ -522,7 +522,7 @@ Private: true
 Create or update:
 
 ```text
-SetUsingGamepad(UsingGamepad: Boolean)
+SetUsingGamepad(RequestedUsingGamepad: Boolean)
 ```
 
 Graph:
@@ -536,11 +536,11 @@ Branch(GamepadEnabled)
 │     → Set bUsingGamepad = false
 │     → RefreshInputGuide
 └─ true:
-   UsingGamepad != bUsingGamepad
+   RequestedUsingGamepad != bUsingGamepad
    → Branch
      ├─ false → Return
      └─ true
-        → Set bUsingGamepad = UsingGamepad
+        → Set bUsingGamepad = RequestedUsingGamepad
         → RefreshInputGuide
 ```
 
@@ -747,6 +747,7 @@ KeyGuideWidget: WBP_PerfectPlacement_KeyGuide reference
 PlayerController: PlayerController reference
 bL3Held: Boolean
 bL3CompoundChordUsed: Boolean
+bInputActive: Boolean
 ```
 
 Create:
@@ -772,9 +773,13 @@ ActivateInput
 ```
 
 ```text
-Set bL3Held = false
-→ Set bL3CompoundChordUsed = false
-→ Enable Input(PlayerController)
+Branch(bInputActive)
+├─ true → Return
+└─ false:
+   Set bL3Held = false
+   → Set bL3CompoundChordUsed = false
+   → Set bInputActive = true
+   → Enable Input(PlayerController)
 ```
 
 Create:
@@ -786,7 +791,11 @@ DeactivateInput
 ```text
 Set bL3Held = false
 → Set bL3CompoundChordUsed = false
-→ Disable Input(PlayerController)
+→ Branch(bInputActive)
+  ├─ false → Return
+  └─ true:
+     Set bInputActive = false
+     → Disable Input(PlayerController)
 ```
 
 ## 14. Wire the unfrozen physical chords
@@ -866,6 +875,7 @@ KeyGuideWidget: WBP_PerfectPlacement_KeyGuide reference
 PlayerController: PlayerController reference
 bLeftTriggerHeld: Boolean
 bRightTriggerHeld: Boolean
+bInputActive: Boolean
 ```
 
 Create the same `Initialize`, `ActivateInput`, and `DeactivateInput` functions.
@@ -873,9 +883,13 @@ Create the same `Initialize`, `ActivateInput`, and `DeactivateInput` functions.
 `ActivateInput`:
 
 ```text
-Set bLeftTriggerHeld = false
-→ Set bRightTriggerHeld = false
-→ Enable Input(PlayerController)
+Branch(bInputActive)
+├─ true → Return
+└─ false:
+   Set bLeftTriggerHeld = false
+   → Set bRightTriggerHeld = false
+   → Set bInputActive = true
+   → Enable Input(PlayerController)
 ```
 
 `DeactivateInput`:
@@ -883,7 +897,11 @@ Set bLeftTriggerHeld = false
 ```text
 Set bLeftTriggerHeld = false
 → Set bRightTriggerHeld = false
-→ Disable Input(PlayerController)
+→ Branch(bInputActive)
+  ├─ false → Return
+  └─ true:
+     Set bInputActive = false
+     → Disable Input(PlayerController)
 ```
 
 ## 16. Track both trigger modifiers
@@ -1023,6 +1041,9 @@ KeyGuideWidget: WBP_PerfectPlacement_KeyGuide reference
 UnfrozenInputActor: BP_PP_UnfrozenGamepadInput reference
 FrozenInputActor: BP_PP_FrozenGamepadInput reference
 PlayerController: PlayerController reference
+CurrentGamepadInputMode: EPP_GamepadInputMode
+bGamepadInputModeInitialized: Boolean
+bDetectedUsingGamepad: Boolean
 ```
 
 In BeginPlay:
@@ -1071,8 +1092,13 @@ Is Valid(KeyGuideWidget)
   ├─ false:
   │  Is Valid(UnfrozenInputActor) → DeactivateInput
   │  Is Valid(FrozenInputActor)   → DeactivateInput
+  │  Set CurrentGamepadInputMode = Disabled
+  │  Set bGamepadInputModeInitialized = true
   │  Return
   └─ true:
+     Branch(bGamepadInputModeInitialized AND Mode == CurrentGamepadInputMode)
+     ├─ true → Return
+     └─ false
      Switch on EPP_GamepadInputMode
 ```
 
@@ -1081,6 +1107,8 @@ Is Valid(KeyGuideWidget)
 ```text
 UnfrozenInputActor.DeactivateInput
 FrozenInputActor.DeactivateInput
+Set CurrentGamepadInputMode = Disabled
+Set bGamepadInputModeInitialized = true
 ```
 
 `Unfrozen`:
@@ -1088,6 +1116,8 @@ FrozenInputActor.DeactivateInput
 ```text
 FrozenInputActor.DeactivateInput
 UnfrozenInputActor.ActivateInput
+Set CurrentGamepadInputMode = Unfrozen
+Set bGamepadInputModeInitialized = true
 ```
 
 `Frozen`:
@@ -1095,16 +1125,22 @@ UnfrozenInputActor.ActivateInput
 ```text
 UnfrozenInputActor.DeactivateInput
 FrozenInputActor.ActivateInput
+Set CurrentGamepadInputMode = Frozen
+Set bGamepadInputModeInitialized = true
 ```
 
 Always deactivate the old actor before activating the new one.
 
 ## 22. Add controller-device detection
 
-Controller button and stick events should call:
+Controller button and stick events should switch only on a device-state edge:
 
 ```text
-KeyGuideWidget.SetUsingGamepad(true)
+Branch(NOT bDetectedUsingGamepad)
+├─ false → Return
+└─ true:
+   Set bDetectedUsingGamepad = true
+   → KeyGuideWidget.SetUsingGamepad(true)
 ```
 
 For stick axes, apply an absolute threshold of approximately:
@@ -1115,15 +1151,43 @@ For stick axes, apply an absolute threshold of approximately:
 
 This avoids switching the guide because of stick drift.
 
-Existing keyboard and mouse detection should call:
+Existing keyboard and mouse detection should use the opposite edge:
 
 ```text
-KeyGuideWidget.SetUsingGamepad(false)
+Branch(bDetectedUsingGamepad)
+├─ false → Return
+└─ true:
+   Set bDetectedUsingGamepad = false
+   → KeyGuideWidget.SetUsingGamepad(false)
 ```
 
 Set device-detection events to `Consume Input = false`.
 
-## 23. Lua physical chord contract
+## 23. Clean up ModActor on EndPlay
+
+Add `ReceiveEndPlay` and perform these steps in order:
+
+```text
+Is Valid(KeyGuideWidget)
+→ Clear RequestGamepadInputMode delegate
+→ Remove From Parent
+
+Is Valid(UnfrozenInputActor)
+→ DeactivateInput
+→ Destroy Actor(Target = UnfrozenInputActor)
+
+Is Valid(FrozenInputActor)
+→ DeactivateInput
+→ Destroy Actor(Target = FrozenInputActor)
+
+Disable Input(PlayerController)
+→ Set bGamepadInputModeInitialized = false
+→ Set CurrentGamepadInputMode = Disabled
+```
+
+The two Destroy Actor Target pins must be connected to their corresponding spawned-actor variables. Leaving either node on `Self` destroys ModActor again and leaks that child actor until world teardown.
+
+## 24. Lua physical chord contract
 
 Register one meaningful UE4SS hook callback for:
 
@@ -1182,7 +1246,7 @@ gamepad actions and log the failure once rather than silently starting a timer.
 
 Configuration changes require reopening the world or restarting Palworld.
 
-## 24. Lua-driven configurable keycaps
+## 25. Lua-driven configurable keycaps
 
 Every action row is populated from its resolved binding.
 
@@ -1226,7 +1290,7 @@ Do not assign fallback textures in Blueprint. A missing or invalid configured
 binding should collapse its chord widgets rather than display a misleading
 default.
 
-## 25. Editor validation
+## 26. Editor validation
 
 ### Widget
 
@@ -1277,7 +1341,7 @@ Verify:
 4. Unfrozen X, Y, LT, RT, R3, View, B, and Menu remain untouched.
 5. Frozen D-pad, LT, RT, LB, RB, L3, and R3 are consumed.
 
-## 26. Configuration validation
+## 27. Configuration validation
 
 Test each of these configurations separately.
 
@@ -1348,7 +1412,7 @@ Verify:
 - the Lua gamepad hook does not dispatch actions;
 - no Lua polling loop starts.
 
-## 27. In-game validation
+## 28. In-game validation
 
 After cooking the Blueprint pak and deploying the Lua runtime:
 

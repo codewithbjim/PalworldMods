@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.2.0-RC.2
+PERFECT PLACEMENT 0.2.0-RC.4
 ============================
 
 RELEASE CANDIDATE
@@ -61,6 +61,8 @@ LB / RB            Rotate left / right
 R3                 Reset to the frozen transform
 
 The companion Blueprint reports complete physical controller chords to Lua only when pressed; Perfect Placement does not run a recurring Lua gamepad input poll. Advanced controller bindings are available in Scripts\config.lua.
+
+For troubleshooting construction UI churn, temporarily set diagnostics.ui_lifecycle_counters to true in Scripts\config.lua. Perfect Placement logs aggregate Setup, Destruct, host, and guide-transition counts every five seconds; restore the default false value for normal play and release builds.
 
 DARNMENU (OPTIONAL)
 -------------------
