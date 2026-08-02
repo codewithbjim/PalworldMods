@@ -10,15 +10,16 @@ The mod resolves the active placement preview directly through the local player'
 
 1. Install a Palworld 1.0-compatible UE4SS build and verify that its console opens correctly.
 2. Copy this `PerfectPlacement` directory into the UE4SS `Mods` directory.
-3. If your UE4SS installation still uses `mods.txt`, add:
+3. Copy `PerfectPlacement_NativeUI_P.pak` into `Pal\Content\Paks\~mods`.
+4. If your UE4SS installation still uses `mods.txt`, add:
 
    ```text
    PerfectPlacement : 1
    ```
 
-4. Start a disposable test world. Do not develop against your only save.
-5. Enter build mode and make a building preview visible.
-6. Middle-click to freeze or unfreeze the selected preview.
+5. Start a disposable test world. Do not develop against your only save.
+6. Enter build mode and make a building preview visible.
+7. Middle-click to freeze or unfreeze the selected preview.
 
 ## Controls and configuration
 
@@ -65,7 +66,7 @@ The same page exposes the starting, minimum, and maximum movement steps; the ste
 
 Without DarnMenu, Perfect Placement's built-in controls remain available. It uses the defaults in `Scripts/config.lua` when no saved `Mods/shared/PerfectPlacement_user.lua` override exists. DarnUI is supplied as DarnMenu's own dependency; Perfect Placement does not require either mod and does not create a separate DarnUI overlay.
 
-The companion guide resolves its displayed controls to Palworld's stock keycap textures. Invalid, conflicting, or unsupported bindings fall back to their defaults and are reported in the UE4SS log. Every action supports any combination of `Ctrl`, `Alt`, and `Shift`; displayed modifiers use that order before the primary key. Stock keycaps are also available for left, right, and middle mouse buttons plus mouse buttons 4 and 5.
+The native construction guide resolves its displayed controls to Palworld's stock keycap textures. Invalid, conflicting, or unsupported bindings fall back to their defaults and are reported in the UE4SS log. Every action supports any combination of `Ctrl`, `Alt`, and `Shift`; displayed modifiers use that order before the primary key. Stock keycaps are also available for left, right, and middle mouse buttons plus mouse buttons 4 and 5.
 
 DarnMenu's capture set supports F1-F12, letters, top-row and numpad digits, numpad operators, and Insert/Delete/Home/End/Page Up/Page Down. Existing default mouse bindings remain valid, but mouse buttons cannot currently be captured as replacement keys through DarnMenu.
 

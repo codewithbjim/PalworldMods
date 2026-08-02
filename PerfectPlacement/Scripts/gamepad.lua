@@ -1057,6 +1057,10 @@ function Instance:get_resolved_bindings()
     return self.resolved_bindings, self.chord_actions
 end
 
+function Instance:get_keycap_texture(token)
+    return self:_load_keycap(token)
+end
+
 function M.new(options)
     options = options or {}
     if type(options.dispatch_action) ~= "function" then

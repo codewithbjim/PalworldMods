@@ -32,11 +32,17 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 ## 2. Clean-install smoke test
 
 - [ ] Close Palworld completely before replacing files.
-- [ ] Remove or temporarily rename the previously installed Perfect Placement Lua folder and PAK so stale modules cannot influence the test.
+- [ ] Remove or temporarily rename the previously installed Perfect Placement Lua folder, legacy LogicMod pak, and NativeUI pak so stale modules cannot influence the test.
 - [ ] Extract the candidate archive into the game directory.
 - [ ] Confirm UE4SS loads the expected version without Lua errors.
 - [ ] Open a disposable world, enter build mode, and display a preview.
-- [ ] Confirm the frozen and unfrozen guides show the expected bindings.
+- [ ] Confirm `PerfectPlacement_NativeUI_P.pak` is loaded and the frozen and unfrozen guides appear inside Palworld's construction widget.
+- [ ] Confirm no `PerfectPlacement.pak` remains under `Pal\Content\Paks\LogicMods` and the log reports that the companion input bridge spawned from the consolidated `_P.pak`.
+- [ ] Confirm the unfrozen guide shows Freeze, Copy Piece, and Copy and Freeze as soon as a live preview exists.
+- [ ] Confirm the frozen guide shows horizontal movement, height, rotation, current step, Reset, and Unfreeze with native-sized keyboard or gamepad keycaps.
+- [ ] Confirm Build, Back to Build Menu, and Quit building remain visible while Rotate, Axis Alignment, and Replacement Mode consume no row space only while frozen.
+- [ ] Repeat Freeze and Unfreeze at least 20 times and confirm stock rows return in their original order without duplicates, empty slots, or progressive spacing changes.
+- [ ] Open DarnMenu and the ESC menu during construction and confirm no crash occurs; the release must not contain a global UMG `SetVisibility` hook.
 
 ## 3. Freeze lifecycle stress test
 
@@ -153,7 +159,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | Required for 0.2.0-rc.4 |
+| Controller | Required for 0.3.0-alpha.1 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |

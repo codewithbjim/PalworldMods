@@ -34,10 +34,19 @@ for index = 0, 9 do
     add_keyboard("NUMPAD_" .. tostring(index), 0x60 + index, "Num" .. tostring(index))
 end
 
--- These two vertical-edit keys are also registered with the navigation-key
--- codes Windows reports for the same physical keys while NumLock is off.
+-- Windows reports navigation virtual keys for numpad digits while NumLock is
+-- off and while Shift temporarily reverses NumLock. Shift-modified numpad
+-- bindings therefore need these alternates even when NumLock is enabled.
+keys.NUMPAD_0.alternate_virtual_key = 0x2D -- Insert
 keys.NUMPAD_1.alternate_virtual_key = 0x23 -- End
+keys.NUMPAD_2.alternate_virtual_key = 0x28 -- Down Arrow
 keys.NUMPAD_3.alternate_virtual_key = 0x22 -- Page Down
+keys.NUMPAD_4.alternate_virtual_key = 0x25 -- Left Arrow
+keys.NUMPAD_5.alternate_virtual_key = 0x0C -- Clear
+keys.NUMPAD_6.alternate_virtual_key = 0x27 -- Right Arrow
+keys.NUMPAD_7.alternate_virtual_key = 0x24 -- Home
+keys.NUMPAD_8.alternate_virtual_key = 0x26 -- Up Arrow
+keys.NUMPAD_9.alternate_virtual_key = 0x21 -- Page Up
 
 for index = 0, 25 do
     local letter = string.char(string.byte("A") + index)

@@ -18,5 +18,8 @@ Release/Dist/
 Release/Tools/
 Release/WorkshopStage/
 Release/.nexus-apikey
+NativeUI/Work/
+NativeUI/bin/
+NativeUI/obj/
 Release/Media/*
 !Release/Media/perfect-placement-nexus-banner-1300x372-v2.png

@@ -1,3 +1,22 @@
+Version 0.3.0-alpha.1 - Experimental native construction guide
+
+Added
+- Integrate Perfect Placement controls into Palworld's existing construction key guide through a dedicated NativeUI resource pak.
+- Add native-sized keyboard, mouse, numpad, and gamepad keycaps plus a live movement-step label.
+- Add a subtle vertical divider between distinct action chords in paired movement and rotation rows.
+- Support Windows' navigation-key virtual codes for Shift-modified numpad bindings such as Shift+Num4.
+- Consolidate the native UI scaffold and event-driven controller bridge into one resource pak, retire the LogicMods install rule, and spawn the bridge safely from Lua after map loads.
+- Delay the gamepad UFunction hook until its Blueprint host exists so startup does not emit a missing-function error.
+
+Changed
+- Show Freeze, Copy Piece, and Copy and Freeze while unfrozen, then show the full transform guide while frozen.
+- Remove Rotate, Axis Alignment, and Replacement Mode rows only while frozen, preserving Build and the stock footer.
+
+Safety and performance
+- Defer widget-tree mutation until after SetupKeyGuide, coalesce requests, and reject work for stale construction-widget generations.
+- Build and cache four device/state panels once per live construction widget without recurring UI polling.
+- Preserve every 0.2.0-rc.4 snapping and lifecycle fix.
+
 Version 0.2.0-rc.4 - Snapped rotation pivot hotfix
 
 Fixed

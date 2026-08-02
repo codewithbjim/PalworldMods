@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+Experimental native construction-key-guide integration based on 0.2.0-rc.4.
+
+### Added
+
+- Add a minimal cooked `WBP_IngameConstruction` scaffold through `PerfectPlacement_NativeUI_P.pak`, with Lua-owned keyboard/mouse and gamepad panels rendered inside Palworld's existing construction guide.
+- Show unfrozen Freeze, Copy Piece, and Copy and Freeze rows as soon as a live preview is available, and show movement, height, rotation, current step, Reset, and Unfreeze rows while frozen.
+- Render resolved controls with Palworld keycap textures, including square native-sized keyboard, mouse, numpad, and gamepad prompts.
+- Separate distinct action chords with a subtle vertical divider so modifier-plus-key chords remain visually grouped while opposite actions are unambiguous.
+- Register Windows navigation-key alternates for Shift-modified numpad bindings so chords such as Shift+Num4 work while Num Lock is enabled.
+
+### Changed
+
+- Detach Palworld's Rotate, Axis Alignment, and Replacement Mode rows only while Perfect Placement owns a frozen preview, preserving Build and the stock footer.
+- Consolidate the native construction scaffold and event-driven controller bridge into one `PerfectPlacement_NativeUI_P.pak`, retire the `LogicMods` install rule, and let hardened Lua lifecycle code reuse or spawn the bridge actor after map loads.
+- Delay the gamepad UFunction hook until the cooked bridge host exists, preventing the expected startup error when UE4SS starts Lua before loading the Blueprint class.
+
+### Safety and performance
+
+- Defer native widget construction and stock-row mutation until after Palworld's `SetupKeyGuide` callback, guard work by construction-widget and freeze generations, and coalesce superseded requests.
+- Cache the four device/state panels per live construction widget and switch visibility only when state or input device changes, without a recurring UI polling loop.
+- Preserve every 0.2.0-rc.4 snapped-rotation and lifecycle hardening change, and exclude the unresolved facility and floor validity experiment from this release.
+
+### Known alpha limitation
+
+- Palworld's top-row `4` Replacement Mode input can still fire while a foundation preview is frozen; avoid that key while frozen. Perfect Placement's Numpad 4 movement remains available.
+
 ## 0.2.0-rc.4
 
 Snapped rotation pivot hotfix release candidate.

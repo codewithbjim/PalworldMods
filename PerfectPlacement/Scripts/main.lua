@@ -2,6 +2,7 @@ local Config = require("config")
 local Keybindings = require("keybindings")
 local DarnMenu = require("darnmenu")
 local Gamepad = require("gamepad")
+local CompanionBridge = require("companion_bridge")
 local Runtime = require("runtime")
 local UEHelpers = require("UEHelpers")
 
@@ -63,6 +64,7 @@ local keycap_ui_host = nil
 local resolved_bindings = nil
 local keycap_texture_cache = {}
 local gamepad_controller = nil
+local companion_bridge = nil
 local registered_keybind_callbacks = {}
 local construction_ui_hooks = {}
 local construction_ui_generation = 0
@@ -759,12 +761,21 @@ local function update_perfect_placement_ui(is_locked, show_transition_toast, hid
                     host,
                     ui_config.show_unfrozen_toast_function or "ShowUnfrozenToast"
                 )
-            else
-                call_ui_host_function(
-                    host,
+        else
+            call_ui_host_function(
+                host,
                     ui_config.hide_toast_function or "HideToast"
                 )
             end
+        end
+
+        -- Keep the companion state machine and physical gamepad bridge active
+        -- while the visible guide is rendered in Palworld's native widget.
+        if not hide_all and ui_config.use_native_construction_guide then
+            call_ui_host_function(
+                host,
+                ui_config.hide_function or "HideGuide"
+            )
         end
     end)
     if not ok then
@@ -1639,156 +1650,955 @@ local function setup_text_keyguide_row(construction, row_name, guide_text)
     return ok, error_message
 end
 
-local function set_default_rotate_guide_hidden(construction, hidden)
-    local rotate_row = find_live_keyguide_row(
-        construction,
-        "WBP_Ingameconstruction_KeyGuide_Rotate"
-    )
-    if not is_valid(rotate_row) then
-        log("Default mouse-wheel Rotate guide row was not found.")
-        return false
+-- The native patch adds one empty VerticalBox_PP immediately ahead of the
+-- stock footer. Lua owns only that container and builds four device/state
+-- variants once, leaving Palworld's cooked rows and footer untouched.
+construction_ui_hooks.__native_guide = {
+    instances = {},
+}
+
+construction_ui_hooks.__native_guide.construct = function(
+    construction,
+    class_path
+)
+    if not is_valid(construction) then
+        return nil
     end
-    rotate_row:SetVisibility(hidden and 1 or 0)
-    return true
+    local tree_ok, widget_tree = pcall(function()
+        return construction.WidgetTree
+    end)
+    if not tree_ok or not is_valid(widget_tree) then
+        return nil
+    end
+    local class = StaticFindObject(class_path)
+    if not is_valid(class) then
+        return nil
+    end
+    local ok, widget = pcall(function()
+        return StaticConstructObject(
+            class,
+            widget_tree,
+            0,
+            0,
+            0,
+            nil,
+            false,
+            false,
+            nil
+        )
+    end)
+    return ok and is_valid(widget) and widget or nil
 end
 
-local function set_replacement_mode_guide_hidden(construction, hidden)
-    -- Palworld assigns Rotate/Axis Alignment variants across generic live rows
-    -- 5, 6, and 7 according to the current construction state. Collapse all
-    -- three while Perfect Placement owns the frozen preview, then restore them
-    -- when control returns to Palworld.
-    local found_generic_row = false
-    for _, row_name in ipairs({
-        "WBP_Ingameconstruction_KeyGuide_5",
-        -- "WBP_Ingameconstruction_KeyGuide_6",
-        -- "WBP_Ingameconstruction_KeyGuide_7",
-    }) do
-        -- These are BlueprintReadOnly child-widget properties on the live
-        -- WBP_IngameConstruction instance. Prefer them over FindAllOf, which
-        -- can return a valid cooked WidgetTree template with the same name.
-        local direct_ok, row = pcall(function()
-            return construction[row_name]
+construction_ui_hooks.__native_guide.find_widget = function(
+    construction,
+    expected_name
+)
+    if not is_valid(construction) then
+        return nil
+    end
+    local root_ok, root = pcall(function()
+        return construction.WidgetTree.RootWidget
+    end)
+    if not root_ok or not is_valid(root) then
+        return nil
+    end
+    local visited = {}
+    local function walk(widget)
+        if not is_valid(widget) then
+            return nil
+        end
+        local identity = full_name(widget)
+        if visited[identity] then
+            return nil
+        end
+        visited[identity] = true
+        local name_ok, name = pcall(function()
+            return widget:GetFName():ToString()
         end)
-        if not direct_ok or not is_valid(row) then
-            row = find_live_keyguide_row(construction, row_name)
+        if name_ok and tostring(name) == expected_name then
+            return widget
         end
-        if is_valid(row) then
-            row:SetVisibility(hidden and 1 or 0)
-            found_generic_row = true
-            verbose(string.format(
-                "%s native guide row %s: %s",
-                hidden and "Collapsed" or "Restored",
-                row_name,
-                full_name(row)
-            ))
-        end
-    end
-    if found_generic_row then
-        return true
-    end
-
-    local replacement_row = nil
-    for _, class_name in ipairs({ "BP_PalTextBlock_C", "TextBlock" }) do
-        for _, text_widget in ipairs(safe_find_all_of(class_name)) do
-            if is_valid(text_widget) then
-                local text_ok, current_text = pcall(function()
-                    local value = text_widget:GetText()
-                    local string_ok, value_string = pcall(function()
-                        return value:ToString()
-                    end)
-                    return string_ok and value_string or tostring(value)
+        local count_ok, count = pcall(function()
+            return widget:GetChildrenCount()
+        end)
+        if count_ok then
+            for index = 0, count - 1 do
+                local child_ok, child = pcall(function()
+                    return widget:GetChildAt(index)
                 end)
-                local normalized_text = string.lower(tostring(current_text))
-                if text_ok and (
-                    string.find(normalized_text, "axis alignment mode", 1, true) ~= nil
-                    or string.find(normalized_text, "replacement mode", 1, true) ~= nil
-                ) then
-                    local row_name = string.match(
-                        full_name(text_widget),
-                        "(WBP_Ingameconstruction_KeyGuide_[%w_]+)%.WidgetTree"
-                    )
-                    if row_name ~= nil then
-                        replacement_row = find_live_keyguide_row(construction, row_name)
-                        if is_valid(replacement_row) then
-                            log("Axis Alignment Mode uses live row " .. row_name .. ".")
-                            break
-                        end
+                if child_ok then
+                    local found = walk(child)
+                    if is_valid(found) then
+                        return found
                     end
                 end
             end
         end
-        if is_valid(replacement_row) then
-            break
-        end
+        return nil
     end
-    if not is_valid(replacement_row) then
-        log("Axis Alignment Mode guide row was not found.")
+    return walk(root)
+end
+
+construction_ui_hooks.__native_guide.is_gamepad_active = function()
+    local subsystem = FindFirstOf("CommonInputSubsystem")
+    if not is_valid(subsystem) then
         return false
     end
-    replacement_row:SetVisibility(hidden and 1 or 0)
+    local ok, input_type = pcall(function()
+        return subsystem.CurrentInputType
+    end)
+    if not ok then
+        return false
+    end
+    local numeric = tonumber(input_type)
+    if numeric == nil then
+        local unwrap_ok, unwrapped = pcall(function()
+            return input_type:get()
+        end)
+        numeric = unwrap_ok and tonumber(unwrapped) or nil
+    end
+    if numeric ~= nil then
+        return numeric == 1
+    end
+    return string.find(
+        string.lower(tostring(input_type)),
+        "gamepad",
+        1,
+        true
+    ) ~= nil
+end
+
+construction_ui_hooks.__native_guide.create_widget = function(
+    construction,
+    asset_path,
+    class_path
+)
+    local library = StaticFindObject(
+        "/Script/UMG.Default__WidgetBlueprintLibrary"
+    )
+    local widget_class = StaticFindObject(class_path)
+    if not is_valid(widget_class) then
+        pcall(function()
+            LoadAsset(asset_path)
+        end)
+        widget_class = StaticFindObject(class_path)
+    end
+    if not is_valid(library) or not is_valid(widget_class) then
+        return nil
+    end
+    local create_ok, widget = pcall(function()
+        return library:Create(
+            construction,
+            widget_class,
+            construction:GetOwningPlayer()
+        )
+    end)
+    return create_ok and is_valid(widget) and widget or nil
+end
+
+construction_ui_hooks.__native_guide.create_chord = function(
+    construction,
+    state_name,
+    action,
+    use_gamepad
+)
+    local binding = nil
+    if use_gamepad and gamepad_controller ~= nil then
+        local bindings_ok, gamepad_bindings = pcall(function()
+            return gamepad_controller:get_resolved_bindings()
+        end)
+        if not bindings_ok then
+            return nil
+        end
+        binding = gamepad_bindings ~= nil
+            and gamepad_bindings[state_name] ~= nil
+            and gamepad_bindings[state_name][action]
+            or nil
+    else
+        binding = resolved_bindings[action]
+    end
+    if binding == nil or binding.disabled then
+        return nil
+    end
+
+    local chord = construction_ui_hooks.__native_guide.construct(
+        construction,
+        "/Script/UMG.HorizontalBox"
+    )
+    if not is_valid(chord) then
+        return nil
+    end
+
+    local tokens = {}
+    for _, modifier in ipairs(binding.modifiers or {}) do
+        tokens[#tokens + 1] = modifier
+    end
+    tokens[#tokens + 1] = binding.key
+    for index, token in ipairs(tokens) do
+        local texture = nil
+        if use_gamepad and gamepad_controller ~= nil then
+            local texture_ok, loaded_texture = pcall(function()
+                return gamepad_controller:get_keycap_texture(token)
+            end)
+            texture = texture_ok and loaded_texture or nil
+        else
+            local asset = index < #tokens
+                and Keybindings.get_modifier_asset(token)
+                or binding.key_info
+            texture = load_keycap_texture(asset)
+        end
+        if is_valid(texture) then
+            local box = construction_ui_hooks.__native_guide.construct(
+                construction,
+                "/Script/UMG.SizeBox"
+            )
+            local image = construction_ui_hooks.__native_guide.construct(
+                construction,
+                "/Script/UMG.Image"
+            )
+            if not is_valid(box) or not is_valid(image) then
+                return nil
+            end
+            -- Palworld's input-data brush and the stock key-guide row are both
+            -- serialized at 36x36. Match that size and center the child slot;
+            -- the default Fill alignment otherwise stretches a smaller box to
+            -- the row height without increasing its width.
+            local keycap_size = 36.0
+            local key_ok, key_slot = pcall(function()
+                box:SetWidthOverride(keycap_size)
+                box:SetHeightOverride(keycap_size)
+                image:SetBrushFromTexture(texture, true)
+                box:SetContent(image)
+                return chord:AddChildToHorizontalBox(box)
+            end)
+            if not key_ok then
+                return nil
+            end
+            if is_valid(key_slot) then
+                pcall(function()
+                    key_slot:SetVerticalAlignment(1)
+                end)
+                key_slot:SetPadding({
+                    Left = 0.0,
+                    Top = 0.0,
+                    Right = index < #tokens and 3.0 or 0.0,
+                    Bottom = 0.0,
+                })
+            end
+        end
+    end
+    local count_ok, child_count = pcall(function()
+        return chord:GetChildrenCount()
+    end)
+    return count_ok and child_count > 0 and chord or nil
+end
+
+construction_ui_hooks.__native_guide.create_action_separator = function(
+    construction
+)
+    local box = construction_ui_hooks.__native_guide.construct(
+        construction,
+        "/Script/UMG.SizeBox"
+    )
+    local divider = construction_ui_hooks.__native_guide.construct(
+        construction,
+        "/Script/UMG.Border"
+    )
+    if not is_valid(box) or not is_valid(divider) then
+        return nil
+    end
+    local separator_ok = pcall(function()
+        box:SetWidthOverride(1.0)
+        box:SetHeightOverride(22.0)
+        divider:SetBrushColor({
+            R = 1.0,
+            G = 1.0,
+            B = 1.0,
+            A = 0.45,
+        })
+        box:SetContent(divider)
+    end)
+    return separator_ok and box or nil
+end
+
+construction_ui_hooks.__native_guide.create_row = function(
+    construction,
+    state_name,
+    definition,
+    use_gamepad
+)
+    local row = construction_ui_hooks.__native_guide.create_widget(
+        construction,
+        "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/"
+            .. "WBP_Ingameconstruction_KeyGuide",
+        "/Game/Pal/Blueprint/UI/UserInterface/InGame/Construction/"
+            .. "WBP_Ingameconstruction_KeyGuide"
+            .. ".WBP_Ingameconstruction_KeyGuide_C"
+    )
+    if not is_valid(row) then
+        return nil
+    end
+    local row_ok = pcall(function()
+        row.HorizontalBox_46:ClearChildren()
+        local rendered_actions = 0
+        for _, action in ipairs(definition.actions) do
+            local chord = construction_ui_hooks.__native_guide.create_chord(
+                construction,
+                state_name,
+                action,
+                use_gamepad
+            )
+            if is_valid(chord) then
+                if rendered_actions > 0 then
+                    local separator = construction_ui_hooks.__native_guide
+                        .create_action_separator(construction)
+                    if is_valid(separator) then
+                        local separator_slot = row.HorizontalBox_46
+                            :AddChildToHorizontalBox(separator)
+                        if is_valid(separator_slot) then
+                            separator_slot:SetPadding({
+                                Left = 4.0,
+                                Top = 0.0,
+                                Right = 8.0,
+                                Bottom = 0.0,
+                            })
+                            pcall(function()
+                                separator_slot:SetVerticalAlignment(2)
+                            end)
+                        end
+                    end
+                end
+                local chord_slot = row.HorizontalBox_46:AddChildToHorizontalBox(
+                    chord
+                )
+                if is_valid(chord_slot) then
+                    chord_slot:SetPadding({
+                        Left = 0.0,
+                        Top = 0.0,
+                        Right = 4.0,
+                        Bottom = 0.0,
+                    })
+                end
+                rendered_actions = rendered_actions + 1
+            end
+        end
+        row.Text_Main:SetText(FText(definition.label))
+        row.HorizontalBox_46:SetVisibility(0)
+        row.Text_Main:SetVisibility(0)
+        row:SetVisibility(0)
+    end)
+    return row_ok and row or nil
+end
+
+construction_ui_hooks.__native_guide.populate_panel = function(
+    construction,
+    panel,
+    state_name,
+    row_pairs,
+    use_gamepad,
+    dynamic_rows
+)
+    for _, pair in ipairs(row_pairs) do
+        local horizontal = construction_ui_hooks.__native_guide.construct(
+            construction,
+            "/Script/UMG.HorizontalBox"
+        )
+        if not is_valid(horizontal) then
+            return false
+        end
+        for index, definition in ipairs(pair) do
+            local row = construction_ui_hooks.__native_guide.create_row(
+                construction,
+                state_name,
+                definition,
+                use_gamepad
+            )
+            if not is_valid(row) then
+                return false
+            end
+            if definition.dynamic_name ~= nil
+                and dynamic_rows ~= nil
+            then
+                dynamic_rows[definition.dynamic_name] =
+                    dynamic_rows[definition.dynamic_name] or {}
+                table.insert(dynamic_rows[definition.dynamic_name], row)
+            end
+            local add_ok, row_slot = pcall(function()
+                return horizontal:AddChildToHorizontalBox(row)
+            end)
+            if not add_ok then
+                return false
+            end
+            if is_valid(row_slot) and index < #pair then
+                row_slot:SetPadding({
+                    Left = 0.0,
+                    Top = 0.0,
+                    Right = 24.0,
+                    Bottom = 0.0,
+                })
+            end
+        end
+        local add_ok, horizontal_slot = pcall(function()
+            return panel:AddChildToVerticalBox(horizontal)
+        end)
+        if not add_ok then
+            return false
+        end
+        if is_valid(horizontal_slot) then
+            horizontal_slot:SetPadding({
+                Left = 0.0,
+                Top = 0.0,
+                Right = 0.0,
+                Bottom = 4.0,
+            })
+        end
+    end
     return true
+end
+
+construction_ui_hooks.__native_guide.build = function(construction)
+    local guide = construction_ui_hooks.__native_guide
+    local instance_key = full_name(construction)
+    local previous = guide.instances[instance_key]
+    if previous ~= nil then
+        if previous.released == true or previous.blocked == true then
+            return nil
+        end
+        if previous.root ~= nil and is_valid(previous.root) then
+            return previous
+        end
+        guide.instances[instance_key] = nil
+    end
+
+    local root = guide.find_widget(
+        construction,
+        "VerticalBox_PP"
+    )
+    if not is_valid(root) then
+        log("Native guide scaffold VerticalBox_PP was not found.")
+        return nil
+    end
+    local count_ok, root_child_count = pcall(function()
+        return root:GetChildrenCount()
+    end)
+    if not count_ok then
+        return nil
+    end
+    if root_child_count > 0 then
+        guide.instances[instance_key] = { blocked = true }
+        log("Native guide scaffold was already populated without a live cache.")
+        return nil
+    end
+
+    local keyboard_frozen = guide.construct(
+        construction,
+        "/Script/UMG.VerticalBox"
+    )
+    local keyboard_unfrozen = guide.construct(
+        construction,
+        "/Script/UMG.VerticalBox"
+    )
+    local gamepad_frozen = guide.construct(
+        construction,
+        "/Script/UMG.VerticalBox"
+    )
+    local gamepad_unfrozen = guide.construct(
+        construction,
+        "/Script/UMG.VerticalBox"
+    )
+    if not is_valid(keyboard_frozen)
+        or not is_valid(keyboard_unfrozen)
+        or not is_valid(gamepad_frozen)
+        or not is_valid(gamepad_unfrozen)
+    then
+        return nil
+    end
+    local attach_ok = pcall(function()
+        root:AddChildToVerticalBox(keyboard_frozen)
+        root:AddChildToVerticalBox(keyboard_unfrozen)
+        root:AddChildToVerticalBox(gamepad_frozen)
+        root:AddChildToVerticalBox(gamepad_unfrozen)
+    end)
+    if not attach_ok then
+        return nil
+    end
+
+    local move_step_label = string.format(
+        "Step Down / Up (%g cm)",
+        current_move_step
+    )
+    local frozen_rows = {
+        {
+            { actions = { "move_left", "move_right" }, label = "Left / Right" },
+            { actions = { "move_forward", "move_back" }, label = "Forward / Back" },
+        },
+        {
+            { actions = { "move_up", "move_down" }, label = "Up / Down" },
+            { actions = { "rotate_left", "rotate_right" }, label = "Rotate Left / Right" },
+        },
+        {
+            {
+                actions = { "step_down", "step_up" },
+                label = move_step_label,
+                dynamic_name = "move_step",
+            },
+            { actions = { "reset" }, label = "Reset" },
+        },
+        {
+            { actions = { "toggle_freeze" }, label = "Unfreeze" },
+        },
+    }
+    local unfrozen_rows = {
+        {
+            { actions = { "toggle_freeze" }, label = "Freeze" },
+            { actions = { "copy_piece" }, label = "Copy Piece" },
+        },
+        {
+            { actions = { "freeze_to_piece" }, label = "Copy and Freeze" },
+        },
+    }
+    local dynamic_rows = {}
+    local keyboard_frozen_ok = guide.populate_panel(
+        construction,
+        keyboard_frozen,
+        "frozen",
+        frozen_rows,
+        false,
+        dynamic_rows
+    )
+    local keyboard_unfrozen_ok = guide.populate_panel(
+        construction,
+        keyboard_unfrozen,
+        "unfrozen",
+        unfrozen_rows,
+        false,
+        nil
+    )
+    local gamepad_frozen_ok = guide.populate_panel(
+        construction,
+        gamepad_frozen,
+        "frozen",
+        frozen_rows,
+        true,
+        dynamic_rows
+    )
+    local gamepad_unfrozen_ok = guide.populate_panel(
+        construction,
+        gamepad_unfrozen,
+        "unfrozen",
+        unfrozen_rows,
+        true,
+        nil
+    )
+    if not keyboard_frozen_ok
+        or not keyboard_unfrozen_ok
+        or not gamepad_frozen_ok
+        or not gamepad_unfrozen_ok
+    then
+        pcall(function()
+            root:ClearChildren()
+            root:SetVisibility(1)
+        end)
+        return nil
+    end
+
+    local instance = {
+        root = root,
+        keyboard_frozen = keyboard_frozen,
+        keyboard_unfrozen = keyboard_unfrozen,
+        gamepad_frozen = gamepad_frozen,
+        gamepad_unfrozen = gamepad_unfrozen,
+        dynamic_rows = dynamic_rows,
+        mode = nil,
+    }
+    guide.instances[instance_key] = instance
+    log("Crash-isolated native construction guide created.")
+    return instance
+end
+
+construction_ui_hooks.__native_guide.refresh_move_step = function(construction)
+    if not is_valid(construction) then
+        return false
+    end
+    local instance = construction_ui_hooks.__native_guide.instances[
+        full_name(construction)
+    ]
+    if instance == nil or instance.dynamic_rows == nil then
+        return false
+    end
+    local rows = instance.dynamic_rows.move_step or {}
+    local label = string.format("Step Down / Up (%g cm)", current_move_step)
+    local updated = false
+    for _, row in ipairs(rows) do
+        if is_valid(row) then
+            local row_ok = pcall(function()
+                row.Text_Main:SetText(FText(label))
+            end)
+            updated = row_ok or updated
+        end
+    end
+    return updated
+end
+
+construction_ui_hooks.__native_guide.show = function(construction, locked)
+    local instance = construction_ui_hooks.__native_guide.build(construction)
+    if instance == nil then
+        return false
+    end
+    local use_gamepad = construction_ui_hooks.__native_guide.is_gamepad_active()
+    local requested_mode = (use_gamepad and "gamepad:" or "keyboard:")
+        .. (locked and "frozen" or "unfrozen")
+    if instance.mode == requested_mode then
+        return true
+    end
+    local show_ok = pcall(function()
+        instance.root:SetVisibility(0)
+        instance.keyboard_frozen:SetVisibility(
+            not use_gamepad and locked and 0 or 1
+        )
+        instance.keyboard_unfrozen:SetVisibility(
+            not use_gamepad and not locked and 0 or 1
+        )
+        instance.gamepad_frozen:SetVisibility(
+            use_gamepad and locked and 0 or 1
+        )
+        instance.gamepad_unfrozen:SetVisibility(
+            use_gamepad and not locked and 0 or 1
+        )
+    end)
+    if show_ok then
+        instance.mode = requested_mode
+    end
+    return show_ok
+end
+
+construction_ui_hooks.__native_guide.hide = function(construction)
+    local instance = construction_ui_hooks.__native_guide.instances[
+        full_name(construction)
+    ]
+    if instance ~= nil and is_valid(instance.root) then
+        pcall(function()
+            instance.root:SetVisibility(1)
+        end)
+        instance.mode = "hidden"
+    end
+end
+
+construction_ui_hooks.__native_guide.release = function(construction)
+    if is_valid(construction) then
+        local guide = construction_ui_hooks.__native_guide
+        local construction_name = full_name(construction)
+        guide.instances[construction_name] = { released = true }
+        guide.detached_stock_rows[construction_name] = nil
+        guide.stock_layout_requests[construction_name] = nil
+        guide.stock_layout_modes[construction_name] = nil
+    end
+end
+
+construction_ui_hooks.__native_guide.stock_locked_row_names = {
+    WBP_Ingameconstruction_KeyGuide_Rotate = true,
+    WBP_Ingameconstruction_KeyGuide_5 = true,
+    WBP_Ingameconstruction_KeyGuide_6 = true,
+    WBP_Ingameconstruction_KeyGuide_7 = true,
+}
+construction_ui_hooks.__native_guide.detached_stock_rows = {}
+construction_ui_hooks.__native_guide.stock_layout_requests = {}
+construction_ui_hooks.__native_guide.stock_layout_modes = {}
+construction_ui_hooks.__native_guide.stock_layout_serial = 0
+
+construction_ui_hooks.__native_guide.capture_vertical_padding = function(widget)
+    local padding = { Left = 0.0, Top = 0.0, Right = 0.0, Bottom = 0.0 }
+    pcall(function()
+        local source = widget.Slot.Padding
+        padding.Left = tonumber(source.Left) or 0.0
+        padding.Top = tonumber(source.Top) or 0.0
+        padding.Right = tonumber(source.Right) or 0.0
+        padding.Bottom = tonumber(source.Bottom) or 0.0
+    end)
+    return padding
+end
+
+construction_ui_hooks.__native_guide.relayout_panel = function(panel)
+    if not is_valid(panel) then
+        return
+    end
+    pcall(function()
+        panel:InvalidateLayoutAndVolatility()
+    end)
+    pcall(function()
+        panel:ForceLayoutPrepass()
+    end)
+end
+
+construction_ui_hooks.__native_guide.detach_stock_rows = function(construction)
+    local guide = construction_ui_hooks.__native_guide
+    local construction_name = full_name(construction)
+    local previous = guide.detached_stock_rows[construction_name]
+    if previous ~= nil and is_valid(previous.parent) then
+        guide.stock_layout_modes[construction_name] = "frozen"
+        return true
+    end
+
+    local parent = guide.find_widget(construction, "VerticalBox_144")
+    if not is_valid(parent) then
+        log("Stock construction-guide parent VerticalBox_144 was not found.")
+        return false
+    end
+
+    local original = {}
+    local original_names = {}
+    local targets = {}
+    local first_target_index = nil
+    local capture_ok, capture_error = pcall(function()
+        local child_count = parent:GetChildrenCount()
+        for index = 0, child_count - 1 do
+            local child = parent:GetChildAt(index)
+            if is_valid(child) then
+                local child_name = child:GetFName():ToString()
+                local item = {
+                    widget = child,
+                    index = index,
+                    padding = guide.capture_vertical_padding(child),
+                }
+                table.insert(original, item)
+                original_names[full_name(child)] = true
+                if guide.stock_locked_row_names[child_name] == true then
+                    table.insert(targets, item)
+                    first_target_index = first_target_index == nil
+                        and index
+                        or math.min(first_target_index, index)
+                end
+            end
+        end
+    end)
+    if not capture_ok or #targets == 0 or first_target_index == nil then
+        log("Could not capture stock construction rows for detachment: "
+            .. tostring(capture_error))
+        return false
+    end
+
+    table.sort(targets, function(left, right)
+        return left.index > right.index
+    end)
+    local removed = 0
+    for _, item in ipairs(targets) do
+        local remove_ok, did_remove = pcall(function()
+            return parent:RemoveChild(item.widget)
+        end)
+        if remove_ok and did_remove ~= false then
+            removed = removed + 1
+        end
+    end
+    guide.relayout_panel(parent)
+    if removed == 0 then
+        return false
+    end
+
+    guide.detached_stock_rows[construction_name] = {
+        parent = parent,
+        original = original,
+        original_names = original_names,
+        first_target_index = first_target_index,
+    }
+    guide.stock_layout_modes[construction_name] = "frozen"
+    log(string.format(
+        "Detached %d of %d frozen-only stock construction rows.",
+        removed,
+        #targets
+    ))
+    return removed == #targets
+end
+
+construction_ui_hooks.__native_guide.restore_stock_rows = function(construction)
+    local guide = construction_ui_hooks.__native_guide
+    local construction_name = full_name(construction)
+    local record = guide.detached_stock_rows[construction_name]
+    if record == nil then
+        guide.stock_layout_modes[construction_name] = "unfrozen"
+        return true
+    end
+    local parent = record.parent
+    if not is_valid(parent) then
+        guide.detached_stock_rows[construction_name] = nil
+        guide.stock_layout_modes[construction_name] = nil
+        return false
+    end
+
+    local restore_ok, restore_error = pcall(function()
+        local extras = {}
+        local child_count = parent:GetChildrenCount()
+        for index = record.first_target_index, child_count - 1 do
+            local child = parent:GetChildAt(index)
+            if is_valid(child)
+                and record.original_names[full_name(child)] ~= true
+            then
+                table.insert(extras, {
+                    widget = child,
+                    padding = guide.capture_vertical_padding(child),
+                })
+            end
+        end
+
+        for index = child_count - 1, record.first_target_index, -1 do
+            parent:RemoveChildAt(index)
+        end
+
+        local function append_item(item)
+            if not is_valid(item.widget) then
+                return
+            end
+            local slot = parent:AddChildToVerticalBox(item.widget)
+            if is_valid(slot) then
+                slot:SetPadding(item.padding)
+            end
+        end
+        for _, item in ipairs(record.original) do
+            if item.index >= record.first_target_index then
+                append_item(item)
+            end
+        end
+        for _, item in ipairs(extras) do
+            append_item(item)
+        end
+    end)
+    guide.relayout_panel(parent)
+    if not restore_ok then
+        log("Could not restore detached stock construction rows: "
+            .. tostring(restore_error))
+        guide.stock_layout_modes[construction_name] = nil
+        return false
+    end
+    guide.detached_stock_rows[construction_name] = nil
+    guide.stock_layout_modes[construction_name] = "unfrozen"
+    log("Restored stock construction rows in their original order.")
+    return true
+end
+
+construction_ui_hooks.__native_guide.schedule_stock_layout = function(
+    construction,
+    locked
+)
+    local guide = construction_ui_hooks.__native_guide
+    if not is_live_object_of_exact_class(
+        construction,
+        CONSTRUCTION_WIDGET_CLASS_NAME
+    ) then
+        return false
+    end
+
+    local construction_name = full_name(construction)
+    local requested_mode = locked and "frozen" or "unfrozen"
+    local existing = guide.stock_layout_requests[construction_name]
+    if existing ~= nil and existing.mode == requested_mode then
+        count_ui_lifecycle_metric("native_layout_coalesced")
+        return true
+    end
+    local requested_display_mode =
+        (guide.is_gamepad_active() and "gamepad:" or "keyboard:")
+        .. requested_mode
+    local instance = guide.instances[construction_name]
+    local display_is_current = instance ~= nil
+        and is_valid(instance.root)
+        and instance.mode == requested_display_mode
+    if existing == nil
+        and guide.stock_layout_modes[construction_name] == requested_mode
+        and display_is_current
+    then
+        return true
+    end
+
+    guide.stock_layout_serial = guide.stock_layout_serial + 1
+    local request_id = guide.stock_layout_serial
+    local queued_freeze_generation = freeze_transition_generation
+    local queued_construction_generation = construction_ui_generation
+    guide.stock_layout_requests[construction_name] = {
+        id = request_id,
+        mode = requested_mode,
+    }
+    count_ui_lifecycle_metric("native_layout_queued")
+
+    local queued = runtime.delay(
+        75,
+        function()
+            local request = guide.stock_layout_requests[construction_name]
+            if request == nil
+                or request.id ~= request_id
+                or request.mode ~= requested_mode
+            then
+                count_ui_lifecycle_metric("native_layout_superseded")
+                return
+            end
+            guide.stock_layout_requests[construction_name] = nil
+            if queued_freeze_generation ~= freeze_transition_generation
+                or queued_construction_generation ~= construction_ui_generation
+                or full_name(construction) ~= construction_name
+                or full_name(cached_construction_widget) ~= construction_name
+                or not is_live_object_of_exact_class(
+                    construction,
+                    CONSTRUCTION_WIDGET_CLASS_NAME
+                )
+                or (locked and state ~= State.EDITING)
+                or (not locked and state == State.EDITING)
+            then
+                count_ui_lifecycle_metric("native_layout_stale")
+                return
+            end
+
+            local shown = guide.show(construction, locked)
+            if locked and not shown then
+                guide.stock_layout_modes[construction_name] = nil
+                count_ui_lifecycle_metric("native_guide_failed")
+                log("Native frozen construction guide could not be displayed; stock rows were preserved.")
+                return
+            end
+
+            local changed = locked
+                and guide.detach_stock_rows(construction)
+                or guide.restore_stock_rows(construction)
+            if not changed then
+                guide.stock_layout_modes[construction_name] = nil
+                count_ui_lifecycle_metric("native_layout_failed")
+            else
+                count_ui_lifecycle_metric("native_layout_applied")
+            end
+        end,
+        "Native construction guide layout",
+        function()
+            local request = guide.stock_layout_requests[construction_name]
+            if request ~= nil and request.id == request_id then
+                guide.stock_layout_requests[construction_name] = nil
+            end
+        end
+    )
+    if not queued then
+        guide.stock_layout_requests[construction_name] = nil
+    end
+    return queued
 end
 
 local function set_native_locked_controls_hidden(construction, hidden)
     if not is_valid(construction) then
-        return
+        return false
     end
-    -- Diagnostic isolation: leave the separately named Rotate row untouched
-    -- while mapping generic construction rows 5/6/7.
-    -- set_default_rotate_guide_hidden(construction, hidden)
-    set_replacement_mode_guide_hidden(construction, hidden)
+    return construction_ui_hooks.__native_guide.schedule_stock_layout(
+        construction,
+        hidden
+    )
 end
 
 local function apply_locked_keyguide(construction)
     if state ~= State.EDITING or not is_valid(construction) then
         return
     end
-    set_default_rotate_guide_hidden(construction, true)
-    set_replacement_mode_guide_hidden(construction, true)
-    for _, dormant_row_name in ipairs({
-        "WBP_Ingameconstruction_KeyGuide_5",
-        "WBP_Ingameconstruction_KeyGuide_7",
-    }) do
-        local dormant_row = find_live_keyguide_row(construction, dormant_row_name)
-        if is_valid(dormant_row) then
-            dormant_row:SetVisibility(1)
-        end
-    end
-    -- Palworld's state graph keeps dormant rows 5 and 7 collapsed even after
-    -- their child widgets are made visible. Row 6 has a live single-line
-    -- layout slot, so keep the complete guide compact enough to fit that slot.
-    local row_ok, row_error = setup_text_keyguide_row(
-        construction,
-        "WBP_Ingameconstruction_KeyGuide_6",
-        "8/2/4/6 Move | 3/1 Up/Down | 7/9 Rotate | MMB Unfreeze"
-    )
-    if row_ok then
-        log("Frozen construction key guide applied as a compact text row.")
-        return
-    end
-    log("WBP_Ingameconstruction_KeyGuide_6 text setup failed: " .. tostring(row_error))
-    log("Frozen construction key guide was not changed because text setup failed.")
+    set_native_locked_controls_hidden(construction, true)
 end
 
 local function hide_locked_keyguide(construction)
     if not is_valid(construction) then
         return
     end
-    set_default_rotate_guide_hidden(construction, false)
-    set_replacement_mode_guide_hidden(construction, false)
-    for _, row_name in ipairs({
-        "WBP_Ingameconstruction_KeyGuide_5",
-        "WBP_Ingameconstruction_KeyGuide_6",
-        "WBP_Ingameconstruction_KeyGuide_7",
-    }) do
-        local row = find_live_keyguide_row(construction, row_name)
-        if is_valid(row) then
-            pcall(function()
-                row.HorizontalBox_46:SetVisibility(0)
-            end)
-            row:SetVisibility(1)
-        end
-    end
+    set_native_locked_controls_hidden(construction, false)
 end
 
 local function unfrozen_guide_transition_is_locked()
@@ -1800,9 +2610,26 @@ local function unfrozen_guide_transition_is_locked()
 end
 
 local function unfrozen_guide_is_stable()
+    if unfrozen_guide_transition_is_locked() then
+        return false
+    end
+    if Config.ui ~= nil
+        and Config.ui.use_native_construction_guide == true
+        and is_valid(cached_construction_widget)
+    then
+        local instance = construction_ui_hooks.__native_guide.instances[
+            full_name(cached_construction_widget)
+        ]
+        local requested_mode =
+            (construction_ui_hooks.__native_guide.is_gamepad_active()
+                and "gamepad:" or "keyboard:")
+            .. "unfrozen"
+        return instance ~= nil
+            and is_valid(instance.root)
+            and instance.mode == requested_mode
+    end
     return perfect_placement_ui_mode == "unfrozen"
         and perfect_placement_ui_host ~= nil
-        and not unfrozen_guide_transition_is_locked()
 end
 
 local function show_unfrozen_guide_for_active_preview()
@@ -1821,7 +2648,19 @@ local function show_unfrozen_guide_for_active_preview()
     then
         return false
     end
-    return update_perfect_placement_ui(false, false, false)
+    local companion_updated = update_perfect_placement_ui(
+        false,
+        false,
+        false
+    )
+    if Config.ui ~= nil
+        and Config.ui.use_native_construction_guide == true
+        and is_valid(cached_construction_widget)
+    then
+        hide_locked_keyguide(cached_construction_widget)
+        return true
+    end
+    return companion_updated
 end
 
 local function ensure_keyguide_hook()
@@ -1831,13 +2670,16 @@ local function ensure_keyguide_hook()
     if keyguide_hook_callback == nil then
         keyguide_hook_callback = function(context)
             count_ui_lifecycle_metric("setup_keyguide")
-            if unfrozen_guide_is_stable() then
+            if companion_bridge ~= nil then
+                pcall(companion_bridge.ensure_current_world, companion_bridge)
+            end
+            local native_ui_enabled = Config.ui ~= nil
+                and Config.ui.use_native_construction_guide == true
+            if unfrozen_guide_is_stable() and not native_ui_enabled then
                 return
             end
             if state ~= State.EDITING
-                and (unfrozen_guide_transition_is_locked()
-                    or ui_host_lookup_blocked
-                    or ui_host_setup_pending)
+                and unfrozen_guide_transition_is_locked()
             then
                 count_ui_lifecycle_metric("setup_keyguide_suppressed")
                 return
@@ -1854,11 +2696,10 @@ local function ensure_keyguide_hook()
             end
             local apply_ok, apply_error = pcall(function()
                 if state == State.EDITING then
-                    if Config.ui ~= nil
-                        and not Config.ui.use_stock_keyguide_fallback
-                    then
-                        set_native_locked_controls_hidden(construction, true)
-                    else
+                    if native_ui_enabled then
+                        construction_ui_hooks.__native_guide.stock_layout_modes[
+                            full_name(construction)
+                        ] = nil
                         apply_locked_keyguide(construction)
                     end
                     return
@@ -1870,10 +2711,11 @@ local function ensure_keyguide_hook()
                 -- actor cycle. Explicit exit and Destruct hooks still hide it.
                 if perfect_placement_ui_mode ~= "unfrozen"
                     and not show_unfrozen_guide_for_active_preview()
-                    and not ui_host_lookup_blocked
-                    and not ui_host_setup_pending
                 then
+                    construction_ui_hooks.__native_guide.hide(construction)
                     update_perfect_placement_ui(false, false, true)
+                elseif native_ui_enabled then
+                    hide_locked_keyguide(construction)
                 end
             end)
             if not apply_ok then
@@ -1923,8 +2765,6 @@ local function schedule_construction_setup_retry(construction)
             if queued_freeze_generation ~= freeze_transition_generation
                 or queued_construction_generation ~= construction_ui_generation
                 or unfrozen_guide_transition_is_locked()
-                or ui_host_lookup_blocked
-                or ui_host_setup_pending
             then
                 count_ui_lifecycle_metric("setup_retry_stale")
                 return
@@ -1978,8 +2818,6 @@ local function ensure_construction_ui_hooks()
                     count_ui_lifecycle_metric("construction_setup")
                     if unfrozen_guide_is_stable()
                         or unfrozen_guide_transition_is_locked()
-                        or ui_host_lookup_blocked
-                        or ui_host_setup_pending
                     then
                         count_ui_lifecycle_metric("construction_setup_suppressed")
                         return
@@ -2096,6 +2934,7 @@ local function ensure_construction_ui_hooks()
                 -- Destruct is a hide signal only. Releasing Freeze here would
                 -- make release_preview touch stock rows on a dying UMG widget.
                 construction_ui_generation = construction_ui_generation + 1
+                construction_ui_hooks.__native_guide.release(widget)
                 cached_construction_widget = nil
                 count_ui_lifecycle_metric("construction_root_destruct")
                 update_perfect_placement_ui(false, false, true)
@@ -2169,7 +3008,7 @@ local function ensure_construction_ui_hooks()
 end
 
 update_construction_hotkey_guide = function(is_locked, show_transition_toast, hide_all)
-    local companion_ui_updated = update_perfect_placement_ui(
+    update_perfect_placement_ui(
         is_locked,
         show_transition_toast,
         hide_all
@@ -2209,18 +3048,13 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
             return
         end
         cached_construction_widget = construction
-        set_native_locked_controls_hidden(construction, is_locked)
-
-        -- The companion widget supplies Perfect Placement's own controls, but
-        -- the stock Rotate and Axis Alignment rows still need to be suppressed
-        -- while their inputs are unavailable during a frozen preview.
-        if companion_ui_updated then
+        if Config.ui == nil or not Config.ui.use_native_construction_guide then
             return
         end
-        if Config.ui ~= nil and not Config.ui.use_stock_keyguide_fallback then
-            return
-        end
-        if is_locked then
+        if hide_all then
+            construction_ui_hooks.__native_guide.hide(construction)
+            set_native_locked_controls_hidden(construction, false)
+        elseif is_locked then
             apply_locked_keyguide(construction)
         else
             hide_locked_keyguide(construction)
@@ -2230,13 +3064,16 @@ update_construction_hotkey_guide = function(is_locked, show_transition_toast, hi
             model = FindFirstOf("PalUIBuildingModel")
         end
         if is_valid(model) then
-            -- Rebuild through Palworld's own function. The Blueprint post-hook
-            -- applies the frozen text while the widget context is guaranteed live.
+            -- Let Palworld refresh its stock rows first. Native child creation
+            -- and row detachment are deferred outside this Blueprint callback.
             construction:SetupKeyGuide(model)
-            -- Also reapply directly for UE4SS builds that do not invoke the
-            -- Blueprint post-hook for calls originating from Lua.
-            if is_locked then
+            if hide_all then
+                construction_ui_hooks.__native_guide.hide(construction)
+                set_native_locked_controls_hidden(construction, false)
+            elseif is_locked then
                 apply_locked_keyguide(construction)
+            else
+                hide_locked_keyguide(construction)
             end
         else
             log("No live PalUIBuildingModel was found; skipped native guide rebuild.")
@@ -2570,6 +3407,20 @@ release_preview = function(reason)
     desired_rotation = nil
     log("Preview released to Palworld placement control.")
     settle_freeze_transition(transition_id, State.READY)
+    if not (left_construction or no_active_preview) then
+        runtime.delay(
+            FREEZE_TRANSITION_SETTLE_MS + 50,
+            function()
+                if transition_id ~= freeze_transition_generation
+                    or state ~= State.READY
+                then
+                    return
+                end
+                update_construction_hotkey_guide(false, false, false)
+            end,
+            "Post-unfreeze native guide refresh"
+        )
+    end
     return true
 end
 
@@ -2772,6 +3623,11 @@ local function change_move_step(multiplier)
         math.min(Config.movement.maximum, current_move_step * multiplier)
     )
     log(string.format("Move step: %.1f cm", current_move_step))
+    if is_valid(cached_construction_widget) then
+        construction_ui_hooks.__native_guide.refresh_move_step(
+            cached_construction_widget
+        )
+    end
     refresh_perfect_placement_ui()
 end
 
@@ -3429,6 +4285,15 @@ local function binding_uses_virtual_key(binding, virtual_key)
         or binding.key_info.alternate_virtual_key == virtual_key
 end
 
+local function binding_has_modifier(binding, requested_modifier)
+    for _, modifier in ipairs(binding.modifiers or {}) do
+        if modifier == requested_modifier then
+            return true
+        end
+    end
+    return false
+end
+
 local function register_current_action_binding(action)
     local binding = resolved_bindings[action]
     if binding == nil or binding.disabled then
@@ -3442,7 +4307,8 @@ local function register_current_action_binding(action)
     end
 
     local virtual_keys = { binding.key_info.virtual_key }
-    if action_numlock_alternates[action]
+    if (action_numlock_alternates[action]
+        or binding_has_modifier(binding, "SHIFT"))
         and binding.key_info.alternate_virtual_key ~= nil
     then
         virtual_keys[#virtual_keys + 1] = binding.key_info.alternate_virtual_key
@@ -3583,8 +4449,6 @@ gamepad_controller = Gamepad.new({
         or "GamepadEnabled",
     load_keycap_texture = load_keycap_texture,
 })
-gamepad_controller:start()
-
 local UI_HOST_CLASS_PATH =
     "/Game/Mods/PerfectPlacement/WBP_PerfectPlacement_KeyGuide"
     .. ".WBP_PerfectPlacement_KeyGuide_C"
@@ -3642,6 +4506,13 @@ ui_host_notify_callback = function(new_object)
                 and is_valid(active_checker)
                 and is_valid(active_preview)
                 and construction_ui_is_active(false) == true
+            if live_unfrozen
+                and Config.ui ~= nil
+                and Config.ui.use_native_construction_guide == true
+                and is_valid(cached_construction_widget)
+            then
+                hide_locked_keyguide(cached_construction_widget)
+            end
             update_perfect_placement_ui(
                 live_frozen,
                 false,
@@ -3666,6 +4537,17 @@ construction_ui_notify_callback = function(construction)
         CONSTRUCTION_WIDGET_CLASS_NAME
     ) then
         cached_construction_widget = construction
+        local construction_name = full_name(construction)
+        construction_ui_hooks.__native_guide.instances[construction_name] = nil
+        construction_ui_hooks.__native_guide.detached_stock_rows[
+            construction_name
+        ] = nil
+        construction_ui_hooks.__native_guide.stock_layout_requests[
+            construction_name
+        ] = nil
+        construction_ui_hooks.__native_guide.stock_layout_modes[
+            construction_name
+        ] = nil
     end
     ensure_keyguide_hook()
     ensure_construction_ui_hooks()
@@ -3708,6 +4590,13 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.2.0-rc.4")
-log("Companion key-guide UI bridge revision 26 loaded.")
+companion_bridge = CompanionBridge.new({
+    log = log,
+    is_valid = is_valid,
+    ue_helpers = UEHelpers,
+})
+companion_bridge:start()
+
+log("Loaded Perfect Placement 0.3.0-alpha.1")
+log("Consolidated native UI and gamepad bridge revision 1 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

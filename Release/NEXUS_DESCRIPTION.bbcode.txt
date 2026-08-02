@@ -28,7 +28,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 [*]Optional: DarnMenu 1.6.2 or newer for in-game Mod Options
 [/list]
 
-[b]Perfect Placement contains both a UE4SS Lua mod and a Logic Mod .pak. Install both parts.[/b]
+[b]Perfect Placement contains a UE4SS Lua mod and one consolidated resource _P.pak. Install both parts from the archive.[/b]
 
 With DarnMenu installed, configure controls and settings under [b]ESC → Mod Options → Perfect Placement[/b]. Changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
@@ -47,7 +47,7 @@ The optional DarnMenu page also configures movement steps and limits, controller
 The installed files should end up at:
 
 [code]Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
-Pal/Content/Paks/LogicMods/PerfectPlacement.pak[/code]
+Pal/Content/Paks/~mods/PerfectPlacement_NativeUI_P.pak[/code]
 
 If your UE4SS build still uses [b]mods.txt[/b], add:
 
@@ -87,6 +87,7 @@ The key guide appears only while a live construction preview is available. Mouse
 
 [list]
 [*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
+[*]In this experimental alpha, Palworld's top-row [b]4[/b] Replacement Mode input can still fire while a foundation preview is frozen; avoid that key while frozen. Numpad 4 movement is unaffected.
 [*]Install the mod on each client that wants to use the placement controls.
 [*]Test new mod versions in a disposable world before using an important save.
 [*]Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
@@ -97,7 +98,7 @@ The key guide appears only while a live construction preview is available. Mouse
 
 [b]Nothing happens when freezing[/b]
 
-Confirm UE4SS loaded PerfectPlacement and that [b]PerfectPlacement.pak[/b] is in [b]Pal/Content/Paks/LogicMods[/b].
+Confirm UE4SS loaded PerfectPlacement and that [b]PerfectPlacement_NativeUI_P.pak[/b] is in [b]Pal/Content/Paks/~mods[/b].
 
 [b]The guide appears but the controls do not respond[/b]
 
@@ -115,7 +116,7 @@ When reporting a problem, include your Palworld version, UE4SS version, installe
 Delete:
 
 [code]Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
-Pal/Content/Paks/LogicMods/PerfectPlacement.pak[/code]
+Pal/Content/Paks/~mods/PerfectPlacement_NativeUI_P.pak[/code]
 
 [line]
 [size=5][b]Support and questions[/b][/size]

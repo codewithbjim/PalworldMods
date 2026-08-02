@@ -25,7 +25,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 - A Palworld-compatible UE4SS installation
 - Optional: DarnMenu 1.6.2 or newer for in-game Mod Options
 
-Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install both parts.
+Perfect Placement contains a UE4SS Lua mod and one consolidated resource `_P.pak`; install both parts from the archive.
 
 With DarnMenu installed, configure controls and settings under **ESC → Mod Options → Perfect Placement**. Changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and `Scripts/config.lua` defaults unless a saved `Mods/shared/PerfectPlacement_user.lua` override already exists.
 
@@ -41,7 +41,7 @@ The installed files should end up at:
 
 ```text
 Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
-Pal/Content/Paks/LogicMods/PerfectPlacement.pak
+Pal/Content/Paks/~mods/PerfectPlacement_NativeUI_P.pak
 ```
 
 If your UE4SS build still uses `mods.txt`, add:
@@ -83,6 +83,7 @@ The key guide appears only while a live construction preview is available. Mouse
 ## Notes and limitations
 
 - Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
+- In this experimental alpha, Palworld's top-row `4` Replacement Mode input can still fire while a foundation preview is frozen; avoid that key while frozen. Numpad 4 movement is unaffected.
 - Install on each client that wants to use the placement controls.
 - Test new mod versions in a disposable world before using an important save.
 - Other mods that replace the same construction UI or take ownership of the same input bindings may conflict.
@@ -93,7 +94,7 @@ The key guide appears only while a live construction preview is available. Mouse
 
 **Nothing happens when freezing**
 
-Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement.pak` is in `Pal/Content/Paks/LogicMods`.
+Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement_NativeUI_P.pak` is in `Pal/Content/Paks/~mods`.
 
 **The guide appears but the controls do not respond**
 

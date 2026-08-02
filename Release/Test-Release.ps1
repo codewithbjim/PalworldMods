@@ -2,7 +2,6 @@
 param(
     [string]$Version,
     [string]$ZipPath,
-    [string]$PakSource,
     [string]$WorkshopPath,
     [switch]$RequireLuaCompiler
 )
@@ -31,11 +30,17 @@ $manifestPath = Join-Path $modRoot "Info.json"
 $configPath = Join-Path $modRoot "Scripts\config.lua"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
 $gamepadPath = Join-Path $modRoot "Scripts\gamepad.lua"
+$keybindingsPath = Join-Path $modRoot "Scripts\keybindings.lua"
+$companionBridgePath = Join-Path $modRoot "Scripts\companion_bridge.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
 $runtimePath = Join-Path $modRoot "Scripts\runtime.lua"
 $runtimeTestPath = Join-Path $releaseRoot "Tests\Test-Runtime.lua"
 $thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
-$pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
+$nativePakPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak"
+$nativePakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak.sha256"
+$nativeScaffoldBuilderPath = Join-Path $repoRoot "NativeUI\Build-Scaffold.ps1"
+$nativePakBuilderPath = Join-Path $repoRoot "NativeUI\Build-Pak.ps1"
+$nativeCookedRoot = Join-Path $repoRoot "NativeUI\Cooked"
 $changelogPath = Join-Path $releaseRoot "CHANGELOG.md"
 $releaseReadmePath = Join-Path $releaseRoot "README.txt"
 $workshopChangelogPath = Join-Path $releaseRoot "WORKSHOP_CHANGELOG.txt"
@@ -51,6 +56,8 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $configPath -PathType Leaf) `
     "Missing default config: $configPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $gamepadPath -PathType Leaf) `
     "Missing gamepad input adapter: $gamepadPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $companionBridgePath -PathType Leaf) `
+    "Missing consolidated companion bridge loader: $companionBridgePath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $runtimePath -PathType Leaf) `
     "Missing game-thread runtime helper: $runtimePath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $runtimeTestPath -PathType Leaf) `
@@ -61,8 +68,26 @@ Assert-ReleaseCondition (-not (Test-Path -LiteralPath $obsoleteMcmReaderPath)) `
     "Obsolete Mod Config Menu reader must not be shipped."
 Assert-ReleaseCondition (Test-Path -LiteralPath $thumbnailPath -PathType Leaf) `
     "Missing release thumbnail: $thumbnailPath"
-Assert-ReleaseCondition (Test-Path -LiteralPath $pakHashPath -PathType Leaf) `
-    "Missing release PAK checksum: $pakHashPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakPath -PathType Leaf) `
+    "Missing native UI PAK: $nativePakPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakHashPath -PathType Leaf) `
+    "Missing native UI PAK checksum: $nativePakHashPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nativeScaffoldBuilderPath -PathType Leaf) `
+    "Missing native UI scaffold builder: $nativeScaffoldBuilderPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakBuilderPath -PathType Leaf) `
+    "Missing native UI PAK builder: $nativePakBuilderPath"
+foreach ($relativeAsset in @(
+    "Pal\Content\Mods\PerfectPlacement\ModActor.uasset",
+    "Pal\Content\Mods\PerfectPlacement\ModActor.uexp",
+    "Pal\Content\Mods\PerfectPlacement\WBP_PerfectPlacement_KeyGuide.uasset",
+    "Pal\Content\Mods\PerfectPlacement\WBP_PerfectPlacement_KeyGuide.uexp",
+    "Pal\Content\Mods\PerfectPlacement\BP_PP_FrozenGamepadInput.uasset",
+    "Pal\Content\Mods\PerfectPlacement\BP_PP_UnfrozenGamepadInput.uasset"
+)) {
+    $cookedAsset = Join-Path $nativeCookedRoot $relativeAsset
+    Assert-ReleaseCondition (Test-Path -LiteralPath $cookedAsset -PathType Leaf) `
+        "Missing cooked companion asset: $cookedAsset"
+}
 Assert-ReleaseCondition (Test-Path -LiteralPath $nexusPublisherPath -PathType Leaf) `
     "Missing Nexus publisher: $nexusPublisherPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $nexusChangelogPath -PathType Leaf) `
@@ -78,10 +103,6 @@ if (-not $ZipPath) {
 if (-not $WorkshopPath) {
     $WorkshopPath = Join-Path $releaseRoot "Dist\Workshop-$Version"
 }
-if (-not $PakSource) {
-    $PakSource = Join-Path $releaseRoot "Assets\PerfectPlacement.pak"
-}
-
 Assert-ReleaseCondition ($manifest.PackageName -eq "PerfectPlacement") `
     "Unexpected package name '$($manifest.PackageName)'."
 Assert-ReleaseCondition ($manifest.Version -eq $Version) `
@@ -92,6 +113,17 @@ Assert-ReleaseCondition (-not ($manifest.Dependencies -contains "DarnMenu")) `
     "DarnMenu must remain an optional integration, not a hard package dependency."
 Assert-ReleaseCondition (@($manifest.Dependencies).Count -eq 1) `
     "Info.json must contain only the UE4SSExperimentalPW hard dependency."
+foreach ($type in @("Lua", "Paks")) {
+    Assert-ReleaseCondition ($manifest.InstallRule.Type -contains $type) `
+        "Info.json is missing the $type InstallRule."
+}
+Assert-ReleaseCondition (-not ($manifest.InstallRule.Type -contains "LogicMods")) `
+    "Info.json must retire the LogicMods InstallRule."
+$nativePaksRule = $manifest.InstallRule | Where-Object Type -eq "Paks"
+Assert-ReleaseCondition (
+    $nativePaksRule.Targets.Count -eq 1 -and
+    $nativePaksRule.Targets[0] -eq "./Paks/PerfectPlacement_NativeUI_P.pak"
+) "The Paks InstallRule must target the native UI PAK directly."
 Assert-ReleaseCondition ($manifest.Thumbnail -eq "thumbnail.png") `
     "Info.json Thumbnail must be thumbnail.png."
 Assert-ReleaseCondition ((Get-Item -LiteralPath $thumbnailPath).Length -lt 1MB) `
@@ -254,7 +286,7 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $configSource -match
         'gamepad\s*=\s*\{[\s\S]*?enabled\s*=\s*true'
-) "Gamepad support must default to enabled for the 0.2.0 controller release."
+) "Gamepad support must default to enabled for the 0.3.0 NativeUI alpha."
 Assert-ReleaseCondition (
     $gamepadSource -match
         '\[22\]\s*=\s*\{[\s\S]*?name\s*=\s*"Unfrozen_L3_DPadUp"' -and
@@ -291,8 +323,12 @@ Assert-ReleaseCondition (
 ) "A rejected guarded dispatch must be reported instead of treated as success."
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
+$keybindingsSource = Get-Content -LiteralPath $keybindingsPath -Raw
+$companionBridgeSource = Get-Content -LiteralPath $companionBridgePath -Raw
+$nativePakBuilderSource = Get-Content -LiteralPath $nativePakBuilderPath -Raw
 Assert-ReleaseCondition (
     $mainSource -match 'local\s+Gamepad\s*=\s*require\("gamepad"\)' -and
+    $mainSource -match 'local\s+CompanionBridge\s*=\s*require\("companion_bridge"\)' -and
     $mainSource -match 'Gamepad\.new\s*\(' -and
     $mainSource -match 'dispatch_action\s*=\s*dispatch_action'
 ) "main.lua must compose the event-driven gamepad adapter through its guarded dispatcher."
@@ -301,8 +337,106 @@ Assert-ReleaseCondition (
 ) "The Lua startup version does not match '$Version'."
 Assert-ReleaseCondition (
     $mainSource -match
-        [regex]::Escape("Companion key-guide UI bridge revision 26 loaded.")
-) "The Lua bridge revision does not match the staged gamepad PAK."
+        [regex]::Escape("Consolidated native UI and gamepad bridge revision 1 loaded.")
+) "The Lua bridge revision does not match the consolidated NativeUI PAK."
+Assert-ReleaseCondition (
+    $companionBridgeSource -match [regex]::Escape('/Game/Mods/PerfectPlacement/ModActor') -and
+    $companionBridgeSource -match 'RegisterLoadMapPostHook' -and
+    $companionBridgeSource -match 'world:SpawnActor' -and
+    $companionBridgeSource -match 'FindAllOf'
+) "The companion bridge must safely reuse or spawn ModActor from the regular _P.pak."
+Assert-ReleaseCondition (
+    $mainSource -match 'ue_helpers\s*=\s*UEHelpers' -and
+    $companionBridgeSource -match 'ue_helpers\s*=\s*options\.ue_helpers' -and
+    $companionBridgeSource -notmatch '(?m)^\s*return\s+UEHelpers\.'
+) "The companion bridge must receive UEHelpers explicitly instead of depending on another module's local or a missing global."
+Assert-ReleaseCondition (
+    $companionBridgeSource -notmatch
+        '\b(?:LoopAsync|LoopInGameThreadWithDelay|ExecuteWithDelay)\s*\('
+) "The companion bridge must not add a recurring polling loop."
+Assert-ReleaseCondition (
+    $nativePakBuilderSource -match 'CookedRuntimeDirectory' -and
+    $nativePakBuilderSource -match 'ModActor\.uasset' -and
+    $nativePakBuilderSource -match 'WBP_PerfectPlacement_KeyGuide\.uasset' -and
+    $nativePakBuilderSource -match 'Get-ChildItem\s+-LiteralPath\s+\$cookedRuntimeRoot'
+) "The NativeUI PAK builder must package the cooked companion runtime."
+Assert-ReleaseCondition (
+    $configSource -match 'use_native_construction_guide\s*=\s*true'
+) "Native construction-guide integration must default to enabled."
+Assert-ReleaseCondition (
+    $gamepadSource -match
+        'function\s+Instance:get_keycap_texture\(token\)[\s\S]*?' +
+        'return\s+self:_load_keycap\(token\)'
+) "The native guide must reuse the hardened gamepad keycap loader."
+Assert-ReleaseCondition (
+    $mainSource -match '"VerticalBox_PP"' -and
+    $mainSource -match 'keyboard_frozen\s*=' -and
+    $mainSource -match 'keyboard_unfrozen\s*=' -and
+    $mainSource -match 'gamepad_frozen\s*=' -and
+    $mainSource -match 'gamepad_unfrozen\s*='
+) "The native guide must build and cache all four device/state panels."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'create_action_separator\s*=\s*function\([\s\S]*?' +
+        '"/Script/UMG\.Border"' -and
+    $mainSource -match 'box:SetWidthOverride\(1\.0\)' -and
+    $mainSource -match 'box:SetHeightOverride\(22\.0\)' -and
+    $mainSource -match 'divider:SetBrushColor' -and
+    $mainSource -match
+        'if\s+rendered_actions\s*>\s*0\s+then[\s\S]*?' +
+        'create_action_separator\(construction\)'
+) "Paired native-guide actions must render a separator between complete chords."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'binding_has_modifier\(binding,\s*"SHIFT"\)' -and
+    $mainSource -match
+        'binding\.key_info\.alternate_virtual_key'
+) "Shift-modified numpad bindings must register their Windows navigation-key alternates."
+Assert-ReleaseCondition (
+    $keybindingsSource -match
+        'keys\.NUMPAD_4\.alternate_virtual_key\s*=\s*0x25' -and
+    $keybindingsSource -match
+        'keys\.NUMPAD_6\.alternate_virtual_key\s*=\s*0x27' -and
+    $keybindingsSource -match
+        'keys\.NUMPAD_8\.alternate_virtual_key\s*=\s*0x26' -and
+    $keybindingsSource -match
+        'keys\.NUMPAD_2\.alternate_virtual_key\s*=\s*0x28'
+) "Numpad movement keys must expose Windows navigation-key alternates."
+foreach ($label in @(
+    "Left / Right",
+    "Forward / Back",
+    "Up / Down",
+    "Rotate Left / Right",
+    "Step Down / Up (%g cm)",
+    "Reset",
+    "Unfreeze",
+    "Freeze",
+    "Copy Piece",
+    "Copy and Freeze"
+)) {
+    Assert-ReleaseCondition ($mainSource -match [regex]::Escape($label)) `
+        "The native guide is missing '$label'."
+}
+Assert-ReleaseCondition (
+    $mainSource -match 'local\s+keycap_size\s*=\s*36\.0' -and
+    $mainSource -match 'box:SetWidthOverride\(keycap_size\)' -and
+    $mainSource -match 'box:SetHeightOverride\(keycap_size\)'
+) "Native keycaps must retain the square Palworld-sized constraint."
+Assert-ReleaseCondition (
+    $mainSource -match
+        'schedule_stock_layout\s*=\s*function\([\s\S]*?' +
+        'runtime\.delay\(\s*75,[\s\S]*?' +
+        'queued_freeze_generation\s*~=\s*freeze_transition_generation[\s\S]*?' +
+        'queued_construction_generation\s*~=\s*construction_ui_generation'
+) "Native layout mutation must remain deferred, coalesced, and generation-safe."
+Assert-ReleaseCondition (
+    $mainSource -match 'parent:RemoveChild\(item\.widget\)' -and
+    $mainSource -match 'parent:AddChildToVerticalBox\(item\.widget\)'
+) "Frozen stock rows must be detached and restored as complete widgets."
+Assert-ReleaseCondition (
+    $mainSource -notmatch
+        'RegisterHook\(\s*["'']?/Script/UMG(?:\.|/)Widget:SetVisibility'
+) "The crash-prone global UMG SetVisibility hook must never be restored."
 Assert-ReleaseCondition (
     $mainSource -match
         'register_action\("freeze_to_piece",\s*freeze_to_looked_at_build_piece\)'
@@ -456,12 +590,16 @@ Assert-ReleaseCondition $stableGuideHelper.Success `
     "The stable unfrozen-guide fast path was not found."
 Assert-ReleaseCondition (
     $stableGuideHelper.Groups["body"].Value -match
+        'if\s+unfrozen_guide_transition_is_locked\(\)' -and
+    $stableGuideHelper.Groups["body"].Value -match
+        'requested_mode' -and
+    $stableGuideHelper.Groups["body"].Value -match
+        'instance\.mode\s*==\s*requested_mode' -and
+    $stableGuideHelper.Groups["body"].Value -match
         'perfect_placement_ui_mode\s*==\s*"unfrozen"' -and
     $stableGuideHelper.Groups["body"].Value -match
-        'perfect_placement_ui_host\s*~=\s*nil' -and
-    $stableGuideHelper.Groups["body"].Value -match
-        'not\s+unfrozen_guide_transition_is_locked\(\)'
-) "Stable unfrozen callbacks must bypass UObject discovery."
+        'perfect_placement_ui_host\s*~=\s*nil'
+) "Stable unfrozen callbacks must use the native panel fast path before companion discovery."
 $companionUiUpdate = [regex]::Match(
     $mainSource,
     'local function update_perfect_placement_ui\(' +
@@ -628,39 +766,33 @@ $keyguideCallbackStart = $keyguideHookFunction.Groups["body"].Value.IndexOf(
     'keyguide_hook_callback = function(context)'
 )
 $keyguideStableCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
-    'if unfrozen_guide_is_stable() then',
+    'if unfrozen_guide_is_stable() and not native_ui_enabled then',
     $keyguideCallbackStart
 )
 $keyguideContextRead = $keyguideHookFunction.Groups["body"].Value.IndexOf(
     'return context:get()',
     $keyguideCallbackStart
 )
-$keyguideBlockedCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
-    'or ui_host_lookup_blocked',
-    $keyguideCallbackStart
-)
-$keyguidePendingCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
-    'or ui_host_setup_pending',
+$keyguideTransitionCheck = $keyguideHookFunction.Groups["body"].Value.IndexOf(
+    'and unfrozen_guide_transition_is_locked()',
     $keyguideCallbackStart
 )
 Assert-ReleaseCondition (
     $keyguideCallbackStart -ge 0 -and
     $keyguideStableCheck -gt $keyguideCallbackStart -and
     $keyguideStableCheck -lt $keyguideContextRead -and
-    $keyguideBlockedCheck -gt $keyguideStableCheck -and
-    $keyguideBlockedCheck -lt $keyguideContextRead -and
-    $keyguidePendingCheck -gt $keyguideStableCheck -and
-    $keyguidePendingCheck -lt $keyguideContextRead
-) "Stable or quarantined SetupKeyGuide callbacks must return before reading UObjects."
+    $keyguideTransitionCheck -gt $keyguideStableCheck -and
+    $keyguideTransitionCheck -lt $keyguideContextRead
+) "Stable companion-only or transitional SetupKeyGuide callbacks must return before reading UObjects."
 Assert-ReleaseCondition (
     $keyguideHookFunction.Groups["body"].Value -match
-        'if\s+unfrozen_guide_is_stable\(\)\s*then\s*return\s*end' -and
+        'if\s+unfrozen_guide_is_stable\(\)\s+and\s+not\s+' +
+        'native_ui_enabled\s*then\s*return\s*end' -and
     $keyguideHookFunction.Groups["body"].Value -match
         'if\s+state\s*~=\s*State\.EDITING\s*' +
-        'and\s*\([\s\S]*?ui_host_lookup_blocked[\s\S]*?' +
-        'ui_host_setup_pending[\s\S]*?\)\s*then[\s\S]*?' +
+        'and\s+unfrozen_guide_transition_is_locked\(\)\s*then[\s\S]*?' +
         'return\s*end\s*local\s+construction\s*=\s*context'
-) "Stable and quarantined SetupKeyGuide branches must explicitly stop before unwrapping context."
+) "Stable companion-only and transitional SetupKeyGuide branches must stop before unwrapping context."
 $setupRetryFunction = [regex]::Match(
     $mainSource,
     'local function schedule_construction_setup_retry\(' +
@@ -719,9 +851,7 @@ Assert-ReleaseCondition (
     $setupRetryStaleReturns -and
     $setupRetryIdentityReturns -and
     $setupRetryBody -match
-        'unfrozen_guide_transition_is_locked\(\)[\s\S]*?' +
-        'or\s+ui_host_lookup_blocked[\s\S]*?' +
-        'or\s+ui_host_setup_pending' -and
+        'unfrozen_guide_transition_is_locked\(\)' -and
     $setupRetryBody -match
         'not\s+full_name_is_available\(queued_construction_name\)\s*or\s*' +
         'queued_construction_name\s*~=\s*full_name\(cached_construction_widget\)' -and
@@ -736,7 +866,7 @@ Assert-ReleaseCondition (
         'return\s+true\s*end' -and
     $setupRetryBody -match
         'if\s+queued_freeze_generation\s*~=\s*freeze_transition_generation' +
-        '[\s\S]*?ui_host_setup_pending\s*then[\s\S]*?' +
+        '[\s\S]*?unfrozen_guide_transition_is_locked\(\)\s*then[\s\S]*?' +
         'return\s*end' -and
     $setupRetryBody -match
         'if\s+not\s+full_name_is_available\(queued_construction_name\)' +
@@ -761,25 +891,20 @@ $constructionHookBody = $constructionHookFunction.Groups["body"].Value
 $constructionStableCheck = $constructionHookBody.IndexOf(
     'unfrozen_guide_is_stable()'
 )
-$constructionBlockedCheck = $constructionHookBody.IndexOf(
-    'or ui_host_lookup_blocked'
-)
-$constructionPendingCheck = $constructionHookBody.IndexOf(
-    'or ui_host_setup_pending'
+$constructionTransitionCheck = $constructionHookBody.IndexOf(
+    'or unfrozen_guide_transition_is_locked()'
 )
 $constructionContextRead = $constructionHookBody.IndexOf('return context:get()')
 Assert-ReleaseCondition (
     $constructionStableCheck -ge 0 -and
     $constructionContextRead -gt $constructionStableCheck -and
-    $constructionBlockedCheck -gt $constructionStableCheck -and
-    $constructionBlockedCheck -lt $constructionContextRead -and
-    $constructionPendingCheck -gt $constructionStableCheck -and
-    $constructionPendingCheck -lt $constructionContextRead
-) "Stable or quarantined construction Setup must return before reading UObjects."
+    $constructionTransitionCheck -gt $constructionStableCheck -and
+    $constructionTransitionCheck -lt $constructionContextRead
+) "Stable or transitional construction Setup must return before reading UObjects."
 Assert-ReleaseCondition (
     $constructionHookBody -match
         'if\s+unfrozen_guide_is_stable\(\)[\s\S]*?' +
-        'ui_host_lookup_blocked[\s\S]*?ui_host_setup_pending\s*' +
+        'unfrozen_guide_transition_is_locked\(\)\s*' +
         'then[\s\S]*?return\s*end\s*local\s+construction\s*=\s*context'
 ) "Suppressed construction Setup callbacks must stop before unwrapping context."
 Assert-ReleaseCondition (
@@ -971,6 +1096,7 @@ $requiredSources = @(
     "Scripts\config.lua",
     "Scripts\darnmenu.lua",
     "Scripts\gamepad.lua",
+    "Scripts\companion_bridge.lua",
     "Scripts\keybindings.lua",
     "Scripts\main.lua",
     "Scripts\runtime.lua"
@@ -980,14 +1106,12 @@ foreach ($relativePath in $requiredSources) {
     Assert-ReleaseCondition (Test-Path -LiteralPath $sourcePath -PathType Leaf) `
         "Missing release source: $sourcePath"
 }
-Assert-ReleaseCondition (Test-Path -LiteralPath $PakSource -PathType Leaf) `
-    "Missing staged PAK: $PakSource"
-$expectedPakHash = (
-    (Get-Content -LiteralPath $pakHashPath -Raw).Trim() -split "\s+"
+$expectedNativePakHash = (
+    (Get-Content -LiteralPath $nativePakHashPath -Raw).Trim() -split "\s+"
 )[0].ToUpperInvariant()
 Assert-ReleaseCondition (
-    (Get-Sha256 $PakSource) -eq $expectedPakHash
-) "Release PAK does not match its pinned SHA-256."
+    (Get-Sha256 $nativePakPath) -eq $expectedNativePakHash
+) "Native UI PAK does not match its pinned SHA-256."
 Assert-ReleaseCondition (Test-Path -LiteralPath $ZipPath -PathType Leaf) `
     "Missing release archive: $ZipPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $WorkshopPath -PathType Container) `
@@ -1013,6 +1137,7 @@ foreach ($scriptName in @(
     "main.lua",
     "config.lua",
     "gamepad.lua",
+    "companion_bridge.lua",
     "keybindings.lua",
     "runtime.lua",
     "darnmenu.lua"
@@ -1026,13 +1151,16 @@ foreach ($scriptName in @(
         (Get-Sha256 $sourceScript) -eq (Get-Sha256 $workshopScript)
     ) "Workshop package contains stale Scripts\$scriptName."
 }
-$workshopPak = Join-Path $WorkshopPath "LogicMods\PerfectPlacement.pak"
 Assert-ReleaseCondition (
-    Test-Path -LiteralPath $workshopPak -PathType Leaf
-) "Workshop package is missing LogicMods\PerfectPlacement.pak."
+    -not (Test-Path -LiteralPath (Join-Path $WorkshopPath "LogicMods"))
+) "Workshop package must not contain the retired LogicMods payload."
+$workshopNativePak = Join-Path $WorkshopPath "Paks\PerfectPlacement_NativeUI_P.pak"
 Assert-ReleaseCondition (
-    (Get-Sha256 $PakSource) -eq (Get-Sha256 $workshopPak)
-) "Workshop package contains a stale or unexpected PerfectPlacement.pak."
+    Test-Path -LiteralPath $workshopNativePak -PathType Leaf
+) "Workshop package is missing Paks\PerfectPlacement_NativeUI_P.pak."
+Assert-ReleaseCondition (
+    (Get-Sha256 $nativePakPath) -eq (Get-Sha256 $workshopNativePak)
+) "Workshop package contains a stale or unexpected native UI PAK."
 $workshopThumbnail = Join-Path $WorkshopPath "thumbnail.png"
 Assert-ReleaseCondition (
     Test-Path -LiteralPath $workshopThumbnail -PathType Leaf
@@ -1051,6 +1179,17 @@ foreach ($scriptPath in Get-ChildItem -LiteralPath $releaseRoot -Filter "*.ps1")
     ) | Out-Null
     Assert-ReleaseCondition ($errors.Count -eq 0) `
         "PowerShell syntax error in $($scriptPath.Name): $($errors[0].Message)"
+}
+foreach ($scriptPath in @($nativeScaffoldBuilderPath, $nativePakBuilderPath)) {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $scriptPath,
+        [ref]$tokens,
+        [ref]$errors
+    ) | Out-Null
+    Assert-ReleaseCondition ($errors.Count -eq 0) `
+        "PowerShell syntax error in $($scriptPath): $($errors[0].Message)"
 }
 
 foreach ($luaPath in Get-ChildItem -LiteralPath (
@@ -1193,14 +1332,20 @@ try {
     Assert-ReleaseCondition ($archiveManifest.Version -eq $Version) `
         "Archive manifest version '$($archiveManifest.Version)' is stale."
 
-    $archivePak = Join-Path $temporaryRoot (
-        "Pal\Content\Paks\LogicMods\PerfectPlacement.pak"
-    )
-    Assert-ReleaseCondition (Test-Path -LiteralPath $archivePak -PathType Leaf) `
-        "Archive is missing PerfectPlacement.pak."
     Assert-ReleaseCondition (
-        (Get-Sha256 $PakSource) -eq (Get-Sha256 $archivePak)
-    ) "Archive contains a stale or unexpected PerfectPlacement.pak."
+        -not (Test-Path -LiteralPath (
+            Join-Path $temporaryRoot "Pal\Content\Paks\LogicMods"
+        ))
+    ) "Archive must not contain the retired LogicMods payload."
+    $archiveNativePak = Join-Path $temporaryRoot (
+        "Pal\Content\Paks\~mods\PerfectPlacement_NativeUI_P.pak"
+    )
+    Assert-ReleaseCondition (
+        Test-Path -LiteralPath $archiveNativePak -PathType Leaf
+    ) "Archive is missing PerfectPlacement_NativeUI_P.pak."
+    Assert-ReleaseCondition (
+        (Get-Sha256 $nativePakPath) -eq (Get-Sha256 $archiveNativePak)
+    ) "Archive contains a stale or unexpected native UI PAK."
 
     foreach ($releaseFile in @("CHANGELOG.md", "README.txt")) {
         $sourcePath = Join-Path $releaseRoot $releaseFile
