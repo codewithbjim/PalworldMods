@@ -43,6 +43,7 @@ local validity_refresh_generation = 0
 local validity_refresh_trigger = nil
 local preview_relative_location = nil
 local preview_relative_rotation = nil
+local preserve_preview_origin_during_rotation = false
 local freeze_transition_generation = 0
 local freeze_transition_input_locked = false
 local keyguide_hook_registered = false
@@ -71,6 +72,13 @@ local FREEZE_TRANSITION_SETTLE_MS = 500
 local VALIDITY_REFRESH_INTERVAL_MS = 50
 local FREEZE_TO_PIECE_RETRY_MS = 50
 local FREEZE_TO_PIECE_MAX_ATTEMPTS = 60
+-- Automatic structural snapping (for example, a wall or roof against a
+-- foundation) does not always set BuilderComponent snap mode or retain either
+-- InstallStrategy snap cache. In that path the checker remains at the cursor
+-- hit while Palworld offsets the visible preview to the structural socket.
+-- Ordinary placement keeps both actor origins nearly coincident; allow a
+-- generous tolerance for asset/root noise before treating the offset as snap.
+local AUTOMATIC_SNAP_OFFSET_THRESHOLD_CM = 25.0
 
 local function log(message)
     print(string.format("[%s] %s\n", MOD, message))
@@ -2321,6 +2329,7 @@ local function cancel_begin_editing(transition_id, previous_state, reason)
     last_preview_overlap_state = nil
     preview_relative_location = nil
     preview_relative_rotation = nil
+    preserve_preview_origin_during_rotation = false
     desired_location = nil
     desired_rotation = nil
     validity_refresh_pending = false
@@ -2369,6 +2378,7 @@ local function begin_editing(defer_initial_validity)
             "the preview transform could not be read"
         )
     end
+    preserve_preview_origin_during_rotation = false
     local preview_transform_ok, preview_location, preview_rotation = pcall(function()
         return preview_actor:K2_GetActorLocation(), preview_actor:K2_GetActorRotation()
     end)
@@ -2395,6 +2405,49 @@ local function begin_editing(defer_initial_validity)
             preview_relative_location.Z,
             preview_relative_rotation.Yaw
         ))
+
+        local horizontal_offset = math.sqrt(
+            (preview_relative_location.X * preview_relative_location.X)
+            + (preview_relative_location.Y * preview_relative_location.Y)
+        )
+        local snap_target_found = false
+        local strategy_name = "<none>"
+        pcall(function()
+            local strategy = transform_actor.InstallStrategy
+            if not is_valid(strategy) then
+                return
+            end
+            strategy_name = full_name(strategy)
+            for _, property_name in ipairs({
+                "SnapHitBuildObjectCache",
+                "SnapHitActorCache",
+            }) do
+                local property_ok, target = pcall(function()
+                    return strategy[property_name]
+                end)
+                if property_ok and is_valid(target) then
+                    snap_target_found = true
+                    break
+                end
+            end
+        end)
+        local snap_mode_ok, snap_mode = pcall(function()
+            return builder_component:IsSnapMode()
+        end)
+        local explicit_snap = snap_target_found or (snap_mode_ok and snap_mode == true)
+        local inferred_structural_snap =
+            horizontal_offset >= AUTOMATIC_SNAP_OFFSET_THRESHOLD_CM
+        preserve_preview_origin_during_rotation = horizontal_offset > 0.01
+            and (explicit_snap or inferred_structural_snap)
+        if preserve_preview_origin_during_rotation then
+            local detection = explicit_snap and "explicit" or "structural offset"
+            log(string.format(
+                "Snapped rotation will preserve preview origin (offset %.1f cm; detection %s; strategy %s).",
+                horizontal_offset,
+                detection,
+                strategy_name
+            ))
+        end
     else
         preview_relative_location = nil
         preview_relative_rotation = nil
@@ -2409,12 +2462,14 @@ local function begin_editing(defer_initial_validity)
         Yaw = desired_rotation.Yaw,
         Roll = desired_rotation.Roll,
     }
-    log(string.format(
-        "Rotation anchored at Palworld install pivot (%.1f, %.1f, %.1f).",
-        desired_location.X,
-        desired_location.Y,
-        desired_location.Z
-    ))
+    if not preserve_preview_origin_during_rotation then
+        log(string.format(
+            "Rotation anchored at Palworld install pivot (%.1f, %.1f, %.1f).",
+            desired_location.X,
+            desired_location.Y,
+            desired_location.Z
+        ))
+    end
     last_preview_overlap_state = nil
     local tick_query_ok, tick_enabled = pcall(function()
         return preview_actor:IsActorTickEnabled()
@@ -2510,6 +2565,7 @@ release_preview = function(reason)
     last_preview_overlap_state = nil
     preview_relative_location = nil
     preview_relative_rotation = nil
+    preserve_preview_origin_during_rotation = false
     desired_location = nil
     desired_rotation = nil
     log("Preview released to Palworld placement control.")
@@ -2639,8 +2695,31 @@ local function rotate_preview(yaw_amount, degrees_override)
         verbose("Rotate input ignored while the frozen preview is unavailable or settling.")
         return
     end
+    local preview_anchor_x = nil
+    local preview_anchor_y = nil
+    if preserve_preview_origin_during_rotation
+        and preview_relative_location ~= nil
+    then
+        local previous_yaw = math.rad(desired_rotation.Yaw)
+        preview_anchor_x = desired_location.X
+            + (math.cos(previous_yaw) * preview_relative_location.X)
+            - (math.sin(previous_yaw) * preview_relative_location.Y)
+        preview_anchor_y = desired_location.Y
+            + (math.sin(previous_yaw) * preview_relative_location.X)
+            + (math.cos(previous_yaw) * preview_relative_location.Y)
+    end
+
     desired_rotation.Yaw = desired_rotation.Yaw
         + (yaw_amount * (degrees_override or Config.rotation.normal))
+    if preview_anchor_x ~= nil and preview_anchor_y ~= nil then
+        local next_yaw = math.rad(desired_rotation.Yaw)
+        desired_location.X = preview_anchor_x
+            - (math.cos(next_yaw) * preview_relative_location.X)
+            + (math.sin(next_yaw) * preview_relative_location.Y)
+        desired_location.Y = preview_anchor_y
+            - (math.sin(next_yaw) * preview_relative_location.X)
+            - (math.cos(next_yaw) * preview_relative_location.Y)
+    end
 
     if apply_preview_transform() then
         schedule_locked_validity_refresh()
@@ -3629,6 +3708,6 @@ end
 ensure_keyguide_hook()
 ensure_construction_ui_hooks()
 
-log("Loaded Perfect Placement 0.2.0-rc.3")
+log("Loaded Perfect Placement 0.2.0-rc.4")
 log("Companion key-guide UI bridge revision 26 loaded.")
 log("Open build mode, show a preview, then middle-click to freeze it.")

@@ -411,8 +411,17 @@ Assert-ReleaseCondition (
     $mainSource -match 'set_actor_transform_verified'
 ) "Transform calls must verify success after UE4SS FHitResult marshal errors."
 Assert-ReleaseCondition (
-    $mainSource -notmatch 'rotation_pivot|locked_origin_pivot'
+    $mainSource -notmatch 'rotation_pivot|locked_origin_pivot' -and
+    $mainSource -notmatch 'GetActorBounds'
 ) "Frozen rotation must use Palworld's install pivot instead of a visual-bounds pivot."
+Assert-ReleaseCondition (
+    $mainSource -match 'preserve_preview_origin_during_rotation' -and
+    $mainSource -match 'builder_component:IsSnapMode\(\)' -and
+    $mainSource -match 'SnapHitBuildObjectCache' -and
+    $mainSource -match 'SnapHitActorCache' -and
+    $mainSource -match 'AUTOMATIC_SNAP_OFFSET_THRESHOLD_CM' -and
+    $mainSource -match 'inferred_structural_snap'
+) "Snapped rotation must detect explicit snap state and automatic structural snap offsets."
 $rotatePreviewFunction = [regex]::Match(
     $mainSource,
     'local function rotate_preview\(' +
@@ -422,9 +431,15 @@ $rotatePreviewFunction = [regex]::Match(
 Assert-ReleaseCondition $rotatePreviewFunction.Success `
     "The frozen preview rotation function was not found."
 Assert-ReleaseCondition (
-    $rotatePreviewFunction.Groups["body"].Value -notmatch
-        'desired_location\.[XYZ]\s*='
-) "Frozen rotation must not translate the Palworld install pivot."
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'if\s+preserve_preview_origin_during_rotation' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'preview_anchor_x\s*=\s*desired_location\.X' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'desired_location\.X\s*=\s*preview_anchor_x' -and
+    $rotatePreviewFunction.Groups["body"].Value -match
+        'desired_location\.Y\s*=\s*preview_anchor_y'
+) "Snapped rotation must preserve the preview origin by compensating the install checker."
 Assert-ReleaseCondition (
     $mainSource -match 'registered_keybind_callbacks'
 ) "Registered keybind callbacks must keep a module-lifetime Lua reference."
