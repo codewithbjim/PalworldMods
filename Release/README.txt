@@ -1,4 +1,4 @@
-PERFECT PLACEMENT 0.3.0-ALPHA.1
+PERFECT PLACEMENT 0.3.0-ALPHA.2
 ============================
 
 EXPERIMENTAL ALPHA
@@ -46,8 +46,6 @@ Ctrl + Shift + middle mouse
                    Copy targeted piece, match its transform, and freeze
 
 Vertical movement is limited to 25 cm below and 650 cm above the initially frozen position. Numpad 1/3 vertical movement works with NumLock either on or off.
-
-In this experimental alpha, Palworld's top-row 4 Replacement Mode input can still fire while a foundation preview is frozen. Avoid that key while frozen; Numpad 4 movement is unaffected.
 
 Mouse bindings are ignored unless Palworld has an active construction preview. Middle mouse still freezes or releases the preview while Ctrl or Alt is held for Palworld build controls. Normal middle-mouse Pal commands remain unaffected.
 

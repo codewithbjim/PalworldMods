@@ -210,10 +210,10 @@ $configSource = Get-Content -LiteralPath $configPath -Raw
 $gamepadSource = Get-Content -LiteralPath $gamepadPath -Raw
 $runtimeSource = Get-Content -LiteralPath $runtimePath -Raw
 Assert-ReleaseCondition (
-    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*14'
-) "DarnMenu schema constant version 14 was not found."
-Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*14') `
-    "Embedded DarnMenu schema version 14 was not found."
+    $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*15'
+) "DarnMenu schema constant version 15 was not found."
+Assert-ReleaseCondition ($darnMenuSource -match 'schemaVersion\s*=\s*15') `
+    "Embedded DarnMenu schema version 15 was not found."
 Assert-ReleaseCondition (
     $darnMenuSource -match 'target\s*=\s*"PerfectPlacement_user"'
 ) "DarnMenu target must be PerfectPlacement_user."
@@ -387,21 +387,23 @@ Assert-ReleaseCondition (
         'create_action_separator\(construction\)'
 ) "Paired native-guide actions must render a separator between complete chords."
 Assert-ReleaseCondition (
-    $mainSource -match
-        'binding_has_modifier\(binding,\s*"SHIFT"\)' -and
-    $mainSource -match
-        'binding\.key_info\.alternate_virtual_key'
-) "Shift-modified numpad bindings must register their Windows navigation-key alternates."
+    $mainSource -match 'Keybindings\.get_shifted_keypad_registration\(binding\)' -and
+    $mainSource -match ':WINDOWS_SHIFT_KEYPAD:' -and
+    $mainSource -match 'translated_modifier_values' -and
+    $keybindingsSource -match 'keys\.NUMPAD_DECIMAL\.shifted_virtual_key\s*=\s*0x2E' -and
+    $keybindingsSource -match 'function\s+M\.get_shifted_keypad_registration\(binding\)'
+) "Shift-modified numpad bindings must register Windows-translated navigation events without the suppressed Shift modifier."
 Assert-ReleaseCondition (
-    $keybindingsSource -match
-        'keys\.NUMPAD_4\.alternate_virtual_key\s*=\s*0x25' -and
-    $keybindingsSource -match
-        'keys\.NUMPAD_6\.alternate_virtual_key\s*=\s*0x27' -and
-    $keybindingsSource -match
-        'keys\.NUMPAD_8\.alternate_virtual_key\s*=\s*0x26' -and
-    $keybindingsSource -match
-        'keys\.NUMPAD_2\.alternate_virtual_key\s*=\s*0x28'
-) "Numpad movement keys must expose Windows navigation-key alternates."
+    $mainSource -match [regex]::Escape(
+        '/Script/Pal.PalUIBuildingModel:CanChangeReplaceModeForBuildObject'
+    ) -and
+    $mainSource -match
+        'if state == State\.EDITING then\s*' +
+        'verbose\("Blocked Replacement Mode while preview is frozen\."\)\s*' +
+        'return false' -and
+    $mainSource -match
+        'RegisterHook\(\s*can_change_replace_path,\s*pre_callback,\s*post_callback'
+) "Replacement Mode must be unavailable while the preview is frozen."
 foreach ($label in @(
     "Left / Right",
     "Forward / Back",

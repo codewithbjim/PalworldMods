@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0-alpha.2
+
+Experimental Native UI update based on 0.2.0-rc.5.
+
+### Fixed
+
+- Register Windows' translated navigation-key events for Shift-modified Numpad controls, including Decimal, while preserving Ctrl and Alt in multi-modifier chords.
+- Keep frozen previews under Perfect Placement control by making Palworld Replacement Mode unavailable until release, preventing top-row `4` from hiding a foundation preview.
+
+### Testing
+
+- Add Lua regression coverage for Shift, Alt+Shift, Ctrl+Alt+Shift, and Shift+Numpad Decimal translation while confirming unmodified Numpad bindings remain unchanged.
+- Extend the release gate to require the frozen Replacement Mode availability guard and the corrected Shift-keypad registration path.
+
 ## 0.3.0-alpha.1
 
 Experimental native construction-key-guide integration based on 0.2.0-rc.4.
@@ -23,10 +37,6 @@ Experimental native construction-key-guide integration based on 0.2.0-rc.4.
 - Defer native widget construction and stock-row mutation until after Palworld's `SetupKeyGuide` callback, guard work by construction-widget and freeze generations, and coalesce superseded requests.
 - Cache the four device/state panels per live construction widget and switch visibility only when state or input device changes, without a recurring UI polling loop.
 - Preserve every 0.2.0-rc.4 snapped-rotation and lifecycle hardening change, and exclude the unresolved facility and floor validity experiment from this release.
-
-### Known alpha limitation
-
-- Palworld's top-row `4` Replacement Mode input can still fire while a foundation preview is frozen; avoid that key while frozen. Perfect Placement's Numpad 4 movement remains available.
 
 ## 0.2.0-rc.4
 

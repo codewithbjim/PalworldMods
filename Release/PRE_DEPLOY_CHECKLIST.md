@@ -159,7 +159,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | Required for 0.3.0-alpha.1 |
+| Controller | Required for 0.3.0-alpha.2 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |
