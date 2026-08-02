@@ -17,10 +17,10 @@ return {
         gamepad_enabled_property = "GamepadEnabled",
         use_palworld_keycaps = true,
 
-        -- Keep the old stock-widget experiment disabled. It is retained in
-        -- main.lua only as an optional diagnostic fallback while the custom
-        -- widget pak is being developed.
-        use_stock_keyguide_fallback = false,
+        -- Render placement controls inside Palworld's construction key guide.
+        -- The companion widget remains active for physical gamepad input and
+        -- transition toasts, but its standalone guide panel stays hidden.
+        use_native_construction_guide = true,
     },
 
     movement = {

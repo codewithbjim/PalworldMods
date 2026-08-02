@@ -2,7 +2,7 @@
   "ModName": "Perfect Placement",
   "PackageName": "PerfectPlacement",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.2.0-rc.4",
+  "Version": "0.3.0-alpha.1",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",
@@ -24,9 +24,9 @@
       ]
     },
     {
-      "Type": "LogicMods",
+      "Type": "Paks",
       "Targets": [
-        "./LogicMods/PerfectPlacement.pak"
+        "./Paks/PerfectPlacement_NativeUI_P.pak"
       ]
     }
   ]
