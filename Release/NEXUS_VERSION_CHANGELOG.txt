@@ -1,3 +1,3 @@
-Prevented child key-guide teardown from cycling the companion UI and input actors during unfrozen placement.
-Reduced repeated Setup, host, hook, and input-device guide work.
-Frozen rotation now uses Palworld's native install pivot.
+Frozen rotation now preserves the visible build-piece origin while snapped.
+Automatic foundation, wall, and roof snapping is detected even when Palworld does not expose snap state.
+Ordinary unsnapped placement keeps the RC.3 native install pivot.

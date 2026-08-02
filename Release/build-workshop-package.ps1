@@ -5,7 +5,7 @@ param(
 
     [string]$ThumbnailSource,
 
-    [string]$Version = "0.2.0-rc.3"
+    [string]$Version = "0.2.0-rc.4"
 )
 
 $ErrorActionPreference = "Stop"

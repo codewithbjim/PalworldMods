@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0-rc.4
+
+Snapped rotation pivot hotfix release candidate.
+
+### Fixed
+
+- Preserve the visible build-piece origin during frozen rotation when Palworld snaps the preview away from its install checker.
+- Detect automatic foundation, wall, and roof structural snapping even when Palworld exposes neither snap mode nor a retained snap target, while keeping ordinary unsnapped placement on the RC.3 native install pivot.
+
+### Testing
+
+- Extend the release gate to require explicit and inferred structural-snap detection plus checker compensation that keeps the visible preview origin fixed during rotation.
+
 ## 0.2.0-rc.3
 
 Unfrozen preview lifecycle, input, and rotation hotfix release candidate.
