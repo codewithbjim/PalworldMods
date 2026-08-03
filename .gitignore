@@ -15,6 +15,10 @@ PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/*
 # Superseded cooked-widget experiment and generated release archives
 PerfectPlacementPak/
 Release/Dist/
+Release/QuickConnectManager/Dist/
+Release/QuickConnectManager/Stage/
+QuickConnectManagerPak/Dist/
+QuickConnectManagerPak/Stage/
 Release/Tools/
 Release/WorkshopStage/
 Release/.nexus-apikey

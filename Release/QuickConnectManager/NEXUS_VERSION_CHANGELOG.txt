@@ -1,0 +1,2 @@
+Adds title-screen shortcuts, History import, saved-password joins, hotkeys, commands, and larger icons.
+Player counts and native server pings update before display and whenever Refresh is selected.

@@ -1,11 +1,27 @@
 [CmdletBinding()]
 param(
+    [ValidateSet("PerfectPlacement", "QuickConnectManager")]
+    [string]$PackageName = "PerfectPlacement",
     [string]$Version,
     [string]$ZipPath,
     [string]$PakSource,
     [string]$WorkshopPath,
     [switch]$RequireLuaCompiler
 )
+
+if ($PackageName -eq "QuickConnectManager") {
+    $quickConnectGate = Join-Path $PSScriptRoot "QuickConnectManager\Test-Release.ps1"
+    & $quickConnectGate `
+        -Version $(if ($Version) { $Version } else { "0.1.0" }) `
+        -ZipPath $ZipPath `
+        -PakSource $PakSource `
+        -WorkshopPath $WorkshopPath `
+        -RequireLuaCompiler:$RequireLuaCompiler
+    if (-not $?) {
+        throw "Quick Connect Manager release gate failed."
+    }
+    return
+}
 
 $ErrorActionPreference = "Stop"
 $releaseRoot = $PSScriptRoot

@@ -1,0 +1,2 @@
+"F:\Hobby Project\PalworldMods\QuickConnectManagerPak\Stage\Pal\Content\Mods\QuickConnectManager\WBP_QuickConnectPanel.uasset" "../../../Pal/Content/Mods/QuickConnectManager/WBP_QuickConnectPanel.uasset"
+"F:\Hobby Project\PalworldMods\QuickConnectManagerPak\Stage\Pal\Content\Mods\QuickConnectManager\WBP_QuickConnectPanel.uexp" "../../../Pal/Content/Mods/QuickConnectManager/WBP_QuickConnectPanel.uexp"

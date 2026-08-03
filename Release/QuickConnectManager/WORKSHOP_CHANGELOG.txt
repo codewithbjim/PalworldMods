@@ -1,0 +1,8 @@
+0.1.0 - Initial public release
+
+Added
+- Native Quick Connect panel on Palworld's title screen.
+- First-launch import of active recent dedicated servers from Palworld History.
+- Player count, native ping, password indicators, Refresh, Shift+Refresh sync, and removal controls.
+- Larger lock, Refresh, and removal icons for clearer controls.
+- Saved-password connections, Ctrl+Shift+F1 through F8 shortcuts, and qc console commands.

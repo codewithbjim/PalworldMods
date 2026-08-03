@@ -1,0 +1,27 @@
+[h1]Quick Connect Manager[/h1]
+
+Adds a native, non-modal dedicated-server selector to Palworld's launch screen. Select a server row to connect immediately while the normal title menu remains available.
+
+[h2]Features[/h2]
+
+[list]
+[*]Server names, player counts, ping, and password indicators.
+[*]One-time first-install import of active recent servers from Palworld History.
+[*]Refresh for current status and saved credentials; Shift+Refresh for forced rediscovery.
+[*]Native saved-password connection flow.
+[*]Ctrl+Shift+F1 through Ctrl+Shift+F8 shortcuts and qc console commands.
+[/list]
+
+[h2]Requirement[/h2]
+
+Requires the UE4SS Experimental package. Enable both dependencies under Options > Mod Management.
+
+[h2]Passwords[/h2]
+
+Saved server passwords are stored as plain text in the installed Scripts\config.lua. Protect that local file and do not include it in support logs or shared archives.
+
+If a password changes, connect once through Join Multiplayer Game, return to the title screen, and select Refresh.
+
+[h2]Safety[/h2]
+
+Quick Connect is client-side and does not modify dedicated servers, authentication, saves, worlds, or gameplay. Title re-renders and callbacks are isolated and validated, and no gameplay UI is created.

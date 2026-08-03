@@ -1,0 +1,30 @@
+[center][size=6][b]Quick Connect Manager[/b][/size][/center]
+
+Quick Connect Manager adds a native, non-modal dedicated-server selector to Palworld's launch screen. Select a server row to connect immediately while the normal title menu remains available.
+
+[size=5][b]Features[/b][/size]
+
+[list]
+[*]Shows server names, current players, ping, and password-required state on the title screen.
+[*]Imports active recent dedicated servers from Palworld's History list when first installed with no enabled server configured.
+[*]Uses Refresh for status and saved-credential updates; Shift+Refresh explicitly rediscovers an automatically managed list.
+[*]Connects through Palworld's native join-game flow and restores passwords already saved by Palworld.
+[*]Provides Ctrl+Shift+F1 through Ctrl+Shift+F8 shortcuts and qc console commands.
+[*]Does not modify servers, authentication, saves, worlds, or regular gameplay.
+[/list]
+
+[size=5][b]Requirement[/b][/size]
+
+Install Palworld's UE4SS Experimental package before installing Quick Connect Manager.
+
+[size=5][b]Installation[/b][/size]
+
+Close Palworld and extract the archive into the Palworld installation folder containing Pal. The Lua payload installs under Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager; the cooked panel installs as Pal\Content\Paks\~mods\QuickConnectManager_UI_P.pak.
+
+Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove the managed Mods\NativeMods\UE4SS\Mods\QuickConnectManager copy and Pal\Content\Paks\~WorkshopMods\QuickConnectManager_UI_P.pak before installing this archive.
+
+[size=5][b]Passwords[/b][/size]
+
+Saved server passwords are stored as plain text in the local Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\config.lua. Passwords are never written to the discovery cache or diagnostic output. Protect the configuration file and do not upload it in logs or support archives.
+
+If a server password changes, connect once through Palworld's Join Multiplayer Game screen, return to the title screen, and select Refresh.
