@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1-hotfix.1",
     [string]$ZipPath,
     [string]$PakSource,
     [string]$WorkshopPath,
@@ -77,7 +77,7 @@ Assert-Condition (@($manifest.Tags | Where-Object { $_ -notin @("UE4SS", "Utilit
 $luaRule = @($manifest.InstallRule | Where-Object Type -eq "Lua")
 $pakRule = @($manifest.InstallRule | Where-Object Type -eq "Paks")
 Assert-Condition ($luaRule.Count -eq 1 -and $luaRule[0].Targets.Count -eq 1 -and $luaRule[0].Targets[0] -eq "./Scripts") "Lua InstallRule is invalid."
-Assert-Condition ($pakRule.Count -eq 1 -and $pakRule[0].Targets.Count -eq 1 -and $pakRule[0].Targets[0] -eq "./Paks/QuickConnectManager_UI_P.pak") "Paks InstallRule is invalid."
+Assert-Condition ($pakRule.Count -eq 1 -and $pakRule[0].Targets.Count -eq 1 -and $pakRule[0].Targets[0] -eq "./Paks/") "Paks InstallRule is invalid."
 Assert-Condition ((Get-Item -LiteralPath $thumbnailPath).Length -lt 1MB) "Thumbnail must be smaller than 1 MB."
 Assert-Condition ((Get-Item -LiteralPath $nexusImagePath).Length -gt (Get-Item -LiteralPath $thumbnailPath).Length) "Nexus gallery image must preserve the full-resolution source."
 

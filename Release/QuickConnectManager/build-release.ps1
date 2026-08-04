@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1-hotfix.1",
     [switch]$KeepStage
 )
 
@@ -63,8 +63,8 @@ $pakRule = @($manifest.InstallRule | Where-Object Type -eq "Paks")
 if ($luaRule.Count -ne 1 -or $luaRule[0].Targets.Count -ne 1 -or $luaRule[0].Targets[0] -ne "./Scripts") {
     throw "The Lua InstallRule must target ./Scripts."
 }
-if ($pakRule.Count -ne 1 -or $pakRule[0].Targets.Count -ne 1 -or $pakRule[0].Targets[0] -ne "./Paks/QuickConnectManager_UI_P.pak") {
-    throw "The Paks InstallRule must target QuickConnectManager_UI_P.pak directly."
+if ($pakRule.Count -ne 1 -or $pakRule[0].Targets.Count -ne 1 -or $pakRule[0].Targets[0] -ne "./Paks/") {
+    throw "The Paks InstallRule must target the Workshop Paks directory."
 }
 if ((Get-Item -LiteralPath $thumbnailSource).Length -ge 1MB) {
     throw "Thumbnail must be smaller than Steam's 1 MB limit."

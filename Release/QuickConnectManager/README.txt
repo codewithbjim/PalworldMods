@@ -1,4 +1,4 @@
-QUICK CONNECT MANAGER 0.1.0
+QUICK CONNECT MANAGER 0.1.1-HOTFIX.1
 ===========================
 
 REQUIREMENT
@@ -19,7 +19,7 @@ Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\servers.lua
   Pal\Content\Paks\~mods\QuickConnectManager_UI_P.pak
 
-Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove Mods\NativeMods\UE4SS\Mods\QuickConnectManager and Pal\Content\Paks\~WorkshopMods\QuickConnectManager_UI_P.pak before installing this archive.
+Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove Mods\NativeMods\UE4SS\Mods\QuickConnectManager and Pal\Content\Paks\~WorkshopMods\QuickConnectManager before installing this archive.
 
 If the UE4SS installation uses mods.txt, add:
   QuickConnectManager : 1

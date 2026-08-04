@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Destination,
-    [string]$Version = "0.1.0"
+    [string]$Version = "0.1.1-hotfix.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +76,7 @@ $pakRule = @($manifest.InstallRule | Where-Object Type -eq "Paks")
 if ($luaRule.Count -ne 1 -or $luaRule[0].Targets[0] -ne "./Scripts") {
     throw "Staged Workshop Lua InstallRule is invalid."
 }
-if ($pakRule.Count -ne 1 -or $pakRule[0].Targets[0] -ne "./Paks/QuickConnectManager_UI_P.pak") {
+if ($pakRule.Count -ne 1 -or $pakRule[0].Targets.Count -ne 1 -or $pakRule[0].Targets[0] -ne "./Paks/") {
     throw "Staged Workshop Paks InstallRule is invalid."
 }
 Write-Host "Staged Quick Connect Manager $Version Workshop package at $destinationRoot"

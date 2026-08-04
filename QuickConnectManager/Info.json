@@ -2,7 +2,7 @@
   "ModName": "Quick Connect Manager",
   "PackageName": "QuickConnectManager",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.1.0",
+  "Version": "0.1.1-hotfix.1",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",
@@ -25,7 +25,7 @@
     {
       "Type": "Paks",
       "Targets": [
-        "./Paks/QuickConnectManager_UI_P.pak"
+        "./Paks/"
       ]
     }
   ]

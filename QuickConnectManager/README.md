@@ -51,7 +51,7 @@ For Steam Workshop, subscribe to the item, launch Palworld, and enable Quick Con
 
 For a Nexus/manual installation, close Palworld and extract the archive into the Palworld installation folder containing `Pal`. The archive installs the Lua mod under `Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager` and the cooked UI under `Pal\Content\Paks\~mods\QuickConnectManager_UI_P.pak`. If the UE4SS installation uses `mods.txt`, add `QuickConnectManager : 1`.
 
-Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove the managed `Mods\NativeMods\UE4SS\Mods\QuickConnectManager` copy and `Pal\Content\Paks\~WorkshopMods\QuickConnectManager_UI_P.pak` before installing the Nexus archive.
+Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove the managed `Mods\NativeMods\UE4SS\Mods\QuickConnectManager` copy and `Pal\Content\Paks\~WorkshopMods\QuickConnectManager` before installing the Nexus archive.
 
 ## Runtime safety
 

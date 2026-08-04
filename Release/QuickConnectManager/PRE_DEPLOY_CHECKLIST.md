@@ -76,7 +76,7 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 
 - [ ] Place the staged package in a disposable Workshop content directory and confirm `Info.json`, `Scripts`, `Paks`, and `thumbnail.png` are recognized by Palworld Mod Uploader.
 - [ ] Confirm the Lua InstallRule installs to `Mods\NativeMods\UE4SS\Mods\QuickConnectManager`.
-- [ ] Confirm the Paks InstallRule installs `QuickConnectManager_UI_P.pak` to `Pal\Content\Paks\~WorkshopMods`.
+- [ ] Confirm the Paks InstallRule installs `QuickConnectManager_UI_P.pak` to `Pal\Content\Paks\~WorkshopMods\QuickConnectManager`.
 - [ ] Enable the Workshop candidate under Options > Mod Management and repeat the initial title, one refresh, one successful connection, and one failed connection test.
 - [ ] Confirm updating the Workshop version replaces runtime files but preserves the installed user's `config.lua` behavior expected by Palworld's official loader.
 

@@ -19,7 +19,7 @@ Install Palworld's UE4SS Experimental package before installing Quick Connect Ma
 
 Close Palworld and extract the archive into the Palworld installation folder containing `Pal`. The Lua payload installs under `Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager`; the cooked panel installs as `Pal\Content\Paks\~mods\QuickConnectManager_UI_P.pak`.
 
-Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove the managed `Mods\NativeMods\UE4SS\Mods\QuickConnectManager` copy and `Pal\Content\Paks\~WorkshopMods\QuickConnectManager_UI_P.pak` before installing this archive.
+Do not install the Nexus and Steam Workshop versions at the same time. When switching from Workshop to Nexus, remove the managed `Mods\NativeMods\UE4SS\Mods\QuickConnectManager` copy and `Pal\Content\Paks\~WorkshopMods\QuickConnectManager` before installing this archive.
 
 ## Passwords
 

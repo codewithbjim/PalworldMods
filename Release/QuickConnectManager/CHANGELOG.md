@@ -1,5 +1,11 @@
 # Quick Connect Manager changelog
 
+## 0.1.1-hotfix.1 - 2026-08-04
+
+### Fixed
+
+- Target the Workshop `Paks` directory so `QuickConnectManager_UI_P.pak` is installed as a patch PAK under `Pal\Content\Paks\~WorkshopMods\QuickConnectManager` instead of using the individual file as the install target.
+
 ## 0.1.0 - 2026-08-04
 
 ### Added
