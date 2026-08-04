@@ -5,6 +5,7 @@ local completion_hook = nil
 local ping_complete_hook = nil
 local ping_failure_hook = nil
 local ping_host = nil
+local ping_hosts = {}
 local invalidated_address = nil
 local native_request_count = 0
 local bp_request = nil
@@ -28,6 +29,10 @@ local controller = object("controller")
 local join_class = object("join-class")
 local server_row_class = object("server-row-class")
 local subsystem_class = object("subsystem-class")
+local pal_utility = object("pal-utility")
+pal_utility.GetDisplayVersion = function()
+    return "v1.0.2.123456"
+end
 local ping_cache_subsystem = object("ping-cache-subsystem")
 ping_cache_subsystem.AddPingResultCache = function(_, address, ping)
     if ping == -1 then
@@ -76,6 +81,7 @@ widget.RequestGetServerListBP = function(_, ...)
             ServerAddress = "127.0.0.1:8211",
             ServerPort = 27015,
             ServerName = "Fresh History Row",
+            VersionString = "v1.0.2.654321",
             Ping = 42,
             NowPlayerNum = 3,
             MaxPlayerNum = 0,
@@ -89,11 +95,53 @@ widget.RequestGetServerListBP = function(_, ...)
             ServerAddress = "127.0.0.1:8211",
             ServerPort = 8211,
             ServerName = "History Placeholder",
+            VersionString = "v1.0.2.123456",
             Ping = -1,
             NowPlayerNum = -1,
             MaxPlayerNum = 32,
             IsLocked = false,
             WorldGUID = "fixture-fresh",
+        },
+        {
+            -- A direct-IP History entry can be version-compatible while its
+            -- live browser metadata remains unavailable.
+            ServerListType = 2,
+            ServerAddress = "100.64.0.5:8211",
+            ServerPort = 8211,
+            ServerName = "VPN Direct IP",
+            VersionString = "v1.0.2.123456",
+            Ping = -1,
+            NowPlayerNum = -1,
+            MaxPlayerNum = -1,
+            IsLocked = false,
+            WorldGUID = "fixture-vpn",
+        },
+        {
+            -- Invalid status cannot bypass an exact version mismatch.
+            ServerListType = 2,
+            ServerAddress = "100.64.0.6:8211",
+            ServerPort = 8211,
+            ServerName = "Old Invalid Server",
+            VersionString = "v0.5.0.67935",
+            Ping = -1,
+            NowPlayerNum = -1,
+            MaxPlayerNum = 4,
+            IsLocked = false,
+            WorldGUID = "fixture-old",
+        },
+        {
+            -- A valid ping is insufficient when the player count is invalid;
+            -- incomplete live status still requires the exact player build.
+            ServerListType = 2,
+            ServerAddress = "100.64.0.7:8211",
+            ServerPort = 8211,
+            ServerName = "Wrong Patch Server",
+            VersionString = "v1.0.1.100619",
+            Ping = 99,
+            NowPlayerNum = -1,
+            MaxPlayerNum = 32,
+            IsLocked = false,
+            WorldGUID = "fixture-wrong-patch",
         },
     }
     completion_hook({
@@ -119,20 +167,26 @@ widget_library.Create = function(_, _, class)
     row_widget.RemoveFromParent = function() end
     row_widget.SetupByServerDisplayData = function(_, display_data)
         ping_host = display_data.ServerAddress
-        ping_complete_hook(
-            {
-                get = function()
-                    return row_widget
-                end,
-            },
-            object("ping-operation"),
-            display_data.ServerAddress,
-            {
-                get = function()
-                    return 57
-                end,
-            }
-        )
+        ping_hosts[#ping_hosts + 1] = ping_host
+        local context = {
+            get = function()
+                return row_widget
+            end,
+        }
+        if display_data.ServerAddress == "100.64.0.5:8211" then
+            ping_failure_hook(context, object("ping-operation"))
+        else
+            ping_complete_hook(
+                context,
+                object("ping-operation"),
+                display_data.ServerAddress,
+                {
+                    get = function()
+                        return 57
+                    end,
+                }
+            )
+        end
     end
     return row_widget
 end
@@ -163,6 +217,9 @@ function StaticFindObject(path)
     end
     if path == "/Script/PocketpairUser.PocketpairUserSubsystem" then
         return subsystem_class
+    end
+    if path == "/Script/Pal.Default__PalUtility" then
+        return pal_utility
     end
     if path == "/Game/Pal/Blueprint/UI/UserInterface/Title/WBP_Title_WorldSelect_ListContent.WBP_Title_WorldSelect_ListContent_C" then
         return server_row_class
@@ -226,20 +283,28 @@ expect("settle callback exists", run_delay(750))
 expect("stale cached rows are cleared", empty_count == 1)
 expect("Palworld History wrapper is used", bp_request ~= nil)
 expect("History filter passed to wrapper", bp_request[1] == 2)
+expect("different-version rows remain excluded", widget.bIsShowIgnoreVersionServer == false)
 expect("empty region passed to wrapper", bp_request[2] == "")
 expect("first page passed to wrapper", bp_request[3] == 0)
 expect("empty search passed to wrapper", bp_request[4] == "")
 expect("Latest sort passed to wrapper", bp_request[5] == 0)
 expect("low-level fallback not used", native_request_count == 0)
 expect("result collection callback exists", run_delay(250))
-expect("stock row ping receives Palworld's display data", ping_host == "127.0.0.1:8211")
+expect("stock row ping receives enriched display data", ping_hosts[1] == "127.0.0.1:8211")
+expect("stock row ping receives direct-IP display data", ping_hosts[2] == "100.64.0.5:8211")
+expect("version-incompatible rows are not pinged", #ping_hosts == 2)
 expect("stock ping cache is invalidated before setup", invalidated_address == ping_host)
 expect("stock row ping completion callback exists", run_delay(0))
-expect("one fresh server collected", type(discovered) == "table" and #discovered == 1)
+expect("stock row ping failure callback exists", run_delay(0))
+expect("compatible direct-IP server retained", type(discovered) == "table" and #discovered == 2)
+expect("fully valid server may differ in final build", discovered[1].address == "127.0.0.1:8211")
 expect("stock row ping replaces server-list cache", discovered[1].ping == 57)
 expect("fresh player count collected", discovered[1].players == 3)
 expect("embedded game port is normalized", discovered[1].address == "127.0.0.1:8211")
 expect("missing capacity does not reject status row", discovered[1].max_players == nil)
+expect("direct-IP endpoint retained", discovered[2].address == "100.64.0.5:8211")
+expect("invalid direct-IP ping remains unavailable", discovered[2].ping == nil)
+expect("invalid direct-IP player count remains unavailable", discovered[2].players == nil)
 
 -- A native operation may complete again after the row has been released or
 -- after the bounded timeout has already settled the request. Both paths must be

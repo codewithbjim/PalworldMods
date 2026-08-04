@@ -1,3 +1,11 @@
+0.1.1-hotfix.2 - Scrollable server list and safer History filtering
+
+Fixed
+- Scroll beyond the three visible rows to reach every configured server.
+- Require an exact client-version match when ping or player count is invalid.
+- Allow fully valid servers when X.Y.Z matches and only the final build number differs.
+- Keep version-compatible direct-IP History entries even when live status is unavailable.
+
 0.1.1-hotfix.1 - Workshop PAK install fix
 
 Fixed

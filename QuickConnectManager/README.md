@@ -15,7 +15,7 @@ servers = {
 
 Restart Quick Connect Manager after changing the file. Addresses accept a hostname or IPv4 address and an optional port. URL options, commands, spaces, and embedded address passwords are rejected. The separate optional `password` field is supported and is stored as plain text in this local configuration file; passwords are never printed by the mod.
 
-On the mod's first launch, if no enabled server has been added, Quick Connect asks Palworld for the user's History server list. Only currently available, version-compatible results with valid status data are retained. World GUIDs, password-required state, and any password already saved by Palworld are added to the generated `config.lua`; the discovery cache deliberately omits the password. The bootstrap runs only once. Adding any enabled entry to `config.lua` takes precedence over the cache. Hold Shift while selecting Refresh to force a new discovery and replace the automatically managed server list.
+On the mod's first launch, if no enabled server has been added, Quick Connect asks Palworld for the user's History server list. Rows with an invalid ping or player count require an exact client-version match; rows with complete live status may differ only in the final build number while retaining the same `X.Y.Z` version. World GUIDs, password-required state, and any password already saved by Palworld are added to the generated `config.lua`; the discovery cache deliberately omits the password. The bootstrap runs only once. Adding any enabled entry to `config.lua` takes precedence over the cache. Hold Shift while selecting Refresh to force a new discovery and replace the automatically managed server list.
 
 ## Launch-screen selector
 
@@ -61,6 +61,6 @@ The panel exists only on Palworld's title world. Runtime callbacks validate Unre
 
 - Saved server passwords are local plain text in `config.lua`; protect that file and do not include it in shared logs or mod archives.
 - Manually configured servers remain config-based; the panel can remove only automatically discovered entries.
-- The compact launch selector displays the first three enabled servers; all configured entries remain available through console commands.
+- The compact launch selector displays three server rows at a time; use the vertical scrollbar or mouse wheel to reach additional entries.
 - Refresh uses Palworld's History query, so a manually configured server receives updated status only when it is also present in the user's History list.
 - IPv6 addresses are not supported yet.

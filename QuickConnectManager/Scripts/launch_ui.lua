@@ -41,6 +41,7 @@ local ROW_HEIGHT = 42
 local ROW_GAP = 4
 local ROW_START_Y = 77
 local MAX_ROWS = 3
+local ROW_VIEWPORT_HEIGHT = MAX_ROWS * ROW_HEIGHT + (MAX_ROWS - 1) * ROW_GAP
 local REFRESH_ICON_SIZE = 40
 local LOCK_ICON_SIZE = 27
 local REMOVE_ICON_SIZE = 36
@@ -1050,6 +1051,38 @@ build_panel = function()
         canvas_add(canvas, header_rule, 22, 72, PANEL_WIDTH - 44, 2, 2)
     end
 
+    local row_canvas = canvas
+    if #state.entries > 0 then
+        local scroll_box = construct("/Script/UMG.ScrollBox", tree)
+        local row_size_box = construct("/Script/UMG.SizeBox", tree)
+        local scrolling_canvas = construct("/Script/UMG.CanvasPanel", tree)
+        if not alive(scroll_box) or not alive(row_size_box) or not alive(scrolling_canvas) then
+            discard_panel(widget)
+            log("Could not construct the server-list scroll container; will retry.")
+            return
+        end
+
+        local content_height = #state.entries * ROW_HEIGHT + math.max(0, #state.entries - 1) * ROW_GAP
+        local scroll_ok = pcall(function()
+            row_size_box:SetWidthOverride(PANEL_WIDTH)
+            row_size_box:SetHeightOverride(content_height)
+            row_size_box:AddChild(scrolling_canvas)
+            scroll_box:AddChild(row_size_box)
+            scroll_box:SetClipping(1)
+        end)
+        pcall(function()
+            scroll_box:SetAnimateWheelScrolling(true)
+            scroll_box:SetWheelScrollMultiplier(ROW_HEIGHT + ROW_GAP)
+            scroll_box:SetAlwaysShowScrollbar(#state.entries > MAX_ROWS)
+        end)
+        if not scroll_ok or not canvas_add(canvas, scroll_box, 0, ROW_START_Y, PANEL_WIDTH, ROW_VIEWPORT_HEIGHT, 2) then
+            discard_panel(widget)
+            log("Could not attach the server-list scroll container; will retry.")
+            return
+        end
+        row_canvas = scrolling_canvas
+    end
+
     if #state.entries == 0 then
         add_label(
             canvas,
@@ -1066,16 +1099,16 @@ build_panel = function()
             3
         )
     else
-        for index = 1, math.min(#state.entries, MAX_ROWS) do
+        for index = 1, #state.entries do
             local entry = state.entries[index]
-            local row_y = ROW_START_Y + (index - 1) * (ROW_HEIGHT + ROW_GAP)
+            local row_y = (index - 1) * (ROW_HEIGHT + ROW_GAP)
             local button = make_native_button(panel, {
                 kind = "connect",
                 index = index,
             })
             if alive(button) then
                 canvas_add(
-                    canvas,
+                    row_canvas,
                     button,
                     ROW_X,
                     row_y,
@@ -1090,7 +1123,7 @@ build_panel = function()
                 local lock_icon = make_icon(tree, state.lock_texture, 0.92)
                 if alive(lock_icon) then
                     canvas_add(
-                        canvas,
+                        row_canvas,
                         lock_icon,
                         40 - LOCK_ICON_SIZE / 2,
                         row_y + (ROW_HEIGHT - LOCK_ICON_SIZE) / 2,
@@ -1100,7 +1133,7 @@ build_panel = function()
                     )
                 else
                     add_label(
-                        canvas,
+                        row_canvas,
                         tree,
                         template,
                         "P",
@@ -1116,7 +1149,7 @@ build_panel = function()
                 end
             end
             local name_label = add_label(
-                canvas,
+                row_canvas,
                 tree,
                 template,
                 entry.name,
@@ -1138,7 +1171,7 @@ build_panel = function()
                 end)
             end
             add_label(
-                canvas,
+                row_canvas,
                 tree,
                 template,
                 players,
@@ -1152,7 +1185,7 @@ build_panel = function()
                 4
             )
             add_label(
-                canvas,
+                row_canvas,
                 tree,
                 template,
                 ping,
@@ -1172,7 +1205,7 @@ build_panel = function()
                 })
                 if alive(remove_button) then
                     canvas_add(
-                        canvas,
+                        row_canvas,
                         remove_button,
                         REMOVE_X,
                         row_y,
@@ -1187,7 +1220,7 @@ build_panel = function()
                     )
                     if alive(remove_icon) then
                         canvas_add(
-                            canvas,
+                            row_canvas,
                             remove_icon,
                             REMOVE_X + (REMOVE_WIDTH - REMOVE_ICON_SIZE) / 2,
                             row_y + (ROW_HEIGHT - REMOVE_ICON_SIZE) / 2,
@@ -1197,7 +1230,7 @@ build_panel = function()
                         )
                     else
                         add_label(
-                            canvas,
+                            row_canvas,
                             tree,
                             template,
                             "X",

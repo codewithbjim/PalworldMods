@@ -16,6 +16,7 @@ local PING_FAILURE_EVENT = SERVER_ROW_CLASS .. ":OnPingFailure"
 local SUBSYSTEM_LIBRARY = "/Script/Engine.Default__SubsystemBlueprintLibrary"
 local POCKETPAIR_SUBSYSTEM_CLASS =
     "/Script/PocketpairUser.PocketpairUserSubsystem"
+local PAL_UTILITY = "/Script/Pal.Default__PalUtility"
 local HISTORY_FILTER = 2
 local LATEST_SORT = 0
 local MAX_ACCEPTED_PING = 999999
@@ -184,6 +185,49 @@ local function boolean_value(value)
         return value:get()
     end)
     return ok and unwrapped == true
+end
+
+local function version_parts(value)
+    local major, minor, patch, build = string_value(value):match(
+        "[vV]?(%d+)%.(%d+)%.(%d+)%.(%d+)"
+    )
+    if major == nil then
+        return nil
+    end
+    return {
+        tonumber(major),
+        tonumber(minor),
+        tonumber(patch),
+        tonumber(build),
+    }
+end
+
+local function current_game_version(world_context)
+    local utility_ok, utility = pcall(StaticFindObject, PAL_UTILITY)
+    if not utility_ok or not alive(utility) then
+        return nil
+    end
+    local version_ok, version = pcall(function()
+        return utility:GetDisplayVersion(world_context)
+    end)
+    if not version_ok then
+        return nil
+    end
+    return version_parts(version)
+end
+
+local function is_compatible_version(server_value, player_version, exact)
+    local server_version = version_parts(server_value)
+    if server_version == nil or player_version == nil then
+        return false
+    end
+    if server_version[1] ~= player_version[1]
+        or server_version[2] ~= player_version[2]
+        or server_version[3] ~= player_version[3]
+    then
+        return false
+    end
+    return not exact or server_version[4] == player_version[4]
 end
 
 local function restore_saved_password(widget, world_guid, host, port, locked)
@@ -438,6 +482,8 @@ end
 local function collect_live_servers(widget)
     local servers = {}
     local seen = {}
+    local quality_by_address = {}
+    local player_version = current_game_version(widget)
     local total_rows = 0
     local history_rows = 0
     local rejections = {
@@ -446,6 +492,7 @@ local function collect_live_servers(widget)
         ping = 0,
         players = 0,
         capacity = 0,
+        version = 0,
         duplicate = 0,
         normalization = 0,
     }
@@ -484,6 +531,7 @@ local function collect_live_servers(widget)
             local ping = number_value(row.Ping)
             local players = number_value(row.NowPlayerNum)
             local max_players = number_value(row.MaxPlayerNum)
+            local version = string_value(row.VersionString)
             local locked = boolean_value(row.IsLocked)
             local endpoint_valid = host ~= ""
                 and port ~= nil and port >= 1 and port <= 65535
@@ -503,10 +551,26 @@ local function collect_live_servers(widget)
             if not capacity_valid then
                 rejections.capacity = rejections.capacity + 1
             end
-            if endpoint_valid and ping_valid and players_valid then
+            local exact_version_required = not ping_valid or not players_valid
+            local version_valid = is_compatible_version(
+                version,
+                player_version,
+                exact_version_required
+            )
+            if not version_valid then
+                rejections.version = rejections.version + 1
+            end
+            -- Rows without complete live status must exactly match the player
+            -- build. Fully live rows may differ only in the final build number.
+            if endpoint_valid and version_valid then
                 local address = host .. ":" .. tostring(math.floor(port))
-                if not seen[address] then
-                    seen[address] = true
+                local quality = (ping_valid and 1 or 0)
+                    + (players_valid and 1 or 0)
+                    + (capacity_valid and 1 or 0)
+                local existing_index = seen[address]
+                if existing_index == nil
+                    or quality > (quality_by_address[address] or -1)
+                then
                     local name = string_value(row.ServerName):match("^%s*(.-)%s*$")
                     if name == "" then
                         name = address
@@ -534,11 +598,17 @@ local function collect_live_servers(widget)
                     } })
                     if normalized[1] ~= nil then
                         normalized[1]._display_data = row
-                        servers[#servers + 1] = normalized[1]
+                        if existing_index == nil then
+                            servers[#servers + 1] = normalized[1]
+                            seen[address] = #servers
+                        else
+                            servers[existing_index] = normalized[1]
+                        end
+                        quality_by_address[address] = quality
                     else
                         rejections.normalization = rejections.normalization + 1
                     end
-                else
+                elseif existing_index ~= nil then
                     rejections.duplicate = rejections.duplicate + 1
                 end
             end
@@ -976,7 +1046,7 @@ local function register_completion_hook()
                     safe_log(string.format(
                         "Palworld History query returned %d row(s), %d usable; "
                             .. "other_type=%d invalid_endpoint=%d invalid_ping=%d "
-                            .. "invalid_players=%d invalid_capacity=%d duplicate=%d "
+                            .. "invalid_players=%d invalid_capacity=%d invalid_version=%d duplicate=%d "
                             .. "normalization=%d.",
                         total_rows,
                         #servers,
@@ -985,6 +1055,7 @@ local function register_completion_hook()
                         rejections.ping,
                         rejections.players,
                         rejections.capacity,
+                        rejections.version,
                         rejections.duplicate,
                         rejections.normalization
                     ))

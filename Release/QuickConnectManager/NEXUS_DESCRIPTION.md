@@ -5,7 +5,9 @@ Quick Connect Manager adds a native, non-modal dedicated-server selector to Palw
 ## Features
 
 - Shows server names, current players, ping, and password-required state on the title screen.
+- Scrolls through every configured server while retaining a compact three-row viewport.
 - Imports active recent dedicated servers from Palworld's History list when the mod is first installed with no enabled server configured.
+- Requires exact client versions for incomplete History status and permits fully valid rows only when `X.Y.Z` matches.
 - Uses Refresh for status and saved-credential updates; Shift+Refresh explicitly rediscovers and replaces an automatically managed list.
 - Connects through Palworld's native join-game flow and restores passwords already saved by Palworld.
 - Keeps Ctrl+Shift+F1 through Ctrl+Shift+F8 shortcuts and `qc` console commands available when the panel is disabled.

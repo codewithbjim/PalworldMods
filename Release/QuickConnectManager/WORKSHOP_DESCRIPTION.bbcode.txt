@@ -6,7 +6,9 @@ Adds a native, non-modal dedicated-server selector to Palworld's launch screen. 
 
 [list]
 [*]Server names, player counts, ping, and password indicators.
+[*]Vertical scrolling for every configured server in the compact three-row panel.
 [*]One-time first-install import of active recent servers from Palworld History.
+[*]Version-aware filtering for complete and incomplete History status.
 [*]Refresh for current status and saved credentials; Shift+Refresh for forced rediscovery.
 [*]Native saved-password connection flow.
 [*]Ctrl+Shift+F1 through Ctrl+Shift+F8 shortcuts and qc console commands.

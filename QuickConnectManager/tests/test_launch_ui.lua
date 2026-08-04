@@ -40,6 +40,10 @@ end
 local LaunchUI = require("launch_ui")
 local failures = 0
 
+local launch_ui_file = assert(io.open("QuickConnectManager/Scripts/launch_ui.lua", "rb"))
+local launch_ui_source = launch_ui_file:read("*a")
+launch_ui_file:close()
+
 local function delayed_count(delay)
     local count = 0
     for _, item in ipairs(delayed) do
@@ -83,6 +87,18 @@ expect(
     game_thread_calls == game_threads_after_first_start
 )
 expect("first lifecycle poll schedules one successor", delayed_after_first_start == 1)
+expect(
+    "server rows use a vertical scroll container",
+    launch_ui_source:find('construct("/Script/UMG.ScrollBox"', 1, true) ~= nil
+)
+expect(
+    "server list renders every entry",
+    launch_ui_source:find("for index = 1, #state.entries do", 1, true) ~= nil
+)
+expect(
+    "server list is not capped at the viewport row count",
+    launch_ui_source:find("math.min(#state.entries, MAX_ROWS)", 1, true) == nil
+)
 
 LaunchUI.set_entries({}, "Refresh complete")
 expect("entry update still waits for a stable title widget", delayed_count(50) == 0)

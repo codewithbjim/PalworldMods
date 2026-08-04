@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.1-hotfix.1",
+    [string]$Version = "0.1.1",
+    [string]$WorkshopVersion = "0.1.1-hotfix.2",
     [string]$ZipPath,
     [string]$PakSource,
     [string]$WorkshopPath,
@@ -20,7 +21,7 @@ if (-not $PakSource) {
     $PakSource = Join-Path $releaseRoot "Assets\QuickConnectManager_UI_P.pak"
 }
 if (-not $WorkshopPath) {
-    $WorkshopPath = Join-Path $releaseRoot "Dist\Workshop-$Version"
+    $WorkshopPath = Join-Path $releaseRoot "Dist\Workshop-$WorkshopVersion"
 }
 
 function Assert-Condition {
@@ -133,6 +134,12 @@ Assert-Condition ($launchSource -match 'retain_one_shot') "Launch UI must retain
 Assert-Condition ($launchSource -match 'REFRESH_ICON_SIZE\s*=\s*40') "Refresh icon must retain its doubled release size."
 Assert-Condition ($launchSource -match 'LOCK_ICON_SIZE\s*=\s*27') "Lock icon must retain its 27-pixel release size."
 Assert-Condition ($launchSource -match 'REMOVE_ICON_SIZE\s*=\s*36') "Removal icon must retain its doubled release size."
+Assert-Condition ($launchSource -match 'construct\("/Script/UMG\.ScrollBox"') "Launch server rows must use a vertical ScrollBox."
+Assert-Condition ($launchSource -match 'for index = 1, #state\.entries do') "Launch server rows must render every configured entry."
+Assert-Condition ($launchSource -notmatch 'math\.min\(#state\.entries, MAX_ROWS\)') "Launch server rows must not be capped at the viewport size."
+Assert-Condition ($discoverySource -match 'GetDisplayVersion') "History filtering must compare against Palworld's current display version."
+Assert-Condition ($discoverySource -match 'exact_version_required\s*=\s*not ping_valid or not players_valid') "Incomplete History status must require an exact client version."
+Assert-Condition ($discoverySource -match 'server_version\[4\]\s*==\s*player_version\[4\]') "Exact History compatibility must compare the final build number."
 Assert-Condition ($mainSource -match 'already_on_game_thread\s*==\s*true') "Launch-panel connections must use their existing UMG game thread."
 Assert-Condition ($mainSource -match 'refresh_active' -and $mainSource -match 'Ignored a connect request while server status was refreshing') "Connections must be interlocked against an active native refresh."
 Assert-Condition ($mainSource -match 'status_by_world_guid') "Status refresh must fall back to world-GUID reconciliation."
@@ -148,7 +155,7 @@ Assert-Condition ($nexusChangelog -notmatch '(?m)^\s*(?:[-*#]|\d+[.)])\s*') "Nex
 $firstChangelogVersion = [regex]::Match((Get-Content -LiteralPath (Join-Path $releaseRoot "CHANGELOG.md") -Raw), '(?m)^##\s+([^\s]+)').Groups[1].Value
 Assert-Condition ($firstChangelogVersion -eq $Version) "CHANGELOG.md does not begin with $Version."
 $firstWorkshopLine = Get-Content -LiteralPath (Join-Path $releaseRoot "WORKSHOP_CHANGELOG.txt") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
-Assert-Condition ($firstWorkshopLine -match [regex]::Escape($Version)) "Workshop changelog does not begin with $Version."
+Assert-Condition ($firstWorkshopLine -match [regex]::Escape($WorkshopVersion)) "Workshop changelog does not begin with $WorkshopVersion."
 foreach ($publicChangelog in @((Join-Path $releaseRoot "CHANGELOG.md"), (Join-Path $releaseRoot "WORKSHOP_CHANGELOG.txt"))) {
     $overlongEntry = Get-Content -LiteralPath $publicChangelog | Where-Object { $_ -match '^[-*]\s+\S' -and $_.Length -ge 255 } | Select-Object -First 1
     Assert-Condition ($null -eq $overlongEntry) "Changelog list entries must remain shorter than 255 characters: $publicChangelog"
@@ -206,8 +213,22 @@ try {
 }
 
 Assert-Condition (Test-Path -LiteralPath $WorkshopPath -PathType Container) "Workshop package not found: $WorkshopPath"
+$workshopManifestPath = Join-Path $WorkshopPath "Info.json"
+Assert-Condition (Test-Path -LiteralPath $workshopManifestPath -PathType Leaf) "Workshop package is missing Info.json."
+$workshopManifest = Get-Content -LiteralPath $workshopManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert-Condition ($workshopManifest.PackageName -eq "QuickConnectManager") "Workshop manifest package name is invalid."
+Assert-Condition ($workshopManifest.Version -eq $WorkshopVersion) "Workshop manifest version '$($workshopManifest.Version)' does not match '$WorkshopVersion'."
+$sourceManifestText = [System.IO.File]::ReadAllText($manifestPath)
+$versionPattern = '(?m)^(\s*"Version"\s*:\s*")[^"]+("\s*,\s*)$'
+$expectedWorkshopManifestText = [regex]::Replace(
+    $sourceManifestText,
+    $versionPattern,
+    { param($match) $match.Groups[1].Value + $WorkshopVersion + $match.Groups[2].Value },
+    1
+)
+$actualWorkshopManifestText = [System.IO.File]::ReadAllText($workshopManifestPath)
+Assert-Condition ($actualWorkshopManifestText -eq $expectedWorkshopManifestText) "Workshop manifest differs from the source by more than its channel-specific version."
 $workshopSourceByPath = @{
-    "Info.json" = $manifestPath
     "thumbnail.png" = $thumbnailPath
     "Paks\QuickConnectManager_UI_P.pak" = $PakSource
 }
@@ -236,5 +257,5 @@ foreach ($publicFile in $publicFiles) {
     Assert-Condition ($source -notmatch '(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}') "Public file contains an email address: $publicFile"
 }
 
-Write-Host "Quick Connect Manager $Version release gate passed."
+Write-Host "Quick Connect Manager Nexus $Version / Workshop $WorkshopVersion release gate passed."
 Write-Host "Archive SHA-256: $((Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash)"

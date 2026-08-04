@@ -1,1 +1,2 @@
-Fixes the Steam Workshop PAK install target so the patch PAK deploys under ~WorkshopMods\QuickConnectManager.
+Adds vertical scrolling beyond three server rows.
+Requires exact versions for incomplete status; fully valid rows may differ only in the final build number when X.Y.Z matches.

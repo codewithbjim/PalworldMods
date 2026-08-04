@@ -5,12 +5,12 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 ## 1. Prepare the candidate
 
 - [ ] Confirm Palworld is closed before replacing installed runtime files.
-- [ ] Update `QuickConnectManager/Info.json`, changelogs, descriptions, release readme, and publishing metadata to the same version.
+- [ ] Update the Nexus/source manifest to `0.1.1`, the staged Workshop manifest to `0.1.1-hotfix.2`, and align each channel's changelog and publishing metadata.
 - [ ] Confirm `thumbnail.png` is under 1 MB and `NEXUS_IMAGE.png` is the approved full-resolution gallery image.
 - [ ] Rebuild `QuickConnectManager_UI_P.pak` from the checked-in cooked widget and update its release checksum.
 - [ ] Build the Nexus archive with `Release/QuickConnectManager/build-release.ps1`.
 - [ ] Build a clean Workshop directory with `Release/QuickConnectManager/build-workshop-package.ps1`.
-- [ ] Run `Release/Test-Release.ps1 -PackageName QuickConnectManager -Version <version>` against the final archive and Workshop directory.
+- [ ] Run `Release/QuickConnectManager/Test-Release.ps1 -Version 0.1.1 -WorkshopVersion 0.1.1-hotfix.2` against the final archive and Workshop directory.
 - [ ] Parse every shipped Lua file with Lua 5.3 or 5.4 syntax rules and execute all deterministic tests under `QuickConnectManager/tests`.
 - [ ] Confirm the release archive and Workshop directory contain no `discovery_cache.lua`, `.bak`, `.tmp`, `.previous`, test fixture, real server address, world GUID, or saved password.
 - [ ] Confirm the candidate commit contains only intended release changes and uses `virtualbjörn` with the repository noreply address in Git metadata.
@@ -61,7 +61,7 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 - [ ] Alternate Refresh and Shift+Refresh for at least 10 completed cycles.
 - [ ] Remove rows before and after refreshes and confirm the separate X control never triggers the server-row connection action.
 - [ ] Confirm long server names clip cleanly, hints remain fully visible, and no invalid metadata reaches the panel.
-- [ ] Confirm the panel shows no more than three rows while hotkeys and console commands retain access to all enabled entries.
+- [ ] Confirm the panel shows three rows at a time and vertical scrolling reaches every additional enabled entry.
 - [ ] Review UE4SS.log and confirm each render produces one "Quick Connect launch panel opened" entry rather than multiple entries for the same visible panel.
 
 ## 6. Regular-gameplay soak
@@ -84,7 +84,8 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 
 | Field | Result |
 | --- | --- |
-| Version | |
+| Nexus version | |
+| Workshop version | |
 | Commit | |
 | Annotated tag | |
 | Nexus archive SHA-256 | |
@@ -104,7 +105,7 @@ Release acceptance requires:
 - [ ] Password-protected and unprotected connections both pass.
 - [ ] Failed connections and all tested title transitions restore exactly one panel.
 - [ ] Automated release gate passes against the exact final archive and Workshop directory.
-- [ ] The final release commit is verified on `origin/main` and tagged with an annotated `quick-connect-manager-v<version>` tag.
+- [ ] The final release commit is verified on `origin/main` and tagged with the annotated `quick-connect-manager-v0.1.1.2` source tag.
 
 ## 9. Publish safely
 

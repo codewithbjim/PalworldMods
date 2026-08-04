@@ -1,5 +1,13 @@
 # Quick Connect Manager changelog
 
+## 0.1.1 - 2026-08-04
+
+### Fixed
+
+- Add vertical scrolling to the three-row launch-screen server viewport so every configured server remains selectable.
+- Require an exact client-version match for History rows with invalid ping or player-count data; fully valid rows may differ only in the final build number while retaining the same `X.Y.Z` version.
+- Retain version-compatible direct-IP History entries whose live status is unavailable and prefer richer live metadata when Palworld returns duplicate endpoints.
+
 ## 0.1.1-hotfix.1 - 2026-08-04
 
 ### Fixed

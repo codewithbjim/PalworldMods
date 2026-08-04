@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Destination,
-    [string]$Version = "0.1.1-hotfix.1"
+    [string]$Version = "0.1.1-hotfix.2",
+    [string]$SourceVersion = "0.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +55,27 @@ foreach ($payloadDirectory in @($scriptsDestination, $paksDestination)) {
 }
 New-Item -ItemType Directory -Force -Path $scriptsDestination, $paksDestination | Out-Null
 
-Copy-Item -LiteralPath (Join-Path $modRoot "Info.json") -Destination $destinationRoot -Force
+$sourceManifestPath = Join-Path $modRoot "Info.json"
+$sourceManifestText = [System.IO.File]::ReadAllText($sourceManifestPath)
+$sourceManifest = $sourceManifestText | ConvertFrom-Json
+if ($sourceManifest.Version -ne $SourceVersion) {
+    throw "Source manifest version '$($sourceManifest.Version)' does not match '$SourceVersion'."
+}
+$versionPattern = '(?m)^(\s*"Version"\s*:\s*")[^"]+("\s*,\s*)$'
+$workshopManifestText = [regex]::Replace(
+    $sourceManifestText,
+    $versionPattern,
+    { param($match) $match.Groups[1].Value + $Version + $match.Groups[2].Value },
+    1
+)
+if ($workshopManifestText -eq $sourceManifestText) {
+    throw "Source manifest Version field could not be rewritten for Workshop."
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $destinationRoot "Info.json"),
+    $workshopManifestText,
+    [System.Text.UTF8Encoding]::new($false)
+)
 Copy-Item -LiteralPath $thumbnailSource -Destination (Join-Path $destinationRoot "thumbnail.png") -Force
 foreach ($scriptName in $scriptNames) {
     Copy-Item -LiteralPath (Join-Path $modRoot "Scripts\$scriptName") -Destination (Join-Path $scriptsDestination $scriptName) -Force
