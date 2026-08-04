@@ -262,12 +262,33 @@ end
 
 local Discovery = require("discovery")
 local failures = 0
+local discovery_file = assert(io.open(
+    "QuickConnectManager/Scripts/discovery.lua",
+    "rb"
+))
+local discovery_source = discovery_file:read("*a")
+discovery_file:close()
 local function expect(label, condition)
     if not condition then
         failures = failures + 1
         io.stderr:write("FAIL: " .. label .. "\n")
     end
 end
+
+expect(
+    "refresh can begin directly when already on the game thread",
+    discovery_source:find("options.already_on_game_thread == true", 1, true) ~= nil
+        and discovery_source:find(
+            "begin_request(attempt + 1, request_id, true)",
+            1,
+            true
+        ) ~= nil
+)
+expect(
+    "targeted Recent Servers rows bypass ordinary version filtering",
+    discovery_source:find("state.target_addresses", 1, true) ~= nil
+        and discovery_source:find("version_valid or targeted", 1, true) ~= nil
+)
 
 local started = Discovery.start({
     save_cache = false,

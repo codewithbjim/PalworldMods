@@ -1,15 +1,18 @@
 [h1]Quick Connect Manager[/h1]
 
-Adds a native, non-modal dedicated-server selector to Palworld's launch screen. Select a server row to connect immediately while the normal title menu remains available.
+Adds a native, non-modal, gamepad-compatible dedicated-server selector and editor to Palworld's launch screen. Select a server row to connect immediately while the normal title menu remains available.
 
 [h2]Features[/h2]
 
 [list]
 [*]Server names, player counts, ping, and password indicators.
+[*]Integrated Add, Modify, and Delete controls with address, name, and password fields.
+[*]Automatic saving after successful manual or Join Multiplayer connections.
+[*]Controller navigation and Palworld-native controller text entry.
 [*]Vertical scrolling for every configured server in the compact three-row panel.
 [*]One-time first-install import of active recent servers from Palworld History.
 [*]Version-aware filtering for complete and incomplete History status.
-[*]Refresh for current status and saved credentials; Shift+Refresh for forced rediscovery.
+[*]Refresh for current status and saved credentials without renaming saved worlds; Shift+Refresh for forced rediscovery.
 [*]Native saved-password connection flow.
 [*]Ctrl+Shift+F1 through Ctrl+Shift+F8 shortcuts and qc console commands.
 [/list]
@@ -22,7 +25,7 @@ Requires the UE4SS Experimental package. Enable both dependencies under Options 
 
 Saved server passwords are stored as plain text in the installed Scripts\config.lua. Protect that local file and do not include it in support logs or shared archives.
 
-If a password changes, connect once through Join Multiplayer Game, return to the title screen, and select Refresh.
+Passwords can be updated through Modify Server or refreshed after a successful Join Multiplayer connection.
 
 [h2]Safety[/h2]
 

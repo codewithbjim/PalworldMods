@@ -1,3 +1,22 @@
+0.2.0 - In-game server management and gamepad support
+
+Added
+- Add, modify, and remove saved servers directly in the launch panel.
+- Save successful Join Multiplayer connections automatically.
+- Navigate the list and integrated editor with a controller.
+
+Changed
+- Save manual additions only after successful gameplay entry.
+- Generate numeric name suffixes only for manual additions.
+- Preserve saved world names during Refresh and Shift+Refresh.
+- Use native Palworld address/password fields and a password lock indicator.
+- Refresh player and ping cells in place with Palworld-style ping spinners.
+- Reduce the Add and Delete action icon sizes.
+- Keep CommonUI rendering enabled while QCM blocks inactive actions, avoiding the white disabled brush.
+- Highlight the server currently being modified with a muted blue background.
+- Draw QCM-owned inactive button backgrounds so dark and modified-row blue colors apply reliably.
+- Reconcile server names, world GUIDs, lock state, players, and ping from Recent Servers after returning to title.
+
 0.1.1-hotfix.2 - Scrollable server list and safer History filtering
 
 Fixed

@@ -26,6 +26,29 @@ local entries, warnings = Servers.load({
     { name = "Bad", address = "bad host:8211" },
 })
 expect("load enabled valid entry", #entries == 1 and entries[1].name == "Alpha")
+local pointer_metadata = Servers.load({
+    {
+        name = "UObject: 00000198D310F238",
+        address = "pointer.example:8211",
+        world_guid = "UObject: 00000198D310DC38",
+    },
+})
+expect(
+    "discard Unreal pointer-shaped metadata",
+    pointer_metadata[1].name == "Server 1"
+        and pointer_metadata[1].world_guid == nil
+)
+local trivial_metadata = Servers.load({
+    {
+        name = "Test",
+        address = "trivial.example:8211",
+        world_guid = "TrivialObject: 00000174FABF8A68",
+    },
+})
+expect(
+    "discard TrivialObject world GUID wrapper",
+    trivial_metadata[1].world_guid == nil
+)
 expect("warn for invalid enabled entry", #warnings == 1)
 
 local normalized, normalization_warnings = Servers.load({
@@ -67,6 +90,61 @@ local by_name, name_index = Servers.resolve(entries, "alpha")
 expect("resolve case-insensitive name", by_name == entries[1] and name_index == 1)
 local by_index = Servers.resolve(entries, "1")
 expect("resolve numeric string", by_index == entries[1])
+
+local named = {
+    { name = "Lamball", address = "one.example:8211" },
+    { name = "Lamball 2", address = "two.example:8211" },
+}
+expect(
+    "manual name uses lowest free suffix",
+    Servers.unique_name(named, "Lamball") == "Lamball 3"
+)
+expect(
+    "unused manual name remains exact",
+    Servers.unique_name(named, "Chillet") == "Chillet"
+)
+
+local stock_entry, stock_index, stock_error, stock_added =
+    Servers.upsert_connected(named, {
+        name = "Lamball",
+        address = "three.example:8211",
+        world_guid = "fixture-three",
+        discovered = true,
+    }, { unique_name = false })
+expect(
+    "stock join preserves dedicated server name",
+    stock_error == nil and stock_added == true and stock_entry.name == "Lamball"
+)
+local same_address, same_index, same_error, same_added =
+    Servers.upsert_connected(named, {
+        name = "Dedicated Rename",
+        address = "three.example:8211",
+        world_guid = "fixture-three",
+        ping = 28,
+        discovered = true,
+    }, { replace_existing_name = false })
+expect(
+    "existing address preserves saved name",
+    same_error == nil and same_added == false
+        and same_index == stock_index
+        and same_address.name == "Lamball"
+        and same_address.ping == 28
+)
+
+named[1].world_guid = "fixture-old-world"
+named[1].ping = 99
+local modified, modify_error, address_changed = Servers.modify(named, 1, {
+    name = "Cattiva",
+    address = "changed.example:8211",
+    password = "fixture-secret",
+})
+expect(
+    "modify accepts exact explicit name",
+    modify_error == nil and modified.name == "Cattiva"
+        and address_changed == true
+        and modified.world_guid == nil
+        and modified.password == "fixture-secret"
+)
 
 local discovered = Servers.load({
     {

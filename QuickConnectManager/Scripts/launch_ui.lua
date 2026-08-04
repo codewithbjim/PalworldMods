@@ -17,12 +17,33 @@ local BUTTON_PACKAGE =
     "/Game/Pal/Blueprint/UI/UserInterface/Common/WBP_CommonButton"
 local BUTTON_CLASS = BUTTON_PACKAGE .. ".WBP_CommonButton_C"
 local BUTTON_ASSET_NAME = "WBP_CommonButton_C"
+local JOIN_INPUT_PACKAGE =
+    "/Game/Pal/Blueprint/UI/UserInterface/Title/WBP_Title_WorldSelect"
+local JOIN_INPUT_CLASS = JOIN_INPUT_PACKAGE .. ".WBP_Title_WorldSelect_C"
+local JOIN_INPUT_ASSET_NAME = "WBP_Title_WorldSelect_C"
+local JOIN_INPUT_TEMPLATE = JOIN_INPUT_CLASS
+    .. ":WidgetTree.PalEditableTextBox_IP"
+local PASSWORD_INPUT_PACKAGE =
+    "/Game/Pal/Blueprint/UI/UserInterface/Title/"
+    .. "WBP_Title_WorldSelect_OverlayWindow_InputCode"
+local PASSWORD_INPUT_CLASS = PASSWORD_INPUT_PACKAGE
+    .. ".WBP_Title_WorldSelect_OverlayWindow_InputCode_C"
+local PASSWORD_INPUT_ASSET_NAME =
+    "WBP_Title_WorldSelect_OverlayWindow_InputCode_C"
+local PASSWORD_INPUT_TEMPLATE = PASSWORD_INPUT_CLASS
+    .. ":WidgetTree.PalEditableTextBox_111"
 local REFRESH_TEXTURE_PACKAGE =
     "/Game/Pal/Texture/UI/KeyGuide/T_prt_KeyGuide_change"
 local REFRESH_TEXTURE_NAME = "T_prt_KeyGuide_change"
+local ADD_TEXTURE_PACKAGE =
+    "/Game/Pal/Texture/UI/IngameMenu/T_prt_add_plus"
+local ADD_TEXTURE_NAME = "T_prt_add_plus"
+local EDIT_TEXTURE_PACKAGE =
+    "/Game/Pal/Texture/UI/Main_Menu/T_icon_Guild_Edit"
+local EDIT_TEXTURE_NAME = "T_icon_Guild_Edit"
 local REMOVE_TEXTURE_PACKAGE =
-    "/Game/Pal/Texture/UI/InGame/T_prt_map_death_1"
-local REMOVE_TEXTURE_NAME = "T_prt_map_death_1"
+    "/Game/Pal/Texture/UI/Main_Menu/T_icon_garbage"
+local REMOVE_TEXTURE_NAME = "T_icon_garbage"
 local LOCK_TEXTURE_PACKAGE =
     "/Game/Pal/Texture/UI/Main_Menu/T_Icon_lock"
 local LOCK_TEXTURE_NAME = "T_Icon_lock"
@@ -33,8 +54,11 @@ local WIDGET_LIBRARY = "/Script/UMG.Default__WidgetBlueprintLibrary"
 
 local PANEL_WIDTH = 500
 local PANEL_HEIGHT = 300
+local EXPANDED_PANEL_HEIGHT = 570
 local ROW_X = 22
-local ROW_WIDTH = PANEL_WIDTH - 88
+local ROW_WIDTH = PANEL_WIDTH - 126
+local EDIT_X = PANEL_WIDTH - 98
+local EDIT_WIDTH = 34
 local REMOVE_X = PANEL_WIDTH - 56
 local REMOVE_WIDTH = 34
 local ROW_HEIGHT = 42
@@ -43,8 +67,10 @@ local ROW_START_Y = 77
 local MAX_ROWS = 3
 local ROW_VIEWPORT_HEIGHT = MAX_ROWS * ROW_HEIGHT + (MAX_ROWS - 1) * ROW_GAP
 local REFRESH_ICON_SIZE = 40
+local ADD_ICON_SIZE = 14
+local EDIT_ICON_SIZE = 28
 local LOCK_ICON_SIZE = 27
-local REMOVE_ICON_SIZE = 36
+local REMOVE_ICON_SIZE = 27
 local TITLE_POLL_MS = 750
 local GAMEPLAY_POLL_MS = 2000
 
@@ -56,6 +82,10 @@ local state = {
     end,
     refresh = function() end,
     remove = function() end,
+    modify = function() end,
+    add = function() end,
+    connection_failed = function() end,
+    title_available = function() end,
     refreshing = false,
     refresh_feedback = nil,
     refresh_feedback_revision = 0,
@@ -70,6 +100,8 @@ local state = {
     title_key = nil,
     panel = nil,
     panel_revision = 0,
+    panel_logged_title_key = nil,
+    title_available_notified_key = nil,
     refresh_button = nil,
     refresh_icon = nil,
     refresh_feedback_label = nil,
@@ -77,7 +109,13 @@ local state = {
     click_hook_armed = false,
     panel_class = nil,
     button_class = nil,
+    join_input_class = nil,
+    password_input_class = nil,
+    join_input_template = nil,
+    password_input_template = nil,
     refresh_texture = nil,
+    add_texture = nil,
+    edit_texture = nil,
     remove_texture = nil,
     lock_texture = nil,
     build_failed_title_key = nil,
@@ -93,6 +131,7 @@ local state = {
     empty_message = "No dedicated servers configured",
     ready = true,
     started = false,
+    lifecycle_polling = false,
     generation = 0,
     in_title_context = false,
     title_notification_armed = false,
@@ -103,6 +142,16 @@ local state = {
     title_tick_callback = nil,
     title_notification_callback = nil,
     disclaimer_notification_callback = nil,
+    editor_mode = nil,
+    editor_index = nil,
+    editor_draft = nil,
+    editor_inputs = {},
+    status_widgets = {},
+    focus_items = {},
+    focus_index = nil,
+    gamepad_down = {},
+    restore_focus = nil,
+    focus_requested = false,
 }
 
 local function retain_one_shot(callback)
@@ -243,7 +292,7 @@ local function main_menu_is_visible(title_widget)
     return ok and visible == true
 end
 
-local function construct(class_path, outer)
+local function construct(class_path, outer, template)
     if not alive(outer) then
         return nil
     end
@@ -258,7 +307,7 @@ local function construct(class_path, outer)
             0,
             0,
             0,
-            nil,
+            alive(template) and template or nil,
             false,
             false,
             nil
@@ -404,6 +453,216 @@ local function make_native_button(owner, action)
     return button
 end
 
+local function set_native_button_interactive(button)
+    if not alive(button) then
+        return
+    end
+    -- Disabling either WBP_CommonButton or its CommonUI input target invokes
+    -- a bright white disabled brush. Keep both render-enabled and enforce the
+    -- disabled state in handle_action plus the gamepad focus list instead.
+    pcall(function()
+        button:SetIsEnabled(true)
+    end)
+    pcall(function()
+        local input = button.WBP_PalInvisibleButton
+        if alive(input) then
+            input:SetIsEnabled(true)
+        end
+    end)
+end
+
+local function add_inactive_button_background(
+    canvas,
+    tree,
+    x,
+    y,
+    width,
+    height,
+    highlighted
+)
+    if state.editor_mode == nil then
+        return
+    end
+    local background = construct("/Script/UMG.Image", tree)
+    if alive(background) then
+        pcall(function()
+            background:SetColorAndOpacity(highlighted == true and {
+                R = 0.025,
+                G = 0.22,
+                B = 0.38,
+                A = 0.94,
+            } or {
+                R = 0.055,
+                G = 0.065,
+                B = 0.075,
+                A = 0.96,
+            })
+            background:SetVisibility(4)
+        end)
+        canvas_add(canvas, background, x, y, width, height, 3)
+    end
+end
+
+local function make_editable_text(tree, value, hint, password)
+    local template = password == true
+        and state.password_input_template
+        or state.join_input_template
+    local input = construct("/Script/Pal.PalEditableTextBox", tree, template)
+    if not alive(input) then
+        input = construct("/Script/UMG.EditableTextBox", tree)
+    end
+    if not alive(input) then
+        return nil
+    end
+    pcall(function()
+        local style = input.WidgetStyle
+        local transparent = {
+            SpecifiedColor = { R = 1, G = 1, B = 1, A = 0 },
+            ColorUseRule = 0,
+        }
+        local foreground = {
+            SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 },
+            ColorUseRule = 0,
+        }
+        style.BackgroundImageNormal.TintColor = transparent
+        style.BackgroundImageHovered.TintColor = transparent
+        style.BackgroundImageFocused.TintColor = transparent
+        style.BackgroundImageReadOnly.TintColor = transparent
+        style.BackgroundColor = transparent
+        style.ForegroundColor = foreground
+        style.FocusedForegroundColor = foreground
+        input.WidgetStyle = style
+    end)
+    pcall(function()
+        input:SetText(FText(tostring(value or "")))
+        input:SetHintText(FText(tostring(hint or "")))
+        input:SetIsPassword(password == true)
+        input:SetIsReadOnly(false)
+        input:SetIsEnabled(true)
+        input:SetVisibility(0)
+        input:SetForegroundColor({ R = 1, G = 1, B = 1, A = 1 })
+    end)
+    return input
+end
+
+local function make_input_surface(tree, value, hint, password, width, height)
+    local surface = construct("/Script/UMG.CanvasPanel", tree)
+    local input = make_editable_text(tree, value, hint, password)
+    if not alive(surface) or not alive(input) then
+        return nil, input
+    end
+
+    local background = construct("/Script/UMG.Image", tree)
+    if alive(background) then
+        pcall(function()
+            background:SetColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.5 })
+            background:SetVisibility(4)
+        end)
+        canvas_add(surface, background, 0, 0, width, height, 1)
+    end
+    local borders = {
+        { x = 0, y = 0, width = width, height = 1 },
+        { x = 0, y = height - 1, width = width, height = 1 },
+        { x = 0, y = 0, width = 1, height = height },
+        { x = width - 1, y = 0, width = 1, height = height },
+    }
+    for _, border in ipairs(borders) do
+        local rule = make_rule(tree, 0.5)
+        if alive(rule) then
+            canvas_add(
+                surface,
+                rule,
+                border.x,
+                border.y,
+                border.width,
+                border.height,
+                2
+            )
+        end
+    end
+
+    local input_x = 12
+    if password == true then
+        local lock = make_icon(tree, state.lock_texture, 0.92)
+        local lock_size = 22
+        if alive(lock) then
+            canvas_add(
+                surface,
+                lock,
+                8,
+                (height - lock_size) / 2,
+                lock_size,
+                lock_size,
+                4
+            )
+            input_x = 38
+        end
+    end
+    canvas_add(surface, input, input_x, 0, width - input_x - 10, height, 3)
+    return surface, input
+end
+
+local function editable_value(input)
+    if not alive(input) then
+        return ""
+    end
+    local ok, value = pcall(function()
+        return input:GetText()
+    end)
+    if not ok or value == nil then
+        return ""
+    end
+    local converted_ok, converted = pcall(function()
+        return value:ToString()
+    end)
+    if converted_ok and converted ~= nil then
+        return tostring(converted)
+    end
+    local text_ok, result = pcall(tostring, value)
+    return text_ok and result or ""
+end
+
+local function register_focus(widget, action)
+    if not alive(widget) then
+        return nil
+    end
+    state.focus_items[#state.focus_items + 1] = {
+        ref = widget,
+        action = action,
+    }
+    local index = #state.focus_items
+    local wanted = state.restore_focus
+    if type(wanted) == "table" and type(action) == "table"
+        and wanted.kind == action.kind
+        and wanted.index == action.index
+    then
+        state.focus_index = index
+        state.restore_focus = nil
+        state.focus_requested = true
+    end
+    return index
+end
+
+local function focus_at(index)
+    if #state.focus_items == 0 then
+        state.focus_index = nil
+        return false
+    end
+    index = ((tonumber(index) or 1) - 1) % #state.focus_items + 1
+    local item = state.focus_items[index]
+    if not alive(item.ref) then
+        return false
+    end
+    state.focus_index = index
+    pcall(function()
+        item.ref:SetUserFocus(state.controller)
+    end)
+    pcall(function()
+        item.ref:SetKeyboardFocus()
+    end)
+    return true
+end
+
 local function make_style_probe(owner)
     if not alive(owner) then
         return nil, nil
@@ -439,6 +698,10 @@ local function forget_panel()
     state.refresh_icon = nil
     state.refresh_feedback_label = nil
     state.last_disclaimer_visible = nil
+    state.editor_inputs = {}
+    state.status_widgets = {}
+    state.focus_items = {}
+    state.focus_index = nil
 end
 
 local function discard_unattached_panel(panel)
@@ -571,6 +834,158 @@ local function shift_is_down()
     return input_key_down("LeftShift") or input_key_down("RightShift")
 end
 
+local function editor_values()
+    return {
+        address = editable_value(state.editor_inputs.address),
+        name = editable_value(state.editor_inputs.name),
+        password = editable_value(state.editor_inputs.password),
+    }
+end
+
+local function rebuild_panel()
+    forget_panel()
+    state.build_failed_title_key = nil
+    request_panel_render()
+end
+
+local function open_editor(mode, index)
+    state.editor_mode = mode
+    state.editor_index = index
+    state.restore_focus = mode == "modify"
+        and { kind = "modify_open", index = index }
+        or { kind = "add_open" }
+    if mode == "modify" and state.entries[index] ~= nil then
+        local entry = state.entries[index]
+        state.editor_draft = {
+            address = entry.address or "",
+            name = entry.name or "",
+            password = entry.password or "",
+        }
+    else
+        state.editor_draft = {
+            address = "",
+            name = "",
+            password = "",
+        }
+    end
+    rebuild_panel()
+end
+
+local function close_editor()
+    state.editor_mode = nil
+    state.editor_index = nil
+    state.editor_draft = nil
+    rebuild_panel()
+end
+
+local function begin_connection_action(callback, ...)
+    state.connection_attempt_id = state.connection_attempt_id + 1
+    local attempt_id = state.connection_attempt_id
+    state.dismissed_title_key = state.title_key
+    state.recovery_title_key = state.title_key
+    state.recovery_saw_hidden = false
+    forget_panel()
+    local connect_ok, accepted = protected_call(
+        "Launch panel connect action",
+        callback,
+        ...
+    )
+    if not connect_ok or accepted == false then
+        state.connection_attempt_id = state.connection_attempt_id + 1
+        state.dismissed_title_key = nil
+        state.recovery_title_key = nil
+        state.recovery_saw_hidden = false
+        state.build_failed_title_key = nil
+        request_panel_render()
+        return false
+    end
+    schedule_on_game_thread(10000, "Failed connection panel recovery", function()
+        if attempt_id ~= state.connection_attempt_id then
+            return
+        end
+        state.dismissed_title_key = nil
+        state.recovery_title_key = nil
+        state.recovery_saw_hidden = false
+        state.build_failed_title_key = nil
+        if main_menu_is_visible(state.title_widget) then
+            protected_call(
+                "Launch panel connection failure callback",
+                state.connection_failed
+            )
+            request_panel_render()
+        end
+    end)
+    return true
+end
+
+local function handle_action(action)
+    if type(action) ~= "table" then
+        return
+    end
+    if state.editor_mode ~= nil
+        and action.kind ~= "field"
+        and action.kind ~= "editor_confirm"
+        and action.kind ~= "editor_cancel"
+    then
+        return
+    end
+    if action.kind == "connect" then
+        safe_log("Server row action received by the launch panel.")
+        begin_connection_action(state.connect, action.index)
+    elseif action.kind == "add_open" then
+        open_editor("add")
+    elseif action.kind == "modify_open" then
+        open_editor("modify", action.index)
+    elseif action.kind == "editor_cancel" then
+        close_editor()
+    elseif action.kind == "editor_confirm" then
+        state.editor_draft = editor_values()
+        if state.editor_mode == "modify" then
+            local ok, accepted = protected_call(
+                "Launch panel modify action",
+                state.modify,
+                state.editor_index,
+                state.editor_draft
+            )
+            if ok and accepted ~= false then
+                state.editor_mode = nil
+                state.editor_index = nil
+                state.editor_draft = nil
+                rebuild_panel()
+            end
+        elseif state.editor_mode == "add" then
+            begin_connection_action(state.add, state.editor_draft)
+        end
+    elseif action.kind == "refresh" then
+        if not state.refreshing and state.editor_mode == nil then
+            local force_sync = shift_is_down()
+            state.refreshing = true
+            state.refresh_feedback = "REFRESHING..."
+            state.refresh_feedback_revision = state.refresh_feedback_revision + 1
+            if type(update_refresh_controls) == "function" then
+                update_refresh_controls()
+            end
+            local refresh_ok, accepted = protected_call(
+                "Launch panel refresh action",
+                state.refresh,
+                force_sync
+            )
+            if not refresh_ok or accepted == false then
+                state.refreshing = false
+                state.refresh_feedback = "FAILED"
+                state.refresh_feedback_revision = state.refresh_feedback_revision + 1
+                if type(update_refresh_controls) == "function" then
+                    update_refresh_controls()
+                end
+            end
+        end
+    elseif action.kind == "remove" and state.editor_mode == nil then
+        protected_call("Launch panel remove action", state.remove, action.index)
+    elseif action.kind == "field" then
+        focus_at(state.focus_index or 1)
+    end
+end
+
 local function arm_click_hook()
     if state.click_hook_armed then
         return true
@@ -585,96 +1000,21 @@ local function arm_click_hook()
             end
             local key = object_address(button)
             local registration = key ~= nil and state.actions[key] or nil
-            -- UE4SS may hand the hook a fresh Lua wrapper for the same UObject.
-            -- Match its native address, full object name, and panel generation;
-            -- keep ref only so the dynamic button cannot be collected early.
-            if registration == nil then
-                return
-            end
-            if registration.panel_revision ~= state.panel_revision
+            if registration == nil
+                or registration.panel_revision ~= state.panel_revision
                 or registration.identity ~= full_name(button)
+                or registration.consumed == true
             then
                 return
             end
-            if state.refreshing and registration.action.kind ~= "refresh" then
-                return
+            if registration.action.kind ~= "refresh"
+                and registration.action.kind ~= "field"
+            then
+                -- Native delegates can occasionally report the same click more
+                -- than once. One-shot actions are consumed before dispatch.
+                registration.consumed = true
             end
-            if registration.action.kind == "connect" then
-                local index = registration.action.index
-                state.connection_attempt_id = state.connection_attempt_id + 1
-                local attempt_id = state.connection_attempt_id
-                state.dismissed_title_key = state.title_key
-                state.recovery_title_key = state.title_key
-                state.recovery_saw_hidden = false
-                safe_log("Server row action received by the launch panel.")
-                forget_panel()
-                local connect_ok, accepted = protected_call(
-                    "Launch panel connect action",
-                    state.connect,
-                    index
-                )
-                if not connect_ok or accepted == false then
-                    state.connection_attempt_id = state.connection_attempt_id + 1
-                    state.dismissed_title_key = nil
-                    state.recovery_title_key = nil
-                    state.recovery_saw_hidden = false
-                    state.build_failed_title_key = nil
-                    request_panel_render()
-                    return
-                end
-                -- Some connection failures never replace the title world or
-                -- title widget. If Palworld is still on its main page after
-                -- the attempt, restore without relying on old UObject wrappers.
-                schedule_on_game_thread(
-                    10000,
-                    "Failed connection panel recovery",
-                    function()
-                        if attempt_id ~= state.connection_attempt_id then
-                            return
-                        end
-                        state.dismissed_title_key = nil
-                        state.recovery_title_key = nil
-                        state.recovery_saw_hidden = false
-                        state.build_failed_title_key = nil
-                        if main_menu_is_visible(state.title_widget) then
-                            request_panel_render()
-                        end
-                    end
-                )
-            elseif registration.action.kind == "refresh" then
-                if not state.refreshing then
-                    local force_sync = shift_is_down()
-                    safe_log(force_sync
-                        and "Shift+Refresh action received; forcing server discovery."
-                        or "Refresh action received by the launch panel.")
-                    state.refreshing = true
-                    state.refresh_feedback = "REFRESHING..."
-                    state.refresh_feedback_revision = state.refresh_feedback_revision + 1
-                    if type(update_refresh_controls) == "function" then
-                        update_refresh_controls()
-                    end
-                    local refresh_ok, accepted = protected_call(
-                        "Launch panel refresh action",
-                        state.refresh,
-                        force_sync
-                    )
-                    if not refresh_ok or accepted == false then
-                        state.refreshing = false
-                        state.refresh_feedback = "FAILED"
-                        state.refresh_feedback_revision =
-                            state.refresh_feedback_revision + 1
-                        if type(update_refresh_controls) == "function" then
-                            update_refresh_controls()
-                        end
-                    end
-                end
-            elseif registration.action.kind == "remove" then
-                protected_call(
-                    "Launch panel remove action",
-                    state.remove,
-                    registration.action.index
-                )
-            end
+            handle_action(registration.action)
         end)
         if not callback_ok then
             safe_log("Launch panel click hook failed safely: " .. tostring(callback_error))
@@ -693,12 +1033,71 @@ local function arm_click_hook()
     return state.click_hook_armed
 end
 
+local function gamepad_pressed(key_name)
+    local down = input_key_down(key_name)
+    local pressed = down and state.gamepad_down[key_name] ~= true
+    state.gamepad_down[key_name] = down
+    return pressed
+end
+
+local function sync_focus_index()
+    for index, item in ipairs(state.focus_items) do
+        if alive(item.ref) then
+            local ok, focused = pcall(function()
+                return item.ref:HasUserFocus(state.controller)
+            end)
+            if ok and focused == true then
+                state.focus_index = index
+                return
+            end
+        end
+    end
+end
+
+local function poll_gamepad_input()
+    if not alive(state.panel) or #state.focus_items == 0 then
+        state.gamepad_down = {}
+        return
+    end
+    sync_focus_index()
+    local up = gamepad_pressed("Gamepad_DPad_Up")
+    local left = gamepad_pressed("Gamepad_DPad_Left")
+    local down = gamepad_pressed("Gamepad_DPad_Down")
+    local right = gamepad_pressed("Gamepad_DPad_Right")
+    local stick_up = gamepad_pressed("Gamepad_LeftStick_Up")
+    local stick_left = gamepad_pressed("Gamepad_LeftStick_Left")
+    local stick_down = gamepad_pressed("Gamepad_LeftStick_Down")
+    local stick_right = gamepad_pressed("Gamepad_LeftStick_Right")
+    local previous = up or left or stick_up or stick_left
+    local next_item = down or right or stick_down or stick_right
+    if previous then
+        focus_at((state.focus_index or 2) - 1)
+    elseif next_item then
+        focus_at((state.focus_index or 0) + 1)
+    end
+    if gamepad_pressed("Gamepad_FaceButton_Right")
+        and state.editor_mode ~= nil
+    then
+        handle_action({ kind = "editor_cancel" })
+        return
+    end
+    if gamepad_pressed("Gamepad_FaceButton_Bottom") then
+        local item = state.focus_items[state.focus_index or 0]
+        if item ~= nil and item.action ~= nil
+            and item.action.kind == "field"
+        then
+            focus_at(state.focus_index)
+        end
+    end
+end
+
 local function arm_title_tick_hook()
     if state.title_tick_hook_armed then
         return true
     end
     state.title_tick_callback = state.title_tick_callback or function(context)
         local callback_ok, callback_error = pcall(function()
+            poll_gamepad_input()
             local title_ok, title_widget = pcall(function()
                 return context:get()
             end)
@@ -805,12 +1204,51 @@ local function ensure_assets_loaded()
             BUTTON_CLASS
         )
     end
+    if not alive(state.join_input_class) then
+        state.join_input_class = load_generated_class(
+            JOIN_INPUT_PACKAGE,
+            JOIN_INPUT_ASSET_NAME,
+            JOIN_INPUT_CLASS
+        )
+    end
+    if not alive(state.password_input_class) then
+        state.password_input_class = load_generated_class(
+            PASSWORD_INPUT_PACKAGE,
+            PASSWORD_INPUT_ASSET_NAME,
+            PASSWORD_INPUT_CLASS
+        )
+    end
+    local join_template_ok, join_template = pcall(
+        StaticFindObject,
+        JOIN_INPUT_TEMPLATE
+    )
+    state.join_input_template = join_template_ok and alive(join_template)
+        and join_template
+        or nil
+    local password_template_ok, password_template = pcall(
+        StaticFindObject,
+        PASSWORD_INPUT_TEMPLATE
+    )
+    state.password_input_template = password_template_ok
+        and alive(password_template)
+        and password_template
+        or nil
     -- Native texture wrappers can remain superficially valid after a title
     -- dialog/map transition while their brush resources have been released.
     -- Resolve them through the asset registry for every panel construction.
     state.refresh_texture = load_asset(
         REFRESH_TEXTURE_PACKAGE,
         REFRESH_TEXTURE_NAME,
+        true
+    )
+    state.add_texture = load_asset(
+        ADD_TEXTURE_PACKAGE,
+        ADD_TEXTURE_NAME,
+        true
+    )
+    state.edit_texture = load_asset(
+        EDIT_TEXTURE_PACKAGE,
+        EDIT_TEXTURE_NAME,
         true
     )
     state.remove_texture = load_asset(
@@ -942,9 +1380,12 @@ build_panel = function()
         schedule_asset_retry()
         return
     end
+    local panel_height = state.editor_mode ~= nil
+        and EXPANDED_PANEL_HEIGHT
+        or PANEL_HEIGHT
     local content_ok = pcall(function()
         size_box:SetWidthOverride(PANEL_WIDTH)
-        size_box:SetHeightOverride(PANEL_HEIGHT)
+        size_box:SetHeightOverride(panel_height)
         size_box:AddChild(canvas)
         named_slot:SetContent(size_box)
     end)
@@ -956,6 +1397,9 @@ build_panel = function()
     end
 
     state.actions = {}
+    state.focus_items = {}
+    state.focus_index = nil
+    state.status_widgets = {}
 
     -- Copy typography from Palworld's native common-button text so every
     -- header and cell uses the same font, color, and shadow as the title UI.
@@ -967,13 +1411,44 @@ build_panel = function()
         "QUICK CONNECT",
         25,
         7,
-        PANEL_WIDTH - 105,
+        PANEL_WIDTH - 155,
         38,
         17,
         1.0,
         0,
         3
     )
+    local add_button = make_native_button(panel, {
+        kind = "add_open",
+    })
+    if alive(add_button) then
+        canvas_add(canvas, add_button, PANEL_WIDTH - 126, 7, 44, 32, 2)
+        set_native_button_interactive(add_button)
+        add_inactive_button_background(
+            canvas,
+            tree,
+            PANEL_WIDTH - 126,
+            7,
+            44,
+            32,
+            false
+        )
+        if state.editor_mode == nil then
+            register_focus(add_button, { kind = "add_open" })
+        end
+        local add_icon = make_icon(tree, state.add_texture, 0.95)
+        if alive(add_icon) then
+            canvas_add(
+                canvas,
+                add_icon,
+                PANEL_WIDTH - 126 + (44 - ADD_ICON_SIZE) / 2,
+                7 + (32 - ADD_ICON_SIZE) / 2,
+                ADD_ICON_SIZE,
+                ADD_ICON_SIZE,
+                4
+            )
+        end
+    end
     local refresh_button = make_native_button(panel, {
         kind = "refresh",
     })
@@ -988,9 +1463,19 @@ build_panel = function()
             32,
             2
         )
-        pcall(function()
-            refresh_button:SetIsEnabled(not state.refreshing)
-        end)
+        set_native_button_interactive(refresh_button)
+        add_inactive_button_background(
+            canvas,
+            tree,
+            PANEL_WIDTH - 74,
+            7,
+            52,
+            32,
+            false
+        )
+        if state.editor_mode == nil then
+            register_focus(refresh_button, { kind = "refresh" })
+        end
         local refresh_icon = make_icon(
             tree,
             state.refresh_texture,
@@ -1029,7 +1514,7 @@ build_panel = function()
         tree,
         template,
         state.refresh_feedback or "",
-        PANEL_WIDTH - 172,
+        PANEL_WIDTH - 242,
         11,
         108,
         22,
@@ -1043,9 +1528,9 @@ build_panel = function()
         canvas_add(canvas, title_rule, 22, 44, PANEL_WIDTH - 44, 2, 2)
     end
 
-    add_label(canvas, tree, template, "World Name", 60, 48, 205, 23, 12, 0.75, 0, 3)
-    add_label(canvas, tree, template, "Players", 278, 48, 90, 23, 12, 0.75, 1, 3)
-    add_label(canvas, tree, template, "Ping", 382, 48, 44, 23, 12, 0.75, 1, 3)
+    add_label(canvas, tree, template, "World Name", 60, 48, 190, 23, 12, 0.75, 0, 3)
+    add_label(canvas, tree, template, "Players", 252, 48, 76, 23, 12, 0.75, 1, 3)
+    add_label(canvas, tree, template, "Ping", 330, 48, 58, 23, 12, 0.75, 1, 3)
     local header_rule = make_rule(tree, 0.16)
     if alive(header_rule) then
         canvas_add(canvas, header_rule, 22, 72, PANEL_WIDTH - 44, 2, 2)
@@ -1057,8 +1542,8 @@ build_panel = function()
         local row_size_box = construct("/Script/UMG.SizeBox", tree)
         local scrolling_canvas = construct("/Script/UMG.CanvasPanel", tree)
         if not alive(scroll_box) or not alive(row_size_box) or not alive(scrolling_canvas) then
-            discard_panel(widget)
-            log("Could not construct the server-list scroll container; will retry.")
+            discard_unattached_panel(panel)
+            safe_log("Could not construct the server-list scroll container; will retry.")
             return
         end
 
@@ -1076,8 +1561,8 @@ build_panel = function()
             scroll_box:SetAlwaysShowScrollbar(#state.entries > MAX_ROWS)
         end)
         if not scroll_ok or not canvas_add(canvas, scroll_box, 0, ROW_START_Y, PANEL_WIDTH, ROW_VIEWPORT_HEIGHT, 2) then
-            discard_panel(widget)
-            log("Could not attach the server-list scroll container; will retry.")
+            discard_unattached_panel(panel)
+            safe_log("Could not attach the server-list scroll container; will retry.")
             return
         end
         row_canvas = scrolling_canvas
@@ -1116,6 +1601,20 @@ build_panel = function()
                     ROW_HEIGHT,
                     2
                 )
+                set_native_button_interactive(button)
+                add_inactive_button_background(
+                    row_canvas,
+                    tree,
+                    ROW_X,
+                    row_y,
+                    ROW_WIDTH,
+                    ROW_HEIGHT,
+                    state.editor_mode == "modify"
+                        and state.editor_index == index
+                )
+                if state.editor_mode == nil then
+                    register_focus(button, { kind = "connect", index = index })
+                end
             end
 
             local players, ping = status_for(entry)
@@ -1155,7 +1654,7 @@ build_panel = function()
                 entry.name,
                 60,
                 row_y + 7,
-                205,
+                178,
                 28,
                 15,
                 1.0,
@@ -1170,86 +1669,292 @@ build_panel = function()
                     name_label:SetTextOverflowPolicy(1)
                 end)
             end
-            add_label(
+            local players_label = add_label(
                 row_canvas,
                 tree,
                 template,
                 players,
-                278,
+                252,
                 row_y + 7,
-                90,
+                76,
                 28,
                 15,
                 1.0,
                 1,
                 4
             )
-            add_label(
+            local ping_label = add_label(
                 row_canvas,
                 tree,
                 template,
                 ping,
-                382,
+                330,
                 row_y + 7,
-                44,
+                58,
                 28,
                 15,
                 1.0,
                 1,
                 4
             )
-            if entry.discovered == true then
-                local remove_button = make_native_button(panel, {
-                    kind = "remove",
-                    index = index,
-                })
-                if alive(remove_button) then
+            local ping_throbber = construct("/Script/UMG.CircularThrobber", tree)
+            if alive(ping_throbber) then
+                pcall(function()
+                    ping_throbber:SetNumberOfPieces(8)
+                    ping_throbber:SetPeriod(0.75)
+                    ping_throbber:SetRadius(7)
+                    ping_throbber:SetVisibility(state.refreshing and 4 or 1)
+                end)
+                canvas_add(
+                    row_canvas,
+                    ping_throbber,
+                    348,
+                    row_y + 10,
+                    22,
+                    22,
+                    5
+                )
+            end
+            if state.refreshing and alive(ping_label) then
+                pcall(function()
+                    ping_label:SetVisibility(1)
+                end)
+            end
+            state.status_widgets[index] = {
+                players = players_label,
+                ping = ping_label,
+                throbber = ping_throbber,
+            }
+            local edit_button = make_native_button(panel, {
+                kind = "modify_open",
+                index = index,
+            })
+            if alive(edit_button) then
+                canvas_add(
+                    row_canvas,
+                    edit_button,
+                    EDIT_X,
+                    row_y,
+                    EDIT_WIDTH,
+                    ROW_HEIGHT,
+                    2
+                )
+                set_native_button_interactive(edit_button)
+                add_inactive_button_background(
+                    row_canvas,
+                    tree,
+                    EDIT_X,
+                    row_y,
+                    EDIT_WIDTH,
+                    ROW_HEIGHT,
+                    false
+                )
+                if state.editor_mode == nil then
+                    register_focus(edit_button, {
+                        kind = "modify_open",
+                        index = index,
+                    })
+                end
+                local edit_icon = make_icon(tree, state.edit_texture, 0.92)
+                if alive(edit_icon) then
                     canvas_add(
                         row_canvas,
-                        remove_button,
-                        REMOVE_X,
-                        row_y,
-                        REMOVE_WIDTH,
-                        ROW_HEIGHT,
-                        2
+                        edit_icon,
+                        EDIT_X + (EDIT_WIDTH - EDIT_ICON_SIZE) / 2,
+                        row_y + (ROW_HEIGHT - EDIT_ICON_SIZE) / 2,
+                        EDIT_ICON_SIZE,
+                        EDIT_ICON_SIZE,
+                        6
                     )
-                    local remove_icon = make_icon(
-                        tree,
-                        state.remove_texture,
-                        0.92
+                end
+            end
+            local remove_button = make_native_button(panel, {
+                kind = "remove",
+                index = index,
+            })
+            if alive(remove_button) then
+                canvas_add(
+                    row_canvas,
+                    remove_button,
+                    REMOVE_X,
+                    row_y,
+                    REMOVE_WIDTH,
+                    ROW_HEIGHT,
+                    2
+                )
+                set_native_button_interactive(remove_button)
+                add_inactive_button_background(
+                    row_canvas,
+                    tree,
+                    REMOVE_X,
+                    row_y,
+                    REMOVE_WIDTH,
+                    ROW_HEIGHT,
+                    false
+                )
+                if state.editor_mode == nil then
+                    register_focus(remove_button, {
+                        kind = "remove",
+                        index = index,
+                    })
+                end
+                local remove_icon = make_icon(tree, state.remove_texture, 0.92)
+                if alive(remove_icon) then
+                    canvas_add(
+                        row_canvas,
+                        remove_icon,
+                        REMOVE_X + (REMOVE_WIDTH - REMOVE_ICON_SIZE) / 2,
+                        row_y + (ROW_HEIGHT - REMOVE_ICON_SIZE) / 2,
+                        REMOVE_ICON_SIZE,
+                        REMOVE_ICON_SIZE,
+                        6
                     )
-                    if alive(remove_icon) then
-                        canvas_add(
-                            row_canvas,
-                            remove_icon,
-                            REMOVE_X + (REMOVE_WIDTH - REMOVE_ICON_SIZE) / 2,
-                            row_y + (ROW_HEIGHT - REMOVE_ICON_SIZE) / 2,
-                            REMOVE_ICON_SIZE,
-                            REMOVE_ICON_SIZE,
-                            6
-                        )
-                    else
-                        add_label(
-                            row_canvas,
-                            tree,
-                            template,
-                            "X",
-                            REMOVE_X,
-                            row_y + 6,
-                            REMOVE_WIDTH,
-                            28,
-                            14,
-                            0.78,
-                            1,
-                            6
-                        )
-                    end
                 end
             end
         end
     end
 
-    local footer_y = PANEL_HEIGHT - 66
+    if state.editor_mode ~= nil then
+        local draft = type(state.editor_draft) == "table"
+            and state.editor_draft
+            or {}
+        local editor_y = ROW_START_Y + ROW_VIEWPORT_HEIGHT + 12
+        local editor_rule = make_rule(tree, 0.2)
+        if alive(editor_rule) then
+            canvas_add(canvas, editor_rule, 22, editor_y, PANEL_WIDTH - 44, 2, 2)
+        end
+        add_label(
+            canvas,
+            tree,
+            template,
+            state.editor_mode == "add" and "ADD SERVER" or "MODIFY SERVER",
+            22,
+            editor_y + 7,
+            PANEL_WIDTH - 44,
+            24,
+            13,
+            0.9,
+            0,
+            3
+        )
+        local fields = {
+            {
+                key = "address",
+                label = "ADDRESS",
+                value = draft.address,
+                hint = "IP address or hostname:port",
+            },
+            {
+                key = "name",
+                label = "SERVER NAME",
+                value = draft.name,
+                hint = "Server name",
+            },
+            {
+                key = "password",
+                label = "PASSWORD",
+                value = draft.password,
+                hint = "Optional",
+                password = true,
+            },
+        }
+        local first_field_index = nil
+        local name_field_index = nil
+        for field_index, field in ipairs(fields) do
+            local label_y = editor_y + 36 + (field_index - 1) * 59
+            add_label(
+                canvas,
+                tree,
+                template,
+                field.label,
+                22,
+                label_y,
+                PANEL_WIDTH - 44,
+                18,
+                10,
+                0.72,
+                0,
+                3
+            )
+            local field_width = PANEL_WIDTH - 44
+            local field_height = 35
+            local surface, input = make_input_surface(
+                tree,
+                field.value,
+                field.hint,
+                field.password == true,
+                field_width,
+                field_height
+            )
+            state.editor_inputs[field.key] = input
+            if alive(surface) and alive(input) then
+                canvas_add(
+                    canvas,
+                    surface,
+                    22,
+                    label_y + 17,
+                    field_width,
+                    field_height,
+                    2
+                )
+                local focus_index = register_focus(input, {
+                    kind = "field",
+                    field = field.key,
+                })
+                first_field_index = first_field_index or focus_index
+                if field.key == "name" then
+                    name_field_index = focus_index
+                end
+            end
+        end
+        local primary = make_native_button(panel, {
+            kind = "editor_confirm",
+        })
+        if alive(primary) then
+            canvas_add(canvas, primary, 22, editor_y + 218, 220, 38, 2)
+            register_focus(primary, { kind = "editor_confirm" })
+            add_label(
+                canvas,
+                tree,
+                template,
+                state.editor_mode == "add" and "CONNECT" or "CONFIRM",
+                22,
+                editor_y + 224,
+                220,
+                26,
+                14,
+                1.0,
+                1,
+                4
+            )
+        end
+        local cancel = make_native_button(panel, {
+            kind = "editor_cancel",
+        })
+        if alive(cancel) then
+            canvas_add(canvas, cancel, 258, editor_y + 218, 220, 38, 2)
+            register_focus(cancel, { kind = "editor_cancel" })
+            add_label(
+                canvas,
+                tree,
+                template,
+                "CANCEL",
+                258,
+                editor_y + 224,
+                220,
+                26,
+                14,
+                1.0,
+                1,
+                4
+            )
+        end
+        state.focus_index = state.editor_mode == "modify"
+            and name_field_index
+            or first_field_index
+    end
+
+    local footer_y = panel_height - 66
     local footer_rule = make_rule(tree, 0.16)
     if alive(footer_rule) then
         canvas_add(canvas, footer_rule, 22, footer_y - 9, PANEL_WIDTH - 44, 2, 2)
@@ -1258,7 +1963,9 @@ build_panel = function()
         canvas,
         tree,
         template,
-        "Click a server to connect instantly.",
+        state.editor_mode ~= nil
+            and "Use Confirm or Connect to continue."
+            or "Successful joins are saved automatically.",
         25,
         footer_y,
         PANEL_WIDTH - 50,
@@ -1272,7 +1979,9 @@ build_panel = function()
         canvas,
         tree,
         template,
-        "Password changed? Use Join Multiplayer Game",
+        state.editor_mode ~= nil
+            and "Palworld handles connection and password errors."
+            or "Use + to add, the pencil to edit, or trash to remove.",
         25,
         footer_y + 21,
         PANEL_WIDTH - 50,
@@ -1286,7 +1995,9 @@ build_panel = function()
         canvas,
         tree,
         template,
-        "once, then Refresh. Shift+Refresh resyncs the list.",
+        state.editor_mode ~= nil
+            and "Press controller Cancel to close this editor."
+            or "Refresh updates status without renaming worlds.",
         25,
         footer_y + 38,
         PANEL_WIDTH - 50,
@@ -1332,8 +2043,11 @@ build_panel = function()
             Maximum = { X = 1, Y = 0.5 },
         })
         slot:SetAlignment({ X = 1, Y = 0.5 })
-        slot:SetPosition({ X = -55, Y = 25 })
-        slot:SetSize({ X = PANEL_WIDTH, Y = PANEL_HEIGHT })
+        slot:SetPosition({
+            X = -55,
+            Y = 25 + (panel_height - PANEL_HEIGHT) / 2,
+        })
+        slot:SetSize({ X = PANEL_WIDTH, Y = panel_height })
         slot:SetZOrder(25)
     end)
     if not shown then
@@ -1349,10 +2063,21 @@ build_panel = function()
     state.asset_failure_logged_title_key = nil
     state.last_disclaimer_visible = nil
     apply_disclaimer_visibility()
+    if state.focus_index ~= nil
+        and (state.editor_mode ~= nil or state.focus_requested)
+    then
+        schedule_on_game_thread(1, "Launch panel editor focus", function()
+            focus_at(state.focus_index)
+        end)
+        state.focus_requested = false
+    end
     -- Keep the style probe alive through construction. It is intentionally
     -- never attached to the widget tree and can be collected afterward.
     style_probe = nil
-    safe_log("Quick Connect launch panel opened.")
+    if state.panel_logged_title_key ~= state.title_key then
+        state.panel_logged_title_key = state.title_key
+        safe_log("Quick Connect launch panel available.")
+    end
 end
 
 local function adopt_title_world(world, controller, title_widget)
@@ -1399,6 +2124,20 @@ local function adopt_title_world(world, controller, title_widget)
                 and main_menu_is_visible(state.title_widget)
             then
                 state.title_stable = true
+                schedule_on_game_thread(5000, "Stable title metadata readiness", function()
+                    if state.title_key == world_key
+                        and state.title_widget_key == widget_key
+                        and state.title_context_revision == revision
+                        and main_menu_is_visible(state.title_widget)
+                        and state.title_available_notified_key ~= world_key
+                    then
+                        state.title_available_notified_key = world_key
+                        protected_call(
+                            "Launch panel title available callback",
+                            state.title_available
+                        )
+                    end
+                end)
                 request_panel_render()
             end
         end)
@@ -1473,6 +2212,10 @@ local function lifecycle_step()
                 state.dismissed_title_key = nil
                 state.recovery_title_key = nil
                 state.recovery_saw_hidden = false
+                protected_call(
+                    "Launch panel connection failure callback",
+                    state.connection_failed
+                )
             end
         end
         if menu_visible and state.ready and state.title_stable then
@@ -1504,27 +2247,43 @@ local function lifecycle_step()
         state.recovery_title_key = nil
         state.recovery_saw_hidden = false
         state.connection_attempt_id = state.connection_attempt_id + 1
+        state.editor_mode = nil
+        state.editor_index = nil
+        state.editor_draft = nil
+        state.restore_focus = nil
+        state.focus_requested = false
     end
     state.in_title_context = false
-    return GAMEPLAY_POLL_MS
+    -- Title-widget creation notifications restart the lifecycle when Palworld
+    -- returns to PL_Title. Keep no timer/callback chain alive during gameplay.
+    return nil
 end
 
 local function lifecycle_poll()
+    state.lifecycle_polling = true
     local generation = state.generation
     local queued, queue_error = pcall(ExecuteInGameThread, function()
         if not state.started or generation ~= state.generation then
+            state.lifecycle_polling = false
             return
         end
         local step_ok, next_delay = pcall(lifecycle_step)
         if not step_ok then
             safe_log("Launch panel lifecycle poll failed safely: " .. tostring(next_delay))
-            next_delay = GAMEPLAY_POLL_MS
+            state.lifecycle_polling = false
+            return
         end
-        schedule(next_delay, "Launch panel lifecycle poll", lifecycle_poll)
+        if tonumber(next_delay) ~= nil then
+            if not schedule(next_delay, "Launch panel lifecycle poll", lifecycle_poll) then
+                state.lifecycle_polling = false
+            end
+        else
+            state.lifecycle_polling = false
+        end
     end)
     if not queued then
+        state.lifecycle_polling = false
         safe_log("Launch panel lifecycle poll could not enter the game thread: " .. tostring(queue_error))
-        schedule(GAMEPLAY_POLL_MS, "Launch panel lifecycle recovery", lifecycle_poll)
     end
 end
 
@@ -1543,6 +2302,14 @@ function LaunchUI.start(options)
     end
     state.refresh = type(options.refresh) == "function" and options.refresh or function() end
     state.remove = type(options.remove) == "function" and options.remove or function() end
+    state.modify = type(options.modify) == "function" and options.modify or function() end
+    state.add = type(options.add) == "function" and options.add or function() end
+    state.connection_failed = type(options.connection_failed) == "function"
+        and options.connection_failed
+        or function() end
+    state.title_available = type(options.title_available) == "function"
+        and options.title_available
+        or function() end
     state.log = type(options.log) == "function" and options.log or function() end
     state.empty_message = type(options.empty_message) == "string"
         and options.empty_message
@@ -1559,6 +2326,9 @@ function LaunchUI.start(options)
                     local world, controller = find_title_context()
                     if alive(world) and alive(controller) then
                         adopt_title_world(world, controller, title)
+                        if not state.lifecycle_polling then
+                            lifecycle_poll()
+                        end
                     end
                 end)
                 if not callback_ok then
@@ -1626,8 +2396,44 @@ function LaunchUI.set_entries(new_entries, empty_message)
     end)
 end
 
+local function update_status_widgets()
+    for index, widgets in pairs(state.status_widgets) do
+        local entry = state.entries[index]
+        if type(widgets) == "table" and type(entry) == "table" then
+            local players, ping = status_for(entry)
+            if alive(widgets.players) then
+                pcall(function()
+                    widgets.players:SetText(FText(players))
+                end)
+            end
+            if alive(widgets.ping) then
+                pcall(function()
+                    widgets.ping:SetText(FText(ping))
+                    widgets.ping:SetVisibility(state.refreshing and 1 or 4)
+                end)
+            end
+            if alive(widgets.throbber) then
+                pcall(function()
+                    widgets.throbber:SetVisibility(state.refreshing and 4 or 1)
+                end)
+            end
+        end
+    end
+end
+
+function LaunchUI.set_statuses(new_entries)
+    run_on_game_thread("Launch panel status update", function()
+        state.entries = type(new_entries) == "table" and new_entries or {}
+        update_status_widgets()
+    end)
+end
+
 function LaunchUI.restore_after_failed_connect()
     run_on_game_thread("Failed connection panel restore", function()
+        protected_call(
+            "Launch panel connection failure callback",
+            state.connection_failed
+        )
         state.connection_attempt_id = state.connection_attempt_id + 1
         state.dismissed_title_key = nil
         state.recovery_title_key = nil
@@ -1638,18 +2444,7 @@ function LaunchUI.restore_after_failed_connect()
 end
 
 update_refresh_controls = function()
-    for _, registration in pairs(state.actions) do
-        if type(registration) == "table" and alive(registration.ref) then
-            pcall(function()
-                registration.ref:SetIsEnabled(not state.refreshing)
-            end)
-        end
-    end
-    if alive(state.refresh_button) then
-        pcall(function()
-            state.refresh_button:SetIsEnabled(not state.refreshing)
-        end)
-    end
+    update_status_widgets()
     if alive(state.refresh_icon) then
         pcall(function()
             state.refresh_icon:SetRenderOpacity(state.refreshing and 0.45 or 1.0)

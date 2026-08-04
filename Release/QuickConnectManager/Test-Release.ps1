@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.1",
-    [string]$WorkshopVersion = "0.1.1-hotfix.2",
+    [string]$Version = "0.2.0",
+    [string]$WorkshopVersion = "0.2.0",
     [string]$ZipPath,
     [string]$PakSource,
     [string]$WorkshopPath,
@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $releaseRoot = $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $releaseRoot)
 $modRoot = Join-Path $repoRoot "QuickConnectManager"
-$scriptNames = @("config.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
+$scriptNames = @("config.lua", "connections.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
 $publicAuthor = "virtualbj$([char]0x00F6)rn"
 if (-not $ZipPath) {
     $ZipPath = Join-Path $releaseRoot "Dist\QuickConnectManager-$Version.zip"
@@ -96,6 +96,7 @@ Assert-Condition ($configServerBlock -notmatch 'enabled\s*=\s*true') "Default re
 Assert-Condition ($configServerBlock -notmatch 'password\s*=\s*"[^"\r\n]+"') "Default release config must not contain a password."
 
 $launchSource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\launch_ui.lua") -Raw
+$connectionsSource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\connections.lua") -Raw
 $discoverySource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\discovery.lua") -Raw
 $mainSource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\main.lua") -Raw
 $serversSource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\servers.lua") -Raw
@@ -133,7 +134,15 @@ Assert-Condition ($discoverySource -match 'retain_one_shot') "Discovery must ret
 Assert-Condition ($launchSource -match 'retain_one_shot') "Launch UI must retain delayed callback references."
 Assert-Condition ($launchSource -match 'REFRESH_ICON_SIZE\s*=\s*40') "Refresh icon must retain its doubled release size."
 Assert-Condition ($launchSource -match 'LOCK_ICON_SIZE\s*=\s*27') "Lock icon must retain its 27-pixel release size."
-Assert-Condition ($launchSource -match 'REMOVE_ICON_SIZE\s*=\s*36') "Removal icon must retain its doubled release size."
+Assert-Condition ($launchSource -match 'ADD_ICON_SIZE\s*=\s*14') "Add icon must use its reduced 14-pixel size."
+Assert-Condition ($launchSource -match 'REMOVE_ICON_SIZE\s*=\s*27') "Removal icon must use its reduced 27-pixel size."
+Assert-Condition ($launchSource -match 'T_prt_add_plus') "Launch UI must use the approved Add texture."
+Assert-Condition ($launchSource -match 'T_icon_Guild_Edit') "Launch UI must use the approved Modify texture."
+Assert-Condition ($launchSource -match 'T_icon_garbage') "Launch UI must use the approved Delete texture."
+Assert-Condition ($launchSource -match 'PalEditableTextBox') "Launch editor must use Palworld-native text entry."
+Assert-Condition ($launchSource -match 'PalEditableTextBox_IP' -and $launchSource -match 'PalEditableTextBox_111') "Launch editor must inherit Palworld's native address and password field archetypes."
+Assert-Condition ($launchSource -match 'CircularThrobber' -and $launchSource -match 'function LaunchUI\.set_statuses') "Status refresh must use native-style per-row ping loading without rebuilding the server list."
+Assert-Condition ($launchSource -match 'Gamepad_DPad_Down' -and $launchSource -match 'Gamepad_FaceButton_Right') "Launch editor must retain gamepad navigation and cancel routing."
 Assert-Condition ($launchSource -match 'construct\("/Script/UMG\.ScrollBox"') "Launch server rows must use a vertical ScrollBox."
 Assert-Condition ($launchSource -match 'for index = 1, #state\.entries do') "Launch server rows must render every configured entry."
 Assert-Condition ($launchSource -notmatch 'math\.min\(#state\.entries, MAX_ROWS\)') "Launch server rows must not be capped at the viewport size."
@@ -147,6 +156,9 @@ Assert-Condition ($mainSource -match 'startup_refresh_needed' -and $mainSource -
 Assert-Condition ($discoverySource -match 'temporary_path\s*=\s*cache_path\s*\.\.\s*"\.tmp"') "Discovery cache must use a temporary replacement."
 Assert-Condition ($serversSource -match 'local function replace_file') "Config writes must use the recoverable replacement helper."
 Assert-Condition ($serversSource -match 'MAX_NAME_BYTES\s*=\s*128') "Server display names must remain bounded."
+Assert-Condition ($serversSource -match 'function Servers\.unique_name') "Manual Add must retain deterministic unique-name generation."
+Assert-Condition ($connectionsSource -match 'PalUIJoinGameBase:ConnectServerByAddress') "Connection tracking must observe Palworld's native join path."
+Assert-Condition ($connectionsSource -match 'state\.was_title and not is_title') "Connection tracking must wait for a title-to-gameplay transition."
 
 $nexusChangelog = (Get-Content -LiteralPath (Join-Path $releaseRoot "NEXUS_VERSION_CHANGELOG.txt") -Raw).TrimEnd("`r", "`n") -replace "`r`n", "`n"
 Assert-Condition (-not [string]::IsNullOrWhiteSpace($nexusChangelog)) "Nexus version changelog is empty."

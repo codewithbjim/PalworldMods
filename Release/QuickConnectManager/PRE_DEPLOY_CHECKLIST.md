@@ -5,12 +5,12 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 ## 1. Prepare the candidate
 
 - [ ] Confirm Palworld is closed before replacing installed runtime files.
-- [ ] Update the Nexus/source manifest to `0.1.1`, the staged Workshop manifest to `0.1.1-hotfix.2`, and align each channel's changelog and publishing metadata.
+- [ ] Update the Nexus/source and staged Workshop manifests to `0.2.0` and align each channel's changelog and publishing metadata.
 - [ ] Confirm `thumbnail.png` is under 1 MB and `NEXUS_IMAGE.png` is the approved full-resolution gallery image.
-- [ ] Rebuild `QuickConnectManager_UI_P.pak` from the checked-in cooked widget and update its release checksum.
+- [ ] Verify the unchanged cooked window-shell PAK against its checked-in checksum; rebuild it only if the cooked asset changes.
 - [ ] Build the Nexus archive with `Release/QuickConnectManager/build-release.ps1`.
 - [ ] Build a clean Workshop directory with `Release/QuickConnectManager/build-workshop-package.ps1`.
-- [ ] Run `Release/QuickConnectManager/Test-Release.ps1 -Version 0.1.1 -WorkshopVersion 0.1.1-hotfix.2` against the final archive and Workshop directory.
+- [ ] Run `Release/QuickConnectManager/Test-Release.ps1 -Version 0.2.0 -WorkshopVersion 0.2.0` against the final archive and Workshop directory.
 - [ ] Parse every shipped Lua file with Lua 5.3 or 5.4 syntax rules and execute all deterministic tests under `QuickConnectManager/tests`.
 - [ ] Confirm the release archive and Workshop directory contain no `discovery_cache.lua`, `.bak`, `.tmp`, `.previous`, test fixture, real server address, world GUID, or saved password.
 - [ ] Confirm the candidate commit contains only intended release changes and uses `virtualbjörn` with the repository noreply address in Git metadata.
@@ -34,6 +34,7 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 - [ ] Confirm `discovery_cache.lua` contains no plaintext password.
 - [ ] Relaunch at least three times and confirm automatic discovery does not run again after the initial list is populated.
 - [ ] Select normal Refresh and confirm it updates status and credentials without replacing or rediscovering the configured list.
+- [ ] Confirm normal Refresh and Shift+Refresh preserve every matching saved world name.
 - [ ] Change network conditions or query at several intervals and confirm Refresh does not reuse an identical construction-time ping snapshot when Palworld reports a new value.
 - [ ] Confirm each Refresh logs completion or a bounded timeout for Palworld's stock server-row ping operations and never leaves a pending ping batch alive.
 - [ ] Hold either Shift key while selecting Refresh and confirm one forced discovery replaces the automatically managed list.
@@ -43,12 +44,16 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 ## 4. Connection and title-return stress
 
 - [ ] Connect to an available server without a password and confirm travel succeeds.
+- [ ] Add a server through the integrated editor and confirm it is absent from `config.lua` before travel and present only after successful gameplay entry.
+- [ ] Add another server with the same requested name and confirm only the manual addition receives the lowest available numeric suffix.
+- [ ] Join a new server through Palworld's stock Join Multiplayer Game screen and confirm the dedicated server name is saved exactly without a generated suffix.
+- [ ] Modify address, name, and password in game; confirm an address change clears stale world GUID and status metadata while a name-only change preserves metadata.
 - [ ] Confirm a launch-panel row click reaches Palworld's native join flow without relying on an EngineTick-delayed connection callback.
 - [ ] Connect to a password-protected server with a Palworld-saved password and confirm no "No password has been entered" dialog appears.
 - [ ] Test an unavailable server, wrong password, version mismatch, and timeout; dismiss each dialog and confirm the panel returns exactly once when the main menu becomes visible.
 - [ ] Repeat failed connection and title return at least 20 times while alternating servers.
 - [ ] Confirm the panel hides immediately after selecting a server and never duplicates during the connection attempt.
-- [ ] Confirm lock, refresh, and removal textures remain rendered after every error dialog and panel rebuild.
+- [ ] Confirm lock, Add, Refresh, Modify, and garbage textures remain rendered after every error dialog and panel rebuild.
 - [ ] Open Join Multiplayer Game, return to the title page, and repeat at least 10 times; confirm one panel and one action per click.
 - [ ] Enter a local world, return to title, join a server, disconnect, and return to title; confirm the panel reappears once after each transition.
 
@@ -59,7 +64,8 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 - [ ] Confirm server rows, removal buttons, console connects, and hotkeys are ignored while REFRESHING, then become available after completion or failure.
 - [ ] Leave and return to the title screen during a refresh; confirm no panel attaches to an obsolete title widget and no late ping result is published twice.
 - [ ] Alternate Refresh and Shift+Refresh for at least 10 completed cycles.
-- [ ] Remove rows before and after refreshes and confirm the separate X control never triggers the server-row connection action.
+- [ ] Remove rows before and after refreshes and confirm the separate garbage control never triggers the server-row connection action.
+- [ ] Navigate Add, Refresh, every row action, all three fields, Confirm, and Cancel with D-pad and left stick; confirm controller text entry, focus scrolling, and focus restoration.
 - [ ] Confirm long server names clip cleanly, hints remain fully visible, and no invalid metadata reaches the panel.
 - [ ] Confirm the panel shows three rows at a time and vertical scrolling reaches every additional enabled entry.
 - [ ] Review UE4SS.log and confirm each render produces one "Quick Connect launch panel opened" entry rather than multiple entries for the same visible panel.
@@ -105,7 +111,7 @@ Release acceptance requires:
 - [ ] Password-protected and unprotected connections both pass.
 - [ ] Failed connections and all tested title transitions restore exactly one panel.
 - [ ] Automated release gate passes against the exact final archive and Workshop directory.
-- [ ] The final release commit is verified on `origin/main` and tagged with the annotated `quick-connect-manager-v0.1.1.2` source tag.
+- [ ] The final release commit is verified on `origin/main` and tagged with the annotated `quick-connect-manager-v0.2.0` source tag.
 
 ## 9. Publish safely
 

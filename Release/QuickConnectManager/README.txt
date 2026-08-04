@@ -1,4 +1,4 @@
-QUICK CONNECT MANAGER 0.1.1
+QUICK CONNECT MANAGER 0.2.0
 ===========================
 
 REQUIREMENT
@@ -13,6 +13,7 @@ Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\enabled.txt
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Info.json
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\config.lua
+  Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\connections.lua
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\discovery.lua
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\launch_ui.lua
   Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\main.lua
@@ -26,17 +27,15 @@ If the UE4SS installation uses mods.txt, add:
 
 USAGE
 -----
-The Quick Connect panel appears automatically on Palworld's launch screen. Select a listed server to connect, use Refresh to update status and saved credentials, or hold Shift while selecting Refresh to force a new History discovery.
+The Quick Connect panel appears automatically on Palworld's launch screen. Select a listed server to connect, use the plus button to add a server, use the pencil to modify it, use the garbage button to remove it, or use Refresh to update status and saved credentials without changing saved world names.
+
+The Add and Modify forms are integrated into the panel and support mouse, keyboard, D-pad, left stick, controller Confirm, controller Cancel, and Palworld's native controller text entry. Manual Add entries are saved only after a successful connection. Connections made through Palworld's Join Multiplayer Game screen are also added automatically after success.
 
 On the first launch with no enabled server configured, the mod imports only active recent dedicated servers from Palworld's History list. Later launches reuse the generated configuration and do not rediscover servers unless Shift+Refresh is used.
 
 PASSWORDS
 ---------
 Saved server passwords are written as plain text to Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager\Scripts\config.lua. Protect that local file and do not include it in logs, screenshots, support bundles, or shared archives.
-
-PASSWORD CHANGES
-----------------
-If a server password changes, connect once through Palworld's Join Multiplayer Game screen, return to the title screen, and select Refresh so Quick Connect can update the saved credential.
 
 UNINSTALL
 ---------

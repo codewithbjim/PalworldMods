@@ -1,6 +1,14 @@
 # Quick Connect Manager
 
-Quick Connect Manager is a UE4SS Lua mod for keeping named Palworld dedicated-server shortcuts. Its native server selector is shown automatically on Palworld's launch screen, and selecting a server connects immediately through Unreal's normal client-travel path. It does not alter the server, authentication, saves, or gameplay.
+Quick Connect Manager is a UE4SS Lua mod for keeping named Palworld dedicated-server shortcuts. Its native, gamepad-compatible server selector is shown automatically on Palworld's launch screen, and selecting a server connects immediately through Unreal's normal client-travel path. It does not alter the server, authentication, saves, or gameplay.
+
+## Manage servers in game
+
+Use the plus button to expand Add Server, enter an address, name, and optional password, then select Connect. The entry is written to `config.lua` only after Palworld successfully enters the server. If the requested name already exists, Quick Connect adds the lowest available numeric suffix.
+
+Use the pencil button to expand Modify Server and edit the address, name, or password. Changing an address clears metadata belonging to the old endpoint until the new server is connected or refreshed. Use the garbage button to remove any saved entry. The editor and list support mouse, keyboard, D-pad, left stick, controller Confirm, controller Cancel, and Palworld's native controller text-entry behavior.
+
+Successful connections made through Palworld's normal **Join Multiplayer Game** screen are also saved automatically. New entries use the dedicated server's own name without adding a suffix. Existing addresses receive updated metadata without losing a custom saved name.
 
 ## Configure servers
 
@@ -15,13 +23,13 @@ servers = {
 
 Restart Quick Connect Manager after changing the file. Addresses accept a hostname or IPv4 address and an optional port. URL options, commands, spaces, and embedded address passwords are rejected. The separate optional `password` field is supported and is stored as plain text in this local configuration file; passwords are never printed by the mod.
 
-On the mod's first launch, if no enabled server has been added, Quick Connect asks Palworld for the user's History server list. Rows with an invalid ping or player count require an exact client-version match; rows with complete live status may differ only in the final build number while retaining the same `X.Y.Z` version. World GUIDs, password-required state, and any password already saved by Palworld are added to the generated `config.lua`; the discovery cache deliberately omits the password. The bootstrap runs only once. Adding any enabled entry to `config.lua` takes precedence over the cache. Hold Shift while selecting Refresh to force a new discovery and replace the automatically managed server list.
+On the mod's first launch, if no enabled server has been added, Quick Connect asks Palworld for the user's History server list. Rows with an invalid ping or player count require an exact client-version match; rows with complete live status may differ only in the final build number while retaining the same `X.Y.Z` version. World GUIDs, password-required state, and any password already saved by Palworld are added to the generated `config.lua`; the discovery cache deliberately omits the password. The bootstrap runs only once. Adding any enabled entry to `config.lua` takes precedence over the cache. Hold Shift while selecting Refresh to force a new discovery and replace the automatically managed server list while preserving the names of matching saved entries.
 
 ## Launch-screen selector
 
 The non-modal selector panel appears automatically on the right side when Palworld's title screen becomes available. It uses Palworld's common-window and common-button widgets directly; DarnUI and DarnMenu are not required. The normal title menu remains available. If Palworld's mod disclaimer is visible, Quick Connect hides until it closes. Its launch-screen lifecycle is independent of the disclaimer, so mods that suppress the disclaimer do not suppress Quick Connect.
 
-Select a server row to connect immediately. A lock icon marks password-protected servers. Refresh asks Palworld for current History status and saved credentials for the existing rows; it does not rediscover or replace the configured list. Shift+Refresh explicitly performs a full discovery sync. The separate `X` action removes an automatically discovered server from Quick Connect and remembers that choice across refreshes. If a server password changes, reconnect once through Palworld's Join Multiplayer Game flow, then use Refresh to update the saved password in `config.lua`. Set `ui.show_on_launch = false` in `Scripts/config.lua` to disable the automatic selector.
+Select a server row to connect immediately. A lock icon marks password-protected servers. Refresh asks Palworld for current History status and saved credentials for the existing rows without changing their saved names. Shift+Refresh explicitly performs a full discovery sync while preserving matching names. Set `ui.show_on_launch = false` in `Scripts/config.lua` to disable the automatic selector.
 
 ## Other connection controls
 
@@ -60,7 +68,6 @@ The panel exists only on Palworld's title world. Runtime callbacks validate Unre
 ## Current limitations
 
 - Saved server passwords are local plain text in `config.lua`; protect that file and do not include it in shared logs or mod archives.
-- Manually configured servers remain config-based; the panel can remove only automatically discovered entries.
 - The compact launch selector displays three server rows at a time; use the vertical scrollbar or mouse wheel to reach additional entries.
 - Refresh uses Palworld's History query, so a manually configured server receives updated status only when it is also present in the user's History list.
 - IPv6 addresses are not supported yet.

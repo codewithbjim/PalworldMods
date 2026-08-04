@@ -35,17 +35,44 @@ package.preload.discovery = function()
             removal_count = removal_count + 1
             return true
         end,
+        restore = function()
+            return true
+        end,
+    }
+end
+
+local connection_watch_options = nil
+package.preload.connections = function()
+    return {
+        start = function(options)
+            connection_watch_options = options
+            return true
+        end,
+        stage_manual = function()
+            return true
+        end,
+        cancel_manual = function()
+            return true
+        end,
     }
 end
 
 local launch_options = nil
+local latest_entries = nil
+local status_update_count = 0
 package.preload.launch_ui = function()
     return {
         start = function(options)
             launch_options = options
             return true
         end,
-        set_entries = function() end,
+        set_entries = function(entries)
+            latest_entries = entries
+        end,
+        set_statuses = function(entries)
+            latest_entries = entries
+            status_update_count = status_update_count + 1
+        end,
         set_refreshing = function() end,
         show_refresh_result = function() end,
         restore_after_failed_connect = function() end,
@@ -77,14 +104,17 @@ end
 require("main")
 
 expect("launch UI receives callbacks", type(launch_options) == "table")
+expect("connection watcher receives callbacks", type(connection_watch_options) == "table")
 expect("startup refresh begins", type(discovery_callbacks) == "table")
 expect("startup refresh blocks UI connect", launch_options.connect(1) == false)
 expect("startup refresh blocks removal", launch_options.remove(1) == false)
+expect("startup refresh blocks modification", launch_options.modify(1, {}) == false)
+expect("startup refresh blocks manual add", launch_options.add({}) == false)
 expect("blocked actions do not enter native services", connection_count == 0 and removal_count == 0)
 
 discovery_callbacks.on_complete({
     {
-        name = "Fixture Server",
+        name = "Dedicated Server Rename",
         address = "fixture.example:8211",
         players = 1,
         max_players = 32,
@@ -94,14 +124,13 @@ discovery_callbacks.on_complete({
 })
 
 expect("manual refresh starts after startup completion", launch_options.refresh(false) == true)
-expect("manual refresh blocks UI connect", launch_options.connect(1) == false)
-expect("manual refresh blocks removal", launch_options.remove(1) == false)
-expect("manual refresh still isolates native actions", connection_count == 0 and removal_count == 0)
+expect("manual status refresh keeps UI connect available", launch_options.connect(1) == true)
+expect("manual status refresh enters native connect", connection_count == 1)
 
 discovery_callbacks.on_complete({
     {
-        name = "Fixture Server",
-        address = "fixture.example:8211",
+        name = "Renamed Again",
+        address = "fixture.example:27015",
         players = 2,
         max_players = 32,
         ping = 41,
@@ -109,8 +138,17 @@ discovery_callbacks.on_complete({
     },
 })
 
-expect("connect is restored after refresh settlement", launch_options.connect(1) == true)
-expect("settled connect enters native service once", connection_count == 1)
+expect(
+    "refresh does not rename saved world",
+    latest_entries[1].name == "Fixture Server"
+)
+expect("manual refresh updates status widgets in place", status_update_count == 1)
+expect(
+    "unique-host fallback reconciles status across a changed port",
+    latest_entries[1].address == "fixture.example:8211"
+        and latest_entries[1].ping == 41
+        and latest_entries[1].players == 2
+)
 
 if failures > 0 then
     error(string.format("%d test(s) failed", failures))

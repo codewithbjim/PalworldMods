@@ -38,6 +38,12 @@ local function sanitized_text(value, maximum_bytes, collapse_whitespace)
     if result == nil then
         return nil
     end
+    if result:match("^UObject:%s*[0-9A-Fa-fx]+$")
+        or result:match("^TrivialObject:%s*[0-9A-Fa-fx]+$")
+        or result:match("^RemoteUnrealParam:")
+    then
+        return nil
+    end
     result = result:gsub("[%z\1-\31\127]", " ")
     if collapse_whitespace then
         result = result:gsub("%s+", " ")
@@ -201,6 +207,138 @@ function Servers.resolve(entries, value)
         end
     end
     return nil
+end
+
+function Servers.unique_name(entries, value, ignored_index)
+    local base = sanitized_text(value, MAX_NAME_BYTES, true)
+    if base == nil or base == "" then
+        base = "Server"
+    end
+    local used = {}
+    for index, entry in ipairs(type(entries) == "table" and entries or {}) do
+        if index ~= ignored_index and type(entry) == "table"
+            and type(entry.name) == "string"
+        then
+            used[entry.name:lower()] = true
+        end
+    end
+    if not used[base:lower()] then
+        return base
+    end
+    local suffix = 2
+    while used[(base .. " " .. tostring(suffix)):lower()] do
+        suffix = suffix + 1
+    end
+    return truncate_utf8(base, math.max(0, MAX_NAME_BYTES - #tostring(suffix) - 1))
+        .. " " .. tostring(suffix)
+end
+
+function Servers.find_index(entries, address, world_guid)
+    local wanted_address = Servers.validate_address(address)
+    local wanted_guid = sanitized_text(world_guid, MAX_GUID_BYTES, true)
+    if wanted_address ~= nil then
+        wanted_address = wanted_address:lower()
+    end
+    if wanted_guid ~= nil then
+        wanted_guid = wanted_guid:lower()
+    end
+    for index, entry in ipairs(type(entries) == "table" and entries or {}) do
+        if wanted_address ~= nil and type(entry.address) == "string"
+            and entry.address:lower() == wanted_address
+        then
+            return index
+        end
+        if wanted_guid ~= nil and wanted_guid ~= ""
+            and type(entry.world_guid) == "string"
+            and entry.world_guid:lower() == wanted_guid
+        then
+            return index
+        end
+    end
+    return nil
+end
+
+local function copy_live_metadata(target, source)
+    for _, key in ipairs({
+        "players",
+        "max_players",
+        "ping",
+        "world_guid",
+        "password_protected",
+    }) do
+        if source[key] ~= nil then
+            target[key] = source[key]
+        end
+    end
+    if source.password ~= nil then
+        target.password = source.password
+        target.password_protected = source.password ~= ""
+            or source.password_protected == true
+    end
+end
+
+function Servers.upsert_connected(entries, candidate, options)
+    entries = type(entries) == "table" and entries or {}
+    options = type(options) == "table" and options or {}
+    local normalized, warnings = Servers.load({ candidate })
+    local incoming = normalized[1]
+    if incoming == nil then
+        return nil, nil, warnings[1] or "server details are invalid"
+    end
+    local index = Servers.find_index(entries, incoming.address, incoming.world_guid)
+    if index ~= nil then
+        local existing = entries[index]
+        existing.address = incoming.address
+        copy_live_metadata(existing, incoming)
+        if options.replace_existing_name == true then
+            existing.name = incoming.name
+        end
+        if incoming.discovered == true then
+            existing.discovered = true
+        end
+        return existing, index, nil, false
+    end
+    if options.unique_name == true then
+        incoming.name = Servers.unique_name(entries, incoming.name)
+    end
+    entries[#entries + 1] = incoming
+    return incoming, #entries, nil, true
+end
+
+function Servers.modify(entries, index, changes)
+    entries = type(entries) == "table" and entries or {}
+    changes = type(changes) == "table" and changes or {}
+    local existing = entries[index]
+    if type(existing) ~= "table" then
+        return nil, "server slot does not exist"
+    end
+    local address, address_error = Servers.validate_address(changes.address)
+    if address == nil then
+        return nil, address_error
+    end
+    local name = sanitized_text(changes.name, MAX_NAME_BYTES, true)
+    if name == nil or name == "" then
+        return nil, "server name is empty"
+    end
+    local duplicate_index = Servers.find_index(entries, address)
+    if duplicate_index ~= nil and duplicate_index ~= index then
+        return nil, "server address is already saved"
+    end
+    local password = type(changes.password) == "string"
+        and truncate_utf8(changes.password:gsub("%z", ""), MAX_PASSWORD_BYTES)
+        or ""
+    local address_changed = existing.address:lower() ~= address:lower()
+    existing.name = name
+    existing.address = address
+    existing.password = password ~= "" and password or nil
+    existing.password_protected = password ~= ""
+    if address_changed then
+        existing.players = nil
+        existing.max_players = nil
+        existing.ping = nil
+        existing.world_guid = nil
+    end
+    return existing, nil, address_changed
 end
 
 local function find_server_table(source)

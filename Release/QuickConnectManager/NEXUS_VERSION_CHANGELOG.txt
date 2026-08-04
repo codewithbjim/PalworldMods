@@ -1,2 +1,3 @@
-Adds vertical scrolling beyond three server rows.
-Requires exact versions for incomplete status; fully valid rows may differ only in the final build number when X.Y.Z matches.
+Adds gamepad-compatible Add, Modify, and Delete controls with native Palworld fields.
+Saves manual and Join Multiplayer connections only after success.
+Refresh preserves names and updates only player/ping cells with native-style loading.

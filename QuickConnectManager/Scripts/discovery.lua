@@ -43,6 +43,7 @@ local state = {
     on_error = function() end,
     removed = {},
     save_cache = true,
+    target_addresses = {},
     callback_sequence = 0,
     pending_callbacks = {},
     completion_hook_callback = nil,
@@ -185,6 +186,37 @@ local function boolean_value(value)
         return value:get()
     end)
     return ok and unwrapped == true
+end
+
+local function guid_value(value)
+    local direct = string_value(value):match("^%s*(.-)%s*$") or ""
+    direct = direct:gsub("[{}%-]", "")
+    if #direct == 32 and direct:match("^[0-9A-Fa-f]+$") then
+        return direct:upper()
+    end
+
+    local unwrapped = value
+    pcall(function()
+        local candidate = value:get()
+        if candidate ~= nil then
+            unwrapped = candidate
+        end
+    end)
+    local parts = {}
+    for _, field in ipairs({ "A", "B", "C", "D" }) do
+        local ok, field_value = pcall(function()
+            return unwrapped[field]
+        end)
+        local numeric = ok and number_value(field_value) or nil
+        if numeric == nil then
+            return nil
+        end
+        parts[#parts + 1] = string.format(
+            "%08X",
+            math.floor(numeric) % 4294967296
+        )
+    end
+    return table.concat(parts)
 end
 
 local function version_parts(value)
@@ -416,7 +448,7 @@ local function finish(servers, request_id)
     for _, server in ipairs(type(servers) == "table" and servers or {}) do
         server._display_data = nil
         local key = tostring(server.address or ""):lower()
-        if state.removed[key] ~= true then
+        if state.removed[key] ~= true or state.target_addresses[key] == true then
             visible_servers[#visible_servers + 1] = server
         end
     end
@@ -481,6 +513,7 @@ end
 
 local function collect_live_servers(widget)
     local servers = {}
+    local row_diagnostics = {}
     local seen = {}
     local quality_by_address = {}
     local player_version = current_game_version(widget)
@@ -500,7 +533,7 @@ local function collect_live_servers(widget)
         return widget.CachedServerDisplayInfo
     end)
     if not array_ok or array == nil then
-        return servers, total_rows, history_rows, rejections
+        return servers, total_rows, history_rows, rejections, row_diagnostics
     end
 
     pcall(function()
@@ -557,13 +590,33 @@ local function collect_live_servers(widget)
                 player_version,
                 exact_version_required
             )
+            local normalized_endpoint = endpoint_valid
+                and (host .. ":" .. tostring(math.floor(port)))
+                or nil
+            local targeted = normalized_endpoint ~= nil
+                and state.target_addresses[normalized_endpoint:lower()] == true
+            if #row_diagnostics < 12 then
+                local diagnostic_endpoint = endpoint_valid
+                    and normalized_endpoint
+                    or "invalid-endpoint"
+                local diagnostic_guid = guid_value(row.WorldGUID)
+                row_diagnostics[#row_diagnostics + 1] = string.format(
+                    "%s[type=%s ping=%s players=%s version=%s guid=%s]",
+                    diagnostic_endpoint,
+                    tostring(row_type or "nil"),
+                    ping_valid and "yes" or "no",
+                    players_valid and "yes" or "no",
+                    version_valid and "yes" or "no",
+                    diagnostic_guid ~= nil and "yes" or "no"
+                )
+            end
             if not version_valid then
                 rejections.version = rejections.version + 1
             end
             -- Rows without complete live status must exactly match the player
             -- build. Fully live rows may differ only in the final build number.
-            if endpoint_valid and version_valid then
-                local address = host .. ":" .. tostring(math.floor(port))
+            if endpoint_valid and (version_valid or targeted) then
+                local address = normalized_endpoint
                 local quality = (ping_valid and 1 or 0)
                     + (players_valid and 1 or 0)
                     + (capacity_valid and 1 or 0)
@@ -575,9 +628,7 @@ local function collect_live_servers(widget)
                     if name == "" then
                         name = address
                     end
-                    local world_guid = string_value(row.WorldGUID):match(
-                        "^%s*(.-)%s*$"
-                    )
+                    local world_guid = guid_value(row.WorldGUID)
                     local password = restore_saved_password(
                         widget,
                         world_guid,
@@ -591,7 +642,7 @@ local function collect_live_servers(widget)
                         players = players_valid and math.floor(players) or nil,
                         max_players = capacity_valid and math.floor(max_players) or nil,
                         ping = ping_valid and math.floor(ping) or nil,
-                        world_guid = world_guid ~= "" and world_guid or nil,
+                        world_guid = world_guid,
                         password = password,
                         password_protected = locked,
                         discovered = true,
@@ -614,7 +665,7 @@ local function collect_live_servers(widget)
             end
         end)
     end)
-    return servers, total_rows, history_rows, rejections
+    return servers, total_rows, history_rows, rejections, row_diagnostics
 end
 
 local function finish_ping_record(row_key, ping)
@@ -1041,7 +1092,8 @@ local function register_completion_hook()
                         fail("Palworld's server-history widget became unavailable.", request_id)
                         return
                     end
-                    local servers, total_rows, history_rows, rejections =
+                    local servers, total_rows, history_rows, rejections,
+                        row_diagnostics =
                         collect_live_servers(state.widget)
                     safe_log(string.format(
                         "Palworld History query returned %d row(s), %d usable; "
@@ -1059,6 +1111,10 @@ local function register_completion_hook()
                         rejections.duplicate,
                         rejections.normalization
                     ))
+                    if next(state.target_addresses) ~= nil then
+                        safe_log("Targeted Recent Servers rows: "
+                            .. table.concat(row_diagnostics, "; "))
+                    end
                     start_stock_row_pings(servers, request_id)
                 end)
             end
@@ -1099,8 +1155,8 @@ local function load_join_class()
     return ok and alive(loaded) and loaded or nil
 end
 
-local function begin_request(attempt, request_id)
-    run_request_on_game_thread(request_id, "Server history request", function()
+local function begin_request(attempt, request_id, already_on_game_thread)
+    local function request_body()
         if request_id ~= state.request_id or state.completed then
             return
         end
@@ -1109,7 +1165,7 @@ local function begin_request(attempt, request_id)
         if not controller_ok or not alive(controller) or not alive(class) then
             if attempt < 60 then
                 schedule_request(500, request_id, "Server history service retry", function()
-                    begin_request(attempt + 1, request_id)
+                    begin_request(attempt + 1, request_id, true)
                 end)
             else
                 fail("Palworld's server-history service was not available.", request_id)
@@ -1147,7 +1203,16 @@ local function begin_request(attempt, request_id)
         schedule_request(750, request_id, "Fresh server history request", function()
             issue_history_request(request_id)
         end)
-    end)
+    end
+    if already_on_game_thread == true then
+        local ok, request_error = pcall(request_body)
+        if not ok then
+            safe_log("Server history request failed safely: " .. tostring(request_error))
+            fail("Server history request failed.", request_id)
+        end
+    else
+        run_request_on_game_thread(request_id, "Server history request", request_body)
+    end
 end
 
 function Discovery.load_cache()
@@ -1177,6 +1242,21 @@ function Discovery.remove(address)
         end
     end
     return write_cache(retained)
+end
+
+function Discovery.restore(address)
+    local key = tostring(address or ""):match("^%s*(.-)%s*$"):lower()
+    if key == "" then
+        return false, "server address is empty"
+    end
+    local cache = read_cache_file() or {
+        completed = true,
+        servers = {},
+        removed = {},
+    }
+    state.removed = cache.removed
+    state.removed[key] = nil
+    return write_cache(cache.servers)
 end
 
 local function find_pal_utility()
@@ -1306,6 +1386,15 @@ function Discovery.start(options)
         and options.on_error
         or function() end
     state.save_cache = options.save_cache ~= false
+    state.target_addresses = {}
+    for _, address in ipairs(type(options.target_addresses) == "table"
+        and options.target_addresses or {})
+    do
+        local normalized = tostring(address or ""):match("^%s*(.-)%s*$"):lower()
+        if normalized ~= "" then
+            state.target_addresses[normalized] = true
+        end
+    end
     local cache = read_cache_file()
     if cache ~= nil then
         state.removed = cache.removed
@@ -1315,7 +1404,10 @@ function Discovery.start(options)
     state.request_id = state.request_id + 1
     state.completed = false
     state.running = true
-    begin_request(1, state.request_id)
+    -- Arm the watchdog when the request is accepted, before any game-thread or
+    -- widget callback can be lost. Every refresh therefore releases its lock.
+    schedule_request_timeout(state.request_id)
+    begin_request(1, state.request_id, options.already_on_game_thread == true)
     return true
 end
 

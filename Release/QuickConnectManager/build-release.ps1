@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.2.0",
     [switch]$KeepStage
 )
 
@@ -17,7 +17,7 @@ $thumbnailSource = Join-Path $releaseRoot "thumbnail.png"
 $nexusImageSource = Join-Path $releaseRoot "NEXUS_IMAGE.png"
 $modDestination = Join-Path $stageRoot "Pal\Binaries\Win64\UE4SS\Mods\QuickConnectManager"
 $pakDestination = Join-Path $stageRoot "Pal\Content\Paks\~mods"
-$scriptNames = @("config.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
+$scriptNames = @("config.lua", "connections.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
 $publicAuthor = "virtualbj$([char]0x00F6)rn"
 
 foreach ($required in @(

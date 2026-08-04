@@ -2,11 +2,11 @@
   "ModName": "Quick Connect Manager",
   "PackageName": "QuickConnectManager",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.1.1",
+  "Version": "0.2.0",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",
-  "Description": "Shows named dedicated-server shortcuts on Palworld's launch screen and connects when one is selected.",
+  "Description": "Adds gamepad-compatible dedicated-server shortcuts and in-game server management to Palworld's launch screen.",
   "Dependencies": [
     "UE4SSExperimentalPW"
   ],

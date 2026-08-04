@@ -2,8 +2,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Destination,
-    [string]$Version = "0.1.1-hotfix.2",
-    [string]$SourceVersion = "0.1.1"
+    [string]$Version = "0.2.0",
+    [string]$SourceVersion = "0.2.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +14,7 @@ $pakSource = Join-Path $releaseRoot "Assets\QuickConnectManager_UI_P.pak"
 $pakHashPath = Join-Path $releaseRoot "Assets\QuickConnectManager_UI_P.pak.sha256"
 $thumbnailSource = Join-Path $releaseRoot "thumbnail.png"
 $destinationRoot = [System.IO.Path]::GetFullPath($Destination)
-$scriptNames = @("config.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
+$scriptNames = @("config.lua", "connections.lua", "discovery.lua", "launch_ui.lua", "main.lua", "servers.lua")
 
 if ([System.IO.Path]::GetPathRoot($destinationRoot) -eq $destinationRoot) {
     throw "Workshop destination cannot be a drive root."
@@ -62,13 +62,17 @@ if ($sourceManifest.Version -ne $SourceVersion) {
     throw "Source manifest version '$($sourceManifest.Version)' does not match '$SourceVersion'."
 }
 $versionPattern = '(?m)^(\s*"Version"\s*:\s*")[^"]+("\s*,\s*)$'
-$workshopManifestText = [regex]::Replace(
-    $sourceManifestText,
-    $versionPattern,
-    { param($match) $match.Groups[1].Value + $Version + $match.Groups[2].Value },
-    1
-)
-if ($workshopManifestText -eq $sourceManifestText) {
+$workshopManifestText = if ($Version -eq $SourceVersion) {
+    $sourceManifestText
+} else {
+    [regex]::Replace(
+        $sourceManifestText,
+        $versionPattern,
+        { param($match) $match.Groups[1].Value + $Version + $match.Groups[2].Value },
+        1
+    )
+}
+if ($Version -ne $SourceVersion -and $workshopManifestText -eq $sourceManifestText) {
     throw "Source manifest Version field could not be rewritten for Workshop."
 }
 [System.IO.File]::WriteAllText(
