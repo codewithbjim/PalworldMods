@@ -72,7 +72,6 @@ local EDIT_ICON_SIZE = 28
 local LOCK_ICON_SIZE = 27
 local REMOVE_ICON_SIZE = 27
 local TITLE_POLL_MS = 750
-local GAMEPLAY_POLL_MS = 2000
 
 local state = {
     entries = {},

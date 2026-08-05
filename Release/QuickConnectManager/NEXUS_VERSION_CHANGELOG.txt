@@ -1,3 +1,3 @@
-Adds gamepad-compatible Add, Modify, and Delete controls with native Palworld fields.
-Saves manual and Join Multiplayer connections only after success.
-Refresh preserves names and updates only player/ping cells with native-style loading.
+Stops connection polling when gameplay begins, even without PlayerState.
+Ignores gameplay-origin travel and removes obsolete polling code.
+Preserves Recent Servers and title/cold-start invite support.

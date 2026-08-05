@@ -315,6 +315,12 @@ local function merge_pending(candidate)
     state.pending = candidate
 end
 
+local function mark_observation_context(candidate)
+    local _, _, is_title = world_context()
+    candidate.observed_on_title = is_title == true
+    return candidate
+end
+
 local function register_hook()
     if state.hook_registered then
         return true
@@ -327,7 +333,7 @@ local function register_hook()
             unwrap(port)
         )
         if ok and type(candidate) == "table" and candidate.address ~= "" then
-            merge_pending(candidate)
+            merge_pending(mark_observation_context(candidate))
             safe_log("Observed a native Palworld server connection attempt.")
             if not state.polling then
                 poll()
@@ -366,20 +372,22 @@ local function register_travel_hook()
     if state.travel_hook_registered then
         return true
     end
+    -- Connect via IP and Recent Servers have richer UI hooks. ClientTravel is
+    -- retained only as the fallback for title/cold-start Steam or Discord invites.
     state.travel_hook_callback = state.travel_hook_callback or function(_, url)
         local ok, endpoint = pcall(endpoint_from_travel_url, url)
         if not ok or endpoint == "" then
             return
         end
         if state.pending == nil then
-            merge_pending({
+            merge_pending(mark_observation_context({
                 name = random_pal_name(endpoint),
                 address = endpoint,
                 password_protected = false,
                 discovered = true,
                 source = "stock",
                 generated_name = true,
-            })
+            }))
         end
         safe_log("Observed an Unreal network server travel request.")
         if not state.polling then
@@ -421,7 +429,7 @@ local function register_server_row_hook()
         if not ok or type(candidate) ~= "table" or candidate.address == "" then
             return
         end
-        merge_pending(candidate)
+        merge_pending(mark_observation_context(candidate))
         safe_log("Observed a Palworld dedicated server-list row selection.")
         if not state.polling then
             poll()
@@ -472,12 +480,14 @@ poll = function()
         local world, controller, is_title = world_context()
         if state.pending ~= nil then
             state.pending.elapsed_ms = (state.pending.elapsed_ms or 0) + POLL_MS
+            if is_title then
+                state.pending.observed_on_title = true
+            end
             if state.was_title and not is_title then
                 state.pending.left_title = true
             end
-            local player_state = property(controller, "PlayerState")
             if state.pending.left_title == true and not is_title and alive(world)
-                and alive(controller) and alive(player_state)
+                and alive(controller)
             then
                 local completed = enrich_from_gameplay(state.pending, world, controller)
                 state.pending = nil
@@ -486,6 +496,9 @@ poll = function()
                     safe_log("Successful connection callback failed safely: "
                         .. tostring(callback_error))
                 end
+            elseif state.pending.observed_on_title == false and not is_title then
+                safe_log("Ignored a server connection event observed during gameplay.")
+                state.pending = nil
             elseif state.pending.left_title == true and is_title then
                 safe_log("Discarded a server connection that returned to the title world.")
                 state.pending = nil
@@ -522,6 +535,7 @@ function Connections.stage_manual(candidate)
             and candidate.password ~= "",
         discovered = false,
         source = "manual",
+        observed_on_title = select(3, world_context()) == true,
     }
     if state.started and not state.polling then
         poll()

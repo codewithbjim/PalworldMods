@@ -216,6 +216,33 @@ expect(
         and successes[5].world_guid == "1234567890ABCDEF1234567890ABCDEF"
 )
 
+world = object({
+    GetFullName = function()
+        return "/Game/Pal/Maps/Title/PL_Title"
+    end,
+})
+controller = object()
+travel_hook_callback(object(), remote_string("no-player-state.example:8211"))
+world = object({
+    GetFullName = function()
+        return "/Game/Pal/Maps/Forest/Forest"
+    end,
+    GameState = object(),
+})
+table.remove(delayed, 1).callback()
+expect(
+    "gameplay confirmation does not wait for an exposed PlayerState",
+    #successes == 6
+        and successes[6].address == "no-player-state.example:8211"
+        and #delayed == 0
+)
+
+travel_hook_callback(object(), remote_string("gameplay-only.example:8211"))
+expect(
+    "network events first observed during gameplay do not start recurring polling",
+    #successes == 6 and #delayed == 0
+)
+
 if failures > 0 then
     error(string.format("%d test(s) failed", failures))
 end

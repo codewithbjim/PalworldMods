@@ -1,5 +1,14 @@
 # Quick Connect Manager changelog
 
+## 0.2.0-hotfix.1 - 2026-08-05
+
+### Fixed
+
+- Stop connection confirmation polling as soon as Palworld reaches a valid gameplay world and controller, even when `PlayerState` is not exposed to Lua.
+- Ignore network-travel events first observed during gameplay so unrelated travel cannot start a three-minute connection polling window.
+- Retain network travel as the fallback for title-screen and cold-start Steam or Discord invites without filtering native Recent Servers rows by Palworld's inconsistent list-type value.
+- Remove the obsolete gameplay lifecycle polling constant and enforce that the launch-panel lifecycle has no recurring timer outside the title screen.
+
 ## 0.2.0 - 2026-08-05
 
 ### Added

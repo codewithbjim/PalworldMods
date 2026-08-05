@@ -2,8 +2,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Destination,
-    [string]$Version = "0.2.0",
-    [string]$SourceVersion = "0.2.0"
+    [string]$Version = "0.2.0-hotfix.1",
+    [string]$SourceVersion = "0.2.0-hotfix.1"
 )
 
 $ErrorActionPreference = "Stop"

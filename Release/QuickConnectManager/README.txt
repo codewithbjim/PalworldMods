@@ -1,5 +1,5 @@
-QUICK CONNECT MANAGER 0.2.0
-===========================
+QUICK CONNECT MANAGER 0.2.0-hotfix.1
+====================================
 
 REQUIREMENT
 -----------

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.2.0",
-    [string]$WorkshopVersion = "0.2.0",
+    [string]$Version = "0.2.0-hotfix.1",
+    [string]$WorkshopVersion = "0.2.0-hotfix.1",
     [string]$ZipPath,
     [string]$PakSource,
     [string]$WorkshopPath,
@@ -103,7 +103,6 @@ $serversSource = Get-Content -LiteralPath (Join-Path $modRoot "Scripts\servers.l
 foreach ($requiredPattern in @(
     'Duplicate launch panel start request ignored',
     'local function lifecycle_step',
-    'GAMEPLAY_POLL_MS',
     'discard_unattached_panel',
     'protected_call',
     'schedule_on_game_thread',
@@ -143,6 +142,10 @@ Assert-Condition ($launchSource -match 'PalEditableTextBox') "Launch editor must
 Assert-Condition ($launchSource -match 'PalEditableTextBox_IP' -and $launchSource -match 'PalEditableTextBox_111') "Launch editor must inherit Palworld's native address and password field archetypes."
 Assert-Condition ($launchSource -match 'CircularThrobber' -and $launchSource -match 'function LaunchUI\.set_statuses') "Status refresh must use native-style per-row ping loading without rebuilding the server list."
 Assert-Condition ($launchSource -match 'Gamepad_DPad_Down' -and $launchSource -match 'Gamepad_FaceButton_Right') "Launch editor must retain gamepad navigation and cancel routing."
+Assert-Condition ($launchSource -notmatch 'GAMEPLAY_POLL_MS' -and $launchSource -match 'Keep no timer/callback chain alive during gameplay') "Launch UI must not schedule recurring lifecycle work during gameplay."
+Assert-Condition ($connectionsSource -notmatch 'alive\(player_state\)') "Connection confirmation must not remain polling because PlayerState is unavailable."
+Assert-Condition ($connectionsSource -match 'observed_on_title == false and not is_title') "Connection events first observed during gameplay must not start recurring polling."
+Assert-Condition ($connectionsSource -notmatch 'RECENT_SERVER_LIST_TYPE' -and $connectionsSource -notmatch 'property\(display, "ServerListType"\)') "Native Recent Servers capture must not filter Palworld's inconsistent list-type values."
 Assert-Condition ($launchSource -match 'construct\("/Script/UMG\.ScrollBox"') "Launch server rows must use a vertical ScrollBox."
 Assert-Condition ($launchSource -match 'for index = 1, #state\.entries do') "Launch server rows must render every configured entry."
 Assert-Condition ($launchSource -notmatch 'math\.min\(#state\.entries, MAX_ROWS\)') "Launch server rows must not be capped at the viewport size."

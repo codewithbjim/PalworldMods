@@ -1,3 +1,11 @@
+0.2.0-hotfix.1 - Gameplay frame-pacing fix
+
+Fixed
+- Stop connection confirmation polling immediately after reaching a valid gameplay world and controller, even without an exposed PlayerState.
+- Ignore network-travel events first observed during gameplay so unrelated travel cannot start recurring connection checks.
+- Preserve native Recent Servers plus title-screen and cold-start Steam or Discord invite support.
+- Remove obsolete gameplay lifecycle polling code.
+
 0.2.0 - In-game server management and gamepad support
 
 Added

@@ -5,12 +5,12 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 ## 1. Prepare the candidate
 
 - [ ] Confirm Palworld is closed before replacing installed runtime files.
-- [ ] Update the Nexus/source and staged Workshop manifests to `0.2.0` and align each channel's changelog and publishing metadata.
+- [ ] Update the Nexus/source and staged Workshop manifests to `0.2.0-hotfix.1` and align each channel's changelog and publishing metadata.
 - [ ] Confirm `thumbnail.png` is under 1 MB and `NEXUS_IMAGE.png` is the approved full-resolution gallery image.
 - [ ] Verify the unchanged cooked window-shell PAK against its checked-in checksum; rebuild it only if the cooked asset changes.
 - [ ] Build the Nexus archive with `Release/QuickConnectManager/build-release.ps1`.
 - [ ] Build a clean Workshop directory with `Release/QuickConnectManager/build-workshop-package.ps1`.
-- [ ] Run `Release/QuickConnectManager/Test-Release.ps1 -Version 0.2.0 -WorkshopVersion 0.2.0` against the final archive and Workshop directory.
+- [ ] Run `Release/QuickConnectManager/Test-Release.ps1 -Version 0.2.0-hotfix.1 -WorkshopVersion 0.2.0-hotfix.1` against the final archive and Workshop directory.
 - [ ] Parse every shipped Lua file with Lua 5.3 or 5.4 syntax rules and execute all deterministic tests under `QuickConnectManager/tests`.
 - [ ] Confirm the release archive and Workshop directory contain no `discovery_cache.lua`, `.bak`, `.tmp`, `.previous`, test fixture, real server address, world GUID, or saved password.
 - [ ] Confirm the candidate commit contains only intended release changes and uses `virtualbjörn` with the repository noreply address in Git metadata.
@@ -75,7 +75,7 @@ Complete this checklist against the exact Nexus archive and Workshop directory t
 - [ ] Record a frame-time baseline with the mod disabled, then remain in regular gameplay with the candidate enabled for at least 30 minutes.
 - [ ] Confirm no Quick Connect widget appears in gameplay, pause menus, construction UI, inventory, map, or loading screens.
 - [ ] Travel, die and respawn, open menus, build, fast travel, and return to title without a crash, access violation, callback-GC warning, or recurring log flood.
-- [ ] Confirm gameplay lifecycle checks use the slower backoff and do not accumulate delayed jobs or produce rhythmic frame-time spikes.
+- [ ] Confirm no launch-UI lifecycle timer remains scheduled during gameplay, connection confirmation stops on the first valid non-title world/controller, and gameplay-origin network events do not start polling.
 - [ ] Use UE4SS Restart All Mods once on the title screen and once in a disposable gameplay session; confirm callbacks are reclaimed cleanly and the next title render contains one panel.
 
 ## 7. Workshop candidate
@@ -111,7 +111,7 @@ Release acceptance requires:
 - [ ] Password-protected and unprotected connections both pass.
 - [ ] Failed connections and all tested title transitions restore exactly one panel.
 - [ ] Automated release gate passes against the exact final archive and Workshop directory.
-- [ ] The final release commit is verified on `origin/main` and tagged with the annotated `quick-connect-manager-v0.2.0` source tag.
+- [ ] The final release commit is verified on `origin/main` and tagged with the annotated `quick-connect-manager-v0.2.0-hotfix.1` source tag.
 
 ## 9. Publish safely
 
