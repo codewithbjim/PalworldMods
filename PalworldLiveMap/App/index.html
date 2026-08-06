@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'">
+    <title>Palworld Live Map</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">P</span>
+          <div><h1>Palworld Live Map</h1><p>Private, local, ad-free</p></div>
+        </div>
+        <div class="status-group" aria-live="polite">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">Waiting for Palworld</span>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Collapse filters" title="Collapse filters"></button>
+          <div class="sidebar-content">
+            <div class="filter-heading">
+              <div><span class="eyebrow">Interactive map</span><h2>Palworld <span>Interactive Map</span></h2></div>
+              <span id="layerSummary" class="filter-total">2 active</span>
+            </div>
+
+            <div class="map-tabs" role="group" aria-label="Map selection">
+              <button class="map-tab active" data-map="world" type="button">Palpagos</button>
+              <button class="map-tab" data-map="tree" type="button">World Tree</button>
+            </div>
+            <p id="assetStatus" class="hint asset-status">Loading local map asset…</p>
+
+            <div class="filter-tools">
+              <label class="filter-search">
+                <span aria-hidden="true" id="filterSearchIcon" class="lucide-icon-shell"></span>
+                <input id="layerSearch" type="search" placeholder="Search map filters" autocomplete="off">
+              </label>
+              <div class="filter-actions">
+                <button id="showAllLayers" type="button">Show all</button>
+                <button id="hideAllLayers" type="button">Hide all</button>
+              </div>
+            </div>
+            <label class="tamed-toggle"><input id="hideTamedPals" type="checkbox" checked><span>Hide tamed Pals</span></label>
+            <label class="tamed-toggle"><input id="debugMode" type="checkbox"><span>Debug actor details</span></label>
+
+            <div id="layerGroups" class="layer-groups"></div>
+
+            <details class="utility-panel" open>
+              <summary>Live position</summary>
+              <div class="coordinate-card">
+                <strong id="coordinateValue">—, —</strong>
+                <span id="altitudeValue">Start Palworld and enter a world</span>
+              </div>
+              <button id="followButton" class="button active" type="button">Following player</button>
+              <div class="button-row">
+                <button id="zoomInButton" class="icon-button" type="button" aria-label="Zoom in">+</button>
+                <button id="zoomOutButton" class="icon-button" type="button" aria-label="Zoom out">-</button>
+                <button id="recenterButton" class="button compact" type="button">Fit map</button>
+              </div>
+            </details>
+
+            <details class="utility-panel">
+              <summary>My markers</summary>
+              <div class="section-heading">
+                <p id="markerHint" class="hint">Stored only in this app.</p>
+                <button id="addMarkerButton" class="button compact accent" type="button">Add</button>
+                <button id="importOverwolfDiscoveries" class="button compact" type="button">Import Overwolf discoverables</button>
+                <input id="overwolfDiscoveryFile" class="hidden-file-input" type="file" accept="application/json" style="display:none">
+              </div>
+              <div id="markerList" class="marker-list"></div>
+            </details>
+          </div>
+        </aside>
+
+        <section id="mapPanel" class="map-panel" aria-label="Interactive map">
+          <div id="mapStage" class="map-stage">
+            <img id="mapImage" alt="Palworld map" draggable="false">
+          </div>
+          <canvas id="mapCanvas"></canvas>
+          <aside id="actorDebugPanel" class="actor-debug-panel hidden" aria-label="Actor debug data">
+            <header><div><span>Actor inspection</span><strong id="actorDebugTitle">—</strong></div><button id="actorDebugClose" type="button" aria-label="Close actor inspection"></button></header>
+            <p id="actorDebugStatus">Select a live map pin.</p>
+            <label class="actor-debug-notes"><span>Investigation notes</span><textarea id="actorDebugNotes" rows="4" placeholder="Add what this actor appears to be, what was confirmed, or what to check next..."></textarea><small id="actorDebugNotesStatus">Saved locally and included with this actor's debug context.</small></label>
+            <pre id="actorDebugData"></pre>
+            <div class="actor-debug-tools">
+              <button id="exportActorNotes" class="button compact" type="button">Export remarks</button>
+              <button id="importActorNotes" class="button compact" type="button">Import remarks</button>
+              <input id="actorNotesFile" class="hidden-file-input" type="file" accept="application/json,text/json" style="display:none">
+            </div>
+          </aside>
+          <div id="pinTooltip" class="pin-tooltip hidden" role="tooltip">
+            <strong id="pinTooltipTitle"></strong>
+            <span id="pinTooltipDetail"></span>
+            <span id="pinTooltipCoordinates"></span>
+            <pre id="pinTooltipDebug" class="hidden"></pre>
+            <button id="pinDiscoveredButton" type="button" class="hidden"></button>
+          </div>
+          <div id="addMarkerCallout" class="map-callout hidden">Click anywhere to place a marker · Esc to cancel</div>
+          <div class="map-legend"><span><i class="legend-player"></i>Player</span><span><i class="legend-marker"></i>Marker</span></div>
+          <div class="map-scale" id="mapScale">—</div>
+        </section>
+      </section>
+    </main>
+    <script src="map-core.js"></script>
+    <script src="assets/pals/pal-catalog.js"></script>
+    <script src="alpha-boss-reference-pins.js"></script>
+    <script src="chest-reference-pins.js"></script>
+    <script src="bounty-reference-pins.js"></script>
+    <script src="inspection-candidates.js"></script>
+    <script src="layer-catalog.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

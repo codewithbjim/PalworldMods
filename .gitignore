@@ -24,3 +24,21 @@ Release/WorkshopStage/
 Release/.nexus-apikey
 Release/Media/*
 !Release/Media/perfect-placement-nexus-banner-1300x372-v2.png
+
+# Local Palworld Live Map runtime snapshots
+PalworldLiveMap/Scripts/telemetry.json
+PalworldLiveMap/Scripts/telemetry.json.tmp
+PalworldLiveMap/Reader/bin/
+PalworldLiveMap/Reader/obj/
+PalworldLiveMap/App/assets/maps/*.webp
+PalworldLiveMap/App/assets/maps/local-assets.json
+PalworldLiveMap/App/assets/icons/*.webp
+PalworldLiveMap/App/assets/icons/*.png
+PalworldLiveMap/App/assets/icons/local-assets.json
+PalworldLiveMap/App/assets/pals/*.webp
+PalworldLiveMap/App/assets/pals/pal-catalog.js
+PalworldLiveMap/App/assets/pals/local-assets.json
+PalworldLiveMap/node_modules/
+PalworldLiveMap/dist/
+PalworldLiveMap/Diagnostics/
+.pnpm-store/

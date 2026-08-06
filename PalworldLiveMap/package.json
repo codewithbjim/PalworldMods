@@ -1,0 +1,20 @@
+{
+  "name": "palworld-live-map",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Private local Palworld live map",
+  "author": "virtualbjörn",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build:reader": "dotnet build Reader/PalworldLiveMap.Reader.csproj -c Release",
+    "build:alpha-bosses": "node Scripts/Build-AlphaBossReferencePins.mjs",
+    "build:chests": "node Scripts/Build-ChestReferencePins.mjs",
+    "build:bounties": "node Scripts/Build-BountyReferencePins.mjs",
+    "test": "node tests/map-core.test.js",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check App/app.js && node --check App/map-core.js && node --check App/layer-catalog.js"
+  },
+  "devDependencies": {
+    "electron": "43.2.0"
+  }
+}

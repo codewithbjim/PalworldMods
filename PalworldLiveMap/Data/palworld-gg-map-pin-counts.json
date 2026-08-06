@@ -1,0 +1,106 @@
+[
+  {
+    "key": "palpagos/bosses/alpha-pal",
+    "count": 65
+  },
+  {
+    "key": "palpagos/bosses/bounty-target",
+    "count": 33
+  },
+  {
+    "key": "palpagos/bosses/sealed-realm",
+    "count": 18
+  },
+  {
+    "key": "palpagos/collectibles/element-chest",
+    "count": 109
+  },
+  {
+    "key": "palpagos/collectibles/note",
+    "count": 55
+  },
+  {
+    "key": "palpagos/collectibles/skill-fruit",
+    "count": 31
+  },
+  {
+    "key": "palpagos/collectibles/treasure-chest",
+    "count": 1412
+  },
+  {
+    "key": "palpagos/effigies/effigy",
+    "count": 360
+  },
+  {
+    "key": "palpagos/eggs/egg",
+    "count": 1786
+  },
+  {
+    "key": "palpagos/locations/dungeon",
+    "count": 157
+  },
+  {
+    "key": "palpagos/locations/fast-travel",
+    "count": 137
+  },
+  {
+    "key": "palpagos/locations/syndicate-tower",
+    "count": 9
+  },
+  {
+    "key": "palpagos/materials/material",
+    "count": 6584
+  },
+  {
+    "key": "palpagos/npcs/merchant",
+    "count": 12
+  },
+  {
+    "key": "palpagos/npcs/npc",
+    "count": 123
+  },
+  {
+    "key": "palpagos/npcs/pal-merchant",
+    "count": 6
+  },
+  {
+    "key": "world-tree/bosses/alpha-pal",
+    "count": 7
+  },
+  {
+    "key": "world-tree/collectibles/note",
+    "count": 9
+  },
+  {
+    "key": "world-tree/collectibles/skill-fruit",
+    "count": 12
+  },
+  {
+    "key": "world-tree/collectibles/treasure-chest",
+    "count": 38
+  },
+  {
+    "key": "world-tree/effigies/effigy",
+    "count": 47
+  },
+  {
+    "key": "world-tree/eggs/egg",
+    "count": 30
+  },
+  {
+    "key": "world-tree/locations/fast-travel",
+    "count": 15
+  },
+  {
+    "key": "world-tree/locations/syndicate-tower",
+    "count": 4
+  },
+  {
+    "key": "world-tree/materials/material",
+    "count": 80
+  },
+  {
+    "key": "world-tree/npcs/npc",
+    "count": 1
+  }
+]
