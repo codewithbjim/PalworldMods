@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Palworld Server Control">
+  <defs>
+    <linearGradient id="background" x1="80" y1="48" x2="432" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1686f8"/>
+      <stop offset="1" stop-color="#0757bd"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#background)"/>
+  <rect x="116" y="124" width="280" height="264" rx="40" fill="#fff"/>
+  <rect x="148" y="158" width="216" height="70" rx="20" fill="#dbeafe"/>
+  <rect x="148" y="284" width="216" height="70" rx="20" fill="#dbeafe"/>
+  <circle cx="188" cy="193" r="12" fill="#10b981"/>
+  <circle cx="188" cy="319" r="12" fill="#10b981"/>
+  <path d="M232 172 292 193 232 214Z" fill="#1686f8"/>
+  <path d="M232 298 292 319 232 340Z" fill="#1686f8"/>
+</svg>

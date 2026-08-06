@@ -1,0 +1,39 @@
+{
+  "name": "palworld-server-control-webview2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Native Windows WebView2 control panel for a Palworld dedicated server",
+  "author": "virtualbjörn",
+  "scripts": {
+    "dev": "vite",
+    "build:web": "vite build",
+    "build:host": "dotnet publish host/PalworldServerControl.Host.csproj -c Release -r win-x64 --self-contained false -o release/single-file",
+    "build": "pnpm build:web && pnpm build:host",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "latest",
+    "@radix-ui/react-select": "latest",
+    "@radix-ui/react-slot": "latest",
+    "class-variance-authority": "latest",
+    "clsx": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "tailwind-merge": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "tailwindcss": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "packageManager": "pnpm@11.16.0"
+}

@@ -1,0 +1,13 @@
+[
+  {"name":"port","category":"Startup Arguments","label":"Listening port","description":"Actual UDP listening port passed as -port. Restart required.","type":"integer","min":1,"max":65535,"default":"8211"},
+  {"name":"players","category":"Startup Arguments","label":"Player limit override","description":"Maximum participants passed as -players.","type":"integer","min":1,"max":32,"default":"32"},
+  {"name":"publiclobby","category":"Startup Arguments","label":"Community server listing","description":"Adds -publiclobby so the server appears as a community server.","type":"boolean","default":"False"},
+  {"name":"publicip","category":"Startup Arguments","label":"Public IP override","description":"Public IP passed as -publicip for community-server advertising. Leave empty for automatic detection.","type":"string","default":""},
+  {"name":"publicport","category":"Startup Arguments","label":"Public port override","description":"Advertised port passed as -publicport. This does not change the actual listening port.","type":"raw","default":""},
+  {"name":"logformat","category":"Startup Arguments","label":"Startup log format","description":"Log format passed as -logformat.","type":"enum","options":["Text","Json"],"default":"Text"},
+  {"name":"enableGameDataApi","category":"Startup Arguments","label":"Game-data API","description":"Adds -enable-gamedata-api.","type":"boolean","default":"False"},
+  {"name":"useperfthreads","category":"Startup Arguments","label":"Use performance threads","description":"Adds the legacy -useperfthreads flag. Pocketpair notes that omitting legacy performance flags may improve performance from version 1.0 onward.","type":"boolean","default":"False"},
+  {"name":"noAsyncLoadingThread","category":"Startup Arguments","label":"Disable async loading thread","description":"Adds the legacy -NoAsyncLoadingThread flag.","type":"boolean","default":"False"},
+  {"name":"useMultithreadForDS","category":"Startup Arguments","label":"Dedicated-server multithreading","description":"Adds the legacy -UseMultithreadForDS flag.","type":"boolean","default":"False"},
+  {"name":"numberOfWorkerThreadsServer","category":"Startup Arguments","label":"Worker thread count","description":"Value for -NumberOfWorkerThreadsServer. Leave empty to let PalServer decide.","type":"raw","default":""}
+]

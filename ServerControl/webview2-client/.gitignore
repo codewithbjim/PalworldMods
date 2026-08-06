@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+win-x64/
+PalworldServerControl.exe
+host/bin/
+host/obj/
+host/TestResults/
+host/tests/bin/
+host/tests/obj/
+*.user
