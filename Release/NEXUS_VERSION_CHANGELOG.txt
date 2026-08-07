@@ -1,2 +1,4 @@
-Shift-modified Numpad controls now work with Num Lock enabled, including Ctrl and Alt combinations.
-Frozen previews now block Palworld Replacement Mode so top-row 4 cannot hide the preview.
+Fix custom prompts switching away from gamepad on synthetic mouse packets.
+Follow Palworld's CommonInput state.
+Keep Shift+Numpad and frozen Replacement Mode fixes.
+Bundle native gamepad support directly with Core.

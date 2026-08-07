@@ -12,7 +12,8 @@
 # The script resolves the mod's global id, then looks up its files: if the
 # mod already has an active file it uploads a NEW VERSION of it; if the page
 # has no files yet (fresh draft) it CREATES the first file. Pass -FileId to
-# skip resolution and target a specific mod file directly.
+# skip resolution and target a specific mod file directly, or -CreateNewFile
+# to add a separate main, optional, or miscellaneous file to an existing page.
 #
 # Dry-run by default -- builds the zip and prints what would upload, but does
 # not touch Nexus. Pass -Publish to actually upload.
@@ -21,6 +22,7 @@
 #   .\publish-nexus.ps1                     # dry run
 #   .\publish-nexus.ps1 -Publish            # actually upload
 #   .\publish-nexus.ps1 -Publish -Description "Hotfix for ..."
+#   .\publish-nexus.ps1 -CreateNewFile -Category optional -UpdateModVersion:$false
 #
 # The file description and compact Nexus version changelog are separate values.
 # By default, the changelog comes from NEXUS_VERSION_CHANGELOG.txt and must be
@@ -32,12 +34,13 @@
 param(
     [string]$ZipPath,
     [string]$ModName = 'PerfectPlacement',
-    [string]$Version = '0.2.0-rc.5',
+    [string]$Version = '0.3.0-rc.1',
     [string]$ApiKey = $env:NEXUS_APIKEY,
     [string]$ApiKeyFile,
     [string]$GameDomain = 'palworld',
     [string]$ModId = '3884',
     [string]$FileId,
+    [switch]$CreateNewFile,
     [string]$Category = 'main',
     [string]$Description,
     [string]$NexusChangelog,
@@ -84,6 +87,9 @@ if (-not $ApiKey -and (Test-Path -LiteralPath $ApiKeyFile)) {
 if (-not $ApiKey -and -not $DryRun) {
     throw "No API key. Set `$env:NEXUS_APIKEY, pass -ApiKey, or create $ApiKeyFile"
 }
+if ($CreateNewFile -and $FileId) {
+    throw "-CreateNewFile and -FileId are mutually exclusive."
+}
 
 $baseUrl = 'https://api.nexusmods.com/v3'
 $authHeaders = @{
@@ -92,17 +98,20 @@ $authHeaders = @{
 }
 
 # Resolve the target: global mod id, and which mod file (if any) to add a
-# version to. No -FileId and no existing active file means this upload will
-# create the mod page's first file.
+# version to. -CreateNewFile explicitly creates a separate file on an existing
+# page. No -FileId and no existing active file creates the page's first file.
 $modGlobalId = $null
-$createNew   = $false
+$createNew   = [bool]$CreateNewFile
 if ($ApiKey) {
     Write-Host "Resolving mod $GameDomain/$ModId..."
     $modInfo = Invoke-RestMethod -Method Get -Uri "$baseUrl/games/$GameDomain/mods/$ModId" -Headers $authHeaders
     $modGlobalId = $modInfo.data.id
     Write-Host "  mod id : $modGlobalId (game-scoped $($modInfo.data.game_scoped_id))"
 
-    if (-not $FileId) {
+    if ($CreateNewFile) {
+        Write-Host "  file   : new '$ModName' file -- will create separately"
+    }
+    elseif (-not $FileId) {
         $filesResp = Invoke-RestMethod -Method Get -Uri "$baseUrl/mods/$modGlobalId/files" -Headers $authHeaders
         $activeFiles = @($filesResp.data.mod_files | Where-Object { $_.is_active })
         if ($activeFiles.Count -eq 1) {
@@ -213,7 +222,7 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "Dry run (no -Publish) -- would upload to Nexus Mods:"
     Write-Host "  mod         : $GameDomain/$ModId $(if ($modGlobalId) { "(global id $modGlobalId)" })"
-    Write-Host "  action      : $(if ($createNew) { 'create first mod file' } elseif ($FileId) { "new version of file $FileId" } else { '<unresolved -- no API key>' })"
+    Write-Host "  action      : $(if ($CreateNewFile) { 'create separate mod file' } elseif ($createNew) { 'create first mod file' } elseif ($FileId) { "new version of file $FileId" } else { '<unresolved -- no API key>' })"
     Write-Host "  api key     : $(if ($ApiKey) { 'found' } else { '<missing>' })"
     Write-Host "  name        : $ModName"
     Write-Host "  version     : $Version"
@@ -318,7 +327,7 @@ try {
     }
 
     if ($createNew) {
-        Write-Host "Creating mod file (first file on this mod page)..."
+        Write-Host "Creating $(if ($CreateNewFile) { 'separate' } else { 'first' }) mod file..."
         $payload = @{
             upload_id                    = $uploadId
             mod_id                       = $modGlobalId

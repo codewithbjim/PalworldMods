@@ -25,7 +25,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 - A Palworld-compatible UE4SS installation
 - Optional: DarnMenu 1.6.2 or newer for in-game Mod Options
 
-Perfect Placement contains both a UE4SS Lua mod and a Logic Mod `.pak`; install both parts.
+The Perfect Placement download contains its UE4SS Lua mod, native input bridge, and one resource `_P.pak` as a single package.
 
 With DarnMenu installed, configure controls and settings under **ESC → Mod Options → Perfect Placement**. Changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and `Scripts/config.lua` defaults unless a saved `Mods/shared/PerfectPlacement_user.lua` override already exists.
 
@@ -41,7 +41,7 @@ The installed files should end up at:
 
 ```text
 Pal/Binaries/Win64/UE4SS/Mods/PerfectPlacement/
-Pal/Content/Paks/LogicMods/PerfectPlacement.pak
+Pal/Content/Paks/~mods/PerfectPlacement_NativeUI_P.pak
 ```
 
 If your UE4SS build still uses `mods.txt`, add:
@@ -67,6 +67,8 @@ PerfectPlacement : 1
 
 ### Gamepad
 
+Full controller support, including D-pad Up and LB/RB interception, is included in the main download.
+
 - **Freeze / unfreeze preview:** L3
 - **Copy targeted build piece:** L3 + D-pad Down
 - **Copy and freeze to targeted piece:** L3 + D-pad Up
@@ -82,6 +84,8 @@ The key guide appears only while a live construction preview is available. Mouse
 
 ## Notes and limitations
 
+- **Unfrozen preview performance remains Palworld-controlled.** Palworld continues its native per-frame aiming, placement, snapping, collision, and material updates while a preview is unfrozen. Frozen mode may run faster because Perfect Placement temporarily suspends the preview actor and player builder component; this difference does not indicate a recurring Perfect Placement transform or gamepad poll.
+
 - Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 - Install on each client that wants to use the placement controls.
 - Test new mod versions in a disposable world before using an important save.
@@ -93,7 +97,7 @@ The key guide appears only while a live construction preview is available. Mouse
 
 **Nothing happens when freezing**
 
-Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement.pak` is in `Pal/Content/Paks/LogicMods`.
+Confirm UE4SS loaded `PerfectPlacement` and that `PerfectPlacement_NativeUI_P.pak` is in `Pal/Content/Paks/~mods`.
 
 **The guide appears but the controls do not respond**
 

@@ -1,18 +1,46 @@
 # Changelog
 
-## 0.2.0-rc.5
+## 0.3.0-rc.1
 
-Shifted keypad input and frozen replacement-mode guard release candidate.
+Native UI release candidate based on 0.2.0-rc.5.
 
 ### Fixed
 
-- Make Shift-modified Numpad controls work with Num Lock enabled by registering the navigation-key events Windows emits for those physical keys while preserving Ctrl and Alt in multi-modifier chords.
-- Keep a frozen preview under Perfect Placement control by making Palworld Replacement Mode unavailable until the preview is released, so an unassigned top-row 4 action cannot hide the preview while Perfect Placement actions on that key still work.
+- Bundle the native controller bridge directly with Perfect Placement Core so one installation provides keyboard, mouse, and full gamepad support.
+- Follow Palworld's authoritative CommonInput device state for custom construction controls so synthetic or zero-delta raw mouse packets cannot switch only the Perfect Placement guide away from gamepad prompts.
+- Register Windows' translated navigation-key events for Shift-modified Numpad controls, including Decimal, while preserving Ctrl and Alt in multi-modifier chords.
+- Keep frozen previews under Perfect Placement control by making Palworld Replacement Mode unavailable until release, preventing top-row `4` from hiding a foundation preview.
 
 ### Testing
 
-- Add regression coverage for Shift, Alt+Shift, Ctrl+Alt+Shift, and Shift+Numpad Decimal event translation while confirming plain Numpad bindings remain unchanged.
-- Extend the release gate to require the frozen Replacement Mode availability guard.
+- Remove superseded heuristic preview discovery, legacy text-row and toast UI implementations, abandoned trigger accessors, and unused Enhanced Input settings; require those dead paths to remain absent.
+- Build and verify one consolidated Core artifact for Nexus and Steam Workshop, including the bundled DLL and native UI PAK.
+- Add Lua regression coverage for Shift, Alt+Shift, Ctrl+Alt+Shift, and Shift+Numpad Decimal translation while confirming unmodified Numpad bindings remain unchanged.
+- Extend the release gate to require the frozen Replacement Mode availability guard and the corrected Shift-keypad registration path.
+
+## 0.3.0-alpha.1
+
+Experimental native construction-key-guide integration based on 0.2.0-rc.4.
+
+### Added
+
+- Add a minimal cooked `WBP_IngameConstruction` scaffold through `PerfectPlacement_NativeUI_P.pak`, with Lua-owned keyboard/mouse and gamepad panels rendered inside Palworld's existing construction guide.
+- Show unfrozen Freeze, Copy Piece, and Copy and Freeze rows as soon as a live preview is available, and show movement, height, rotation, current step, Reset, and Unfreeze rows while frozen.
+- Render resolved controls with Palworld keycap textures, including square native-sized keyboard, mouse, numpad, and gamepad prompts.
+- Separate distinct action chords with a subtle vertical divider so modifier-plus-key chords remain visually grouped while opposite actions are unambiguous.
+- Register Windows navigation-key alternates for Shift-modified numpad bindings so chords such as Shift+Num4 work while Num Lock is enabled.
+
+### Changed
+
+- Detach Palworld's Rotate, Axis Alignment, and Replacement Mode rows only while Perfect Placement owns a frozen preview, preserving Build and the stock footer.
+- Consolidate the native construction scaffold and event-driven controller bridge into one `PerfectPlacement_NativeUI_P.pak`, retire the `LogicMods` install rule, and let hardened Lua lifecycle code reuse or spawn the bridge actor after map loads.
+- Delay the gamepad UFunction hook until the cooked bridge host exists, preventing the expected startup error when UE4SS starts Lua before loading the Blueprint class.
+
+### Safety and performance
+
+- Defer native widget construction and stock-row mutation until after Palworld's `SetupKeyGuide` callback, guard work by construction-widget and freeze generations, and coalesce superseded requests.
+- Cache the four device/state panels per live construction widget and switch visibility only when state or input device changes, without a recurring UI polling loop.
+- Preserve every 0.2.0-rc.4 snapped-rotation and lifecycle hardening change, and exclude the unresolved facility and floor validity experiment from this release.
 
 ## 0.2.0-rc.4
 

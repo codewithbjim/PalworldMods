@@ -39,6 +39,12 @@ These instructions preserve established decisions and repeatable workflows for t
 - Repoint the working clone to rewritten `origin/main`, restore uncommitted work, then prune old reflogs/objects and remove temporary backups.
 - Remind collaborators to reclone after any rewrite. GitHub-cached commit pages or pull-request refs may require GitHub Support to purge.
 
+## Local game deployment
+
+- Before the first runtime copy in each session, ask the user to choose the target: the development installation at `E:\Projects\Palworld` or the Steam installation at `F:\SteamLibrary\steamapps\common\Palworld`. Remember and reuse that choice for the rest of the session without asking again.
+- For the Steam installation, deploy UE4SS Lua files beneath `Mods\NativeMods\UE4SS\Mods`; do not assume UE4SS is installed directly beneath `Pal\Binaries\Win64`.
+- Continue deployment to the selected installation even when Palworld is running; do not stop to ask the user to close it. Verify deployed files against their source hashes and remind the user to restart Palworld manually so the updated runtime is loaded.
+
 ## Release history
 
 Every published release must have an annotated Git tag so its exact source can be recovered later for maintenance or a forked update.

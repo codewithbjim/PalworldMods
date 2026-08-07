@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.2.0-rc.5",
+    [string]$Version = "0.3.0-rc.1",
     [switch]$KeepStage
 )
 
@@ -11,23 +11,25 @@ $stageRoot = Join-Path $releaseRoot "Stage"
 $distRoot = Join-Path $releaseRoot "Dist"
 $zipPath = Join-Path $distRoot "PerfectPlacement-$Version.zip"
 $luaSource = Join-Path $repoRoot "PerfectPlacement"
-$pakSource = Join-Path $releaseRoot "Assets\PerfectPlacement.pak"
-$pakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement.pak.sha256"
+$nativePakSource = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak"
+$nativePakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak.sha256"
+$nativeInputSource = Join-Path $repoRoot "NativeInput\bin\main.dll"
 $thumbnailSource = Join-Path $releaseRoot "thumbnail.png"
 $luaDestination = Join-Path $stageRoot "Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement"
-$pakDestination = Join-Path $stageRoot "Pal\Content\Paks\LogicMods"
+$nativeInputDestination = Join-Path $luaDestination "dlls"
+$nativePakDestination = Join-Path $stageRoot "Pal\Content\Paks\~mods"
 
 foreach ($required in @(
     (Join-Path $luaSource "Info.json"),
     (Join-Path $luaSource "enabled.txt"),
     (Join-Path $luaSource "Scripts\main.lua"),
     (Join-Path $luaSource "Scripts\config.lua"),
-    (Join-Path $luaSource "Scripts\gamepad.lua"),
     (Join-Path $luaSource "Scripts\keybindings.lua"),
     (Join-Path $luaSource "Scripts\runtime.lua"),
     (Join-Path $luaSource "Scripts\darnmenu.lua"),
-    $pakSource,
-    $pakHashPath,
+    $nativePakSource,
+    $nativePakHashPath,
+    $nativeInputSource,
     $thumbnailSource,
     (Join-Path $releaseRoot "README.txt"),
     (Join-Path $releaseRoot "CHANGELOG.md")
@@ -56,27 +58,30 @@ if ($manifest.Thumbnail -ne "thumbnail.png") {
 if ((Get-Item -LiteralPath $thumbnailSource).Length -ge 1MB) {
     throw "Thumbnail must be smaller than Steam's 1 MB limit: $thumbnailSource"
 }
-$expectedPakHash = (
-    (Get-Content -LiteralPath $pakHashPath -Raw).Trim() -split "\s+"
+$expectedNativePakHash = (
+    (Get-Content -LiteralPath $nativePakHashPath -Raw).Trim() -split "\s+"
 )[0].ToUpperInvariant()
-$actualPakHash = (Get-FileHash -LiteralPath $pakSource -Algorithm SHA256).Hash
-if ($actualPakHash -ne $expectedPakHash) {
-    throw "Release PAK hash '$actualPakHash' does not match '$expectedPakHash'."
+$actualNativePakHash = (
+    Get-FileHash -LiteralPath $nativePakSource -Algorithm SHA256
+).Hash
+if ($actualNativePakHash -ne $expectedNativePakHash) {
+    throw "Native UI PAK hash '$actualNativePakHash' does not match '$expectedNativePakHash'."
 }
 
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
 }
-New-Item -ItemType Directory -Force -Path $luaDestination, $pakDestination, $distRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $luaDestination, $nativeInputDestination, $nativePakDestination, $distRoot | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $luaSource "enabled.txt") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Info.json") -Destination $luaDestination
 Copy-Item -LiteralPath $thumbnailSource -Destination (Join-Path $luaDestination "thumbnail.png")
 Copy-Item -LiteralPath (Join-Path $luaSource "README.md") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Scripts") -Destination $luaDestination -Recurse
-Copy-Item -LiteralPath $pakSource -Destination (Join-Path $pakDestination "PerfectPlacement.pak")
+Copy-Item -LiteralPath $nativePakSource -Destination (Join-Path $nativePakDestination "PerfectPlacement_NativeUI_P.pak")
 Copy-Item -LiteralPath (Join-Path $releaseRoot "README.txt") -Destination $stageRoot
 Copy-Item -LiteralPath (Join-Path $releaseRoot "CHANGELOG.md") -Destination $stageRoot
+Copy-Item -LiteralPath $nativeInputSource -Destination (Join-Path $nativeInputDestination "main.dll")
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
