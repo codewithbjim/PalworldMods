@@ -30,6 +30,7 @@ $manifestPath = Join-Path $modRoot "Info.json"
 $configPath = Join-Path $modRoot "Scripts\config.lua"
 $darnMenuPath = Join-Path $modRoot "Scripts\darnmenu.lua"
 $gamepadPath = Join-Path $modRoot "Scripts\gamepad.lua"
+$gamepadFeaturePath = Join-Path $modRoot "Scripts\gamepad_feature.lua"
 $keybindingsPath = Join-Path $modRoot "Scripts\keybindings.lua"
 $companionBridgePath = Join-Path $modRoot "Scripts\companion_bridge.lua"
 $mainPath = Join-Path $modRoot "Scripts\main.lua"
@@ -38,6 +39,8 @@ $runtimeTestPath = Join-Path $releaseRoot "Tests\Test-Runtime.lua"
 $thumbnailPath = Join-Path $releaseRoot "thumbnail.png"
 $nativePakPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak"
 $nativePakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak.sha256"
+$nativeInputPath = Join-Path $repoRoot "NativeInput\bin\main.dll"
+$nativeInputSourcePath = Join-Path $repoRoot "NativeInput\src\main.cpp"
 $nativeScaffoldBuilderPath = Join-Path $repoRoot "NativeUI\Build-Scaffold.ps1"
 $nativePakBuilderPath = Join-Path $repoRoot "NativeUI\Build-Pak.ps1"
 $nativeCookedRoot = Join-Path $repoRoot "NativeUI\Cooked"
@@ -56,6 +59,8 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $configPath -PathType Leaf) `
     "Missing default config: $configPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $gamepadPath -PathType Leaf) `
     "Missing gamepad input adapter: $gamepadPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $gamepadFeaturePath -PathType Leaf) `
+    "Missing isolated gamepad feature facade: $gamepadFeaturePath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $companionBridgePath -PathType Leaf) `
     "Missing consolidated companion bridge loader: $companionBridgePath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $runtimePath -PathType Leaf) `
@@ -72,6 +77,8 @@ Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakPath -PathType Leaf) `
     "Missing native UI PAK: $nativePakPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakHashPath -PathType Leaf) `
     "Missing native UI PAK checksum: $nativePakHashPath"
+Assert-ReleaseCondition (Test-Path -LiteralPath $nativeInputPath -PathType Leaf) `
+    "Missing native gamepad bridge: $nativeInputPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $nativeScaffoldBuilderPath -PathType Leaf) `
     "Missing native UI scaffold builder: $nativeScaffoldBuilderPath"
 Assert-ReleaseCondition (Test-Path -LiteralPath $nativePakBuilderPath -PathType Leaf) `
@@ -124,6 +131,12 @@ Assert-ReleaseCondition (
     $nativePaksRule.Targets.Count -eq 1 -and
     $nativePaksRule.Targets[0] -eq "./Paks/PerfectPlacement_NativeUI_P.pak"
 ) "The Paks InstallRule must target the native UI PAK directly."
+$luaRule = $manifest.InstallRule | Where-Object Type -eq "Lua"
+Assert-ReleaseCondition (
+    $luaRule.Targets.Count -eq 2 -and
+    $luaRule.Targets -contains "./Scripts" -and
+    $luaRule.Targets -contains "./dlls"
+) "The Core Lua InstallRule must install Scripts and the bundled DLL."
 Assert-ReleaseCondition ($manifest.Thumbnail -eq "thumbnail.png") `
     "Info.json Thumbnail must be thumbnail.png."
 Assert-ReleaseCondition ((Get-Item -LiteralPath $thumbnailPath).Length -lt 1MB) `
@@ -208,6 +221,7 @@ foreach ($descriptionPath in $currentDescriptionPaths) {
 $darnMenuSource = Get-Content -LiteralPath $darnMenuPath -Raw
 $configSource = Get-Content -LiteralPath $configPath -Raw
 $gamepadSource = Get-Content -LiteralPath $gamepadPath -Raw
+$gamepadFeatureSource = Get-Content -LiteralPath $gamepadFeaturePath -Raw
 $runtimeSource = Get-Content -LiteralPath $runtimePath -Raw
 Assert-ReleaseCondition (
     $darnMenuSource -match 'local\s+SCHEMA_VERSION\s*=\s*15'
@@ -274,11 +288,11 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     $gamepadSource -notmatch
         '\b(?:LoopAsync|LoopInGameThreadWithDelay|ExecuteWithDelay)\s*\('
-) "Gamepad input must remain event-driven and free of recurring poll loops."
+) "Gamepad input must use the centralized runtime instead of direct loop APIs."
 Assert-ReleaseCondition (
-    $gamepadSource -notmatch
-        '(?i)\b(?:poll_interval|polling_interval|start_poll|poll_loop)\b'
-) "Gamepad input must not add a configurable or permanent polling cadence."
+    $gamepadSource -notmatch 'function\s+Instance:_start_serial_monitor' -and
+    $gamepadSource -match 'function\s+Instance:dispatch_native_physical'
+) "Gamepad input must use the event-driven native boundary without a serial polling fallback."
 Assert-ReleaseCondition (
     $configSource -notmatch
         '(?i)\b(?:poll_interval|maximum_actions_per_poll)\b'
@@ -325,26 +339,71 @@ Assert-ReleaseCondition (
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
 $keybindingsSource = Get-Content -LiteralPath $keybindingsPath -Raw
 $companionBridgeSource = Get-Content -LiteralPath $companionBridgePath -Raw
+$nativeInputSource = Get-Content -LiteralPath $nativeInputSourcePath -Raw
 $nativePakBuilderSource = Get-Content -LiteralPath $nativePakBuilderPath -Raw
 Assert-ReleaseCondition (
-    $mainSource -match 'local\s+Gamepad\s*=\s*require\("gamepad"\)' -and
-    $mainSource -match 'local\s+CompanionBridge\s*=\s*require\("companion_bridge"\)' -and
-    $mainSource -match 'Gamepad\.new\s*\(' -and
+    $mainSource -match 'local\s+GamepadFeature\s*=\s*require\("gamepad_feature"\)' -and
+    $mainSource -match 'gamepad_feature\s*=\s*GamepadFeature\.new\(' -and
+    $mainSource -match 'ensure_construction_ui_hooks\(\)[\s\S]*?gamepad_feature:start\(\)' -and
     $mainSource -match 'dispatch_action\s*=\s*dispatch_action'
-) "main.lua must compose the event-driven gamepad adapter through its guarded dispatcher."
+) "Core must own and load controller Lua directly while the native DLL remains optional."
+Assert-ReleaseCondition (
+    $gamepadFeatureSource -match 'local\s+Gamepad\s*=\s*require\("gamepad"\)' -and
+    $gamepadFeatureSource -match 'local\s+CompanionBridge\s*=\s*require\("companion_bridge"\)' -and
+    $gamepadFeatureSource -match 'function\s+Instance:shutdown\(' -and
+    $gamepadFeatureSource -match 'if\s+not\s+enabled\s+then\s+return\s+instance'
+) "The gamepad facade must own controller modules, teardown, and its disabled-state kill switch."
+Assert-ReleaseCondition (
+    $mainSource -notmatch 'native_gamepad_override' -and
+    $mainSource -match 'FindFirstOf\("CommonInputSubsystem"\)' -and
+    $mainSource -match
+        'PerfectPlacementNativeInputDevice\s*=\s*function\(_using_gamepad\)' -and
+    $mainSource -match
+        'runtime\.execute\(function\(\)[\s\S]*?' +
+        'guide\.is_gamepad_active\(\)[\s\S]*?' +
+        'Palworld input-device guide sync' -and
+    $mainSource -match
+        'setup_keyguide[\s\S]*?' +
+        'gamepad_feature\.set_using_gamepad[\s\S]*?' +
+        '__native_guide\.is_gamepad_active\(\)'
+) "Custom keyguides must defer native notifications and follow Palworld's authoritative CommonInput state."
+Assert-ReleaseCondition (
+    $mainSource -notmatch 'register_frozen_action_redirect|Consumed frozen Palworld input' -and
+    $configSource -notmatch
+        'reserved_controls_enabled|reserved_input_backend|right_stick_movement_enabled' -and
+    $mainSource -notmatch
+        'discover_preview|candidate_score|setup_text_keyguide_row|' +
+        'show_preview_notification|notification_generation' -and
+    $configSource -notmatch
+        'preview_class_names|preferred_name_fragments|' +
+        'rejected_name_fragments|simulation_state_properties' -and
+    $companionBridgeSource -notmatch
+        'is_left_trigger_held|is_right_trigger_held' -and
+    $gamepadSource -notmatch 'function\s+Instance:(?:is_started|get_hook_ids)\('
+) "Abandoned input experiments and superseded preview/UI fallbacks must stay removed."
 Assert-ReleaseCondition (
     $mainSource -match [regex]::Escape("Loaded Perfect Placement $Version")
 ) "The Lua startup version does not match '$Version'."
 Assert-ReleaseCondition (
     $mainSource -match
-        [regex]::Escape("Consolidated native UI and gamepad bridge revision 1 loaded.")
-) "The Lua bridge revision does not match the consolidated NativeUI PAK."
+        [regex]::Escape("Bundled native gamepad bridge and construction UI revision 1 loaded.")
+) "The Lua Core revision does not match the consolidated NativeUI PAK."
 Assert-ReleaseCondition (
     $companionBridgeSource -match [regex]::Escape('/Game/Mods/PerfectPlacement/ModActor') -and
     $companionBridgeSource -match 'RegisterLoadMapPostHook' -and
     $companionBridgeSource -match 'world:SpawnActor' -and
     $companionBridgeSource -match 'FindAllOf'
 ) "The companion bridge must safely reuse or spawn ModActor from the regular _P.pak."
+Assert-ReleaseCondition (
+    $companionBridgeSource -match 'if\s+self\.spawn_in_progress\s+then' -and
+    $companionBridgeSource -match 'self\.spawn_in_progress\s*=\s*true[\s\S]*?' +
+        'world:SpawnActor[\s\S]*?self\.spawn_in_progress\s*=\s*false'
+) "Companion actor spawning must reject recursive guide-driven re-entry."
+Assert-ReleaseCondition (
+    $companionBridgeSource -match 'RegisterLoadMapPostHook' -and
+    $companionBridgeSource -match 'pcall\(self\.ensure,\s*self,\s*world\)' -and
+    $companionBridgeSource -match 'self\.ensure_current_world'
+) "The bundled bridge must spawn on map load and queue an initial live-world acquisition."
 Assert-ReleaseCondition (
     $mainSource -match 'ue_helpers\s*=\s*UEHelpers' -and
     $companionBridgeSource -match 'ue_helpers\s*=\s*options\.ue_helpers' -and
@@ -928,84 +987,15 @@ Assert-ReleaseCondition (
     $keyguideHookFunction.Groups["body"].Value -notmatch
         'not\s+ok\s+or\s+pre_id\s*==\s*nil'
 ) "Successful partial hook registrations must never be registered again."
-$destructHook = [regex]::Match(
-    $constructionHookFunction.Groups["body"].Value,
-    'local destruct_path\s*=\s*"/Script/UMG\.UserWidget:Destruct"' +
-        '(?<body>[\s\S]*?)\r?\n\s*for _, function_name'
-)
-Assert-ReleaseCondition $destructHook.Success `
-    "The generic construction-widget Destruct hook was not found."
 Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -match
-        'RegisterHook\(\s*destruct_path,\s*destruct_callback\s*\)'
-) "The generic widget Destruct hook must use one meaningful callback."
+    $constructionHookFunction.Groups["body"].Value -notmatch
+        [regex]::Escape('/Script/UMG.UserWidget:Destruct')
+) "Perfect Placement must not hook every UMG widget during world teardown."
 Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -match
-        'construction_ui_hooks\[destruct_path\]\s*=\s*\{\s*' +
-        'callback\s*=\s*destruct_callback,\s*' +
-        'pre_id\s*=\s*pre_id,\s*post_id\s*=\s*post_id,\s*' +
-        'complete\s*=\s*pre_id\s*~=\s*nil\s+and\s+post_id\s*~=\s*nil,'
-) "The generic widget Destruct hook must retain complete and partial registrations."
-Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -match
-        'widget\s*==\s*cached_construction_widget[\s\S]*?' +
-        'class_name_from_full_name\(widget_name\)[\s\S]*?' +
-        '~=\s*CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?' +
-        'full_name_is_available\(cached_widget_name\)[\s\S]*?' +
-        'cached_widget_name\s*==\s*widget_name[\s\S]*?' +
-        'full_name_is_live_exact_class\([\s\S]*?' +
-        'CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?' +
-        'update_perfect_placement_ui\(\s*false,\s*false,\s*true\s*\)'
-) "Widget teardown must require cached identity or an exact live construction class."
-Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -match
-        'if\s+full_name_is_available\(cached_widget_name\)\s*then\s*' +
-        'is_construction_widget\s*=\s*' +
-        'cached_widget_name\s*==\s*widget_name\s*else\s*' +
-        'is_construction_widget\s*=\s*' +
-        'full_name_is_live_exact_class\([\s\S]*?' +
-        'CONSTRUCTION_WIDGET_CLASS_NAME[\s\S]*?\)\s*end'
-) "A cached construction identity must take precedence over the exact-class fallback."
-$destructBody = $destructHook.Groups["body"].Value
-$destructIdentityCheck = $destructBody.IndexOf(
-    'widget == cached_construction_widget'
-)
-$destructWidgetNameRead = $destructBody.IndexOf('full_name(widget)')
-$destructClassCheck = $destructBody.IndexOf(
-    'class_name_from_full_name(widget_name)'
-)
-$destructCachedNameRead = $destructBody.IndexOf(
-    'full_name(cached_construction_widget)'
-)
-$destructClassRejectsEarly = $false
-if ($destructClassCheck -ge 0 -and $destructCachedNameRead -gt $destructClassCheck) {
-    $destructClassRejectSegment = $destructBody.Substring(
-        $destructClassCheck,
-        $destructCachedNameRead - $destructClassCheck
-    )
-    $destructClassRejectsEarly = $destructClassRejectSegment -match '\breturn\b'
-}
-Assert-ReleaseCondition (
-    $destructIdentityCheck -ge 0 -and
-    $destructIdentityCheck -lt $destructWidgetNameRead -and
-    $destructWidgetNameRead -lt $destructClassCheck -and
-    $destructClassCheck -lt $destructCachedNameRead -and
-    $destructClassRejectsEarly -and
-    $destructBody -match
-        'if\s+ui_lifecycle_metrics_enabled[\s\S]*?' +
-        'string\.find\([\s\S]*?CONSTRUCTION_WIDGET_CLASS_NAME' -and
-    $destructBody -match
-        'count_ui_lifecycle_metric\([\s\S]*?' +
-        '"construction_child_destruct"[\s\S]*?' +
-        'end\s*return\s*end\s*local\s+cached_widget_name'
-) "Global widget teardown must reject unrelated classes before cached-name work or diagnostics."
-Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -notmatch
-        'is_construction_widget\s*=\s*string\.find'
-) "Child outer paths must never classify a widget as the construction root."
-Assert-ReleaseCondition (
-    $destructHook.Groups["body"].Value -notmatch 'release_preview\s*\('
-) "The generic widget Destruct hook must not release a preview while stock UMG rows are dying."
+    $nativeInputSource -match
+        'g_active_device\s*=\s*device;[\s\S]*?' +
+        'if\s*\(read_mode\(\)\s*==\s*InputMode::Hidden\)\s*return;'
+) "Native device callbacks must not enter Lua while Perfect Placement is hidden."
 foreach ($eventName in @(
     "ReturnToMainMenu",
     "OnEsc",
@@ -1098,6 +1088,7 @@ $requiredSources = @(
     "Scripts\config.lua",
     "Scripts\darnmenu.lua",
     "Scripts\gamepad.lua",
+    "Scripts\gamepad_feature.lua",
     "Scripts\companion_bridge.lua",
     "Scripts\keybindings.lua",
     "Scripts\main.lua",
@@ -1138,11 +1129,12 @@ Assert-ReleaseCondition (
 foreach ($scriptName in @(
     "main.lua",
     "config.lua",
-    "gamepad.lua",
-    "companion_bridge.lua",
     "keybindings.lua",
     "runtime.lua",
-    "darnmenu.lua"
+    "darnmenu.lua",
+    "gamepad.lua",
+    "gamepad_feature.lua",
+    "companion_bridge.lua"
 )) {
     $sourceScript = Join-Path $modRoot "Scripts\$scriptName"
     $workshopScript = Join-Path $WorkshopPath "Scripts\$scriptName"
@@ -1163,6 +1155,13 @@ Assert-ReleaseCondition (
 Assert-ReleaseCondition (
     (Get-Sha256 $nativePakPath) -eq (Get-Sha256 $workshopNativePak)
 ) "Workshop package contains a stale or unexpected native UI PAK."
+$workshopNativeInput = Join-Path $WorkshopPath "dlls\main.dll"
+Assert-ReleaseCondition (
+    Test-Path -LiteralPath $workshopNativeInput -PathType Leaf
+) "Workshop package is missing bundled dlls\main.dll."
+Assert-ReleaseCondition (
+    (Get-Sha256 $nativeInputPath) -eq (Get-Sha256 $workshopNativeInput)
+) "Workshop package contains a stale bundled DLL."
 $workshopThumbnail = Join-Path $WorkshopPath "thumbnail.png"
 Assert-ReleaseCondition (
     Test-Path -LiteralPath $workshopThumbnail -PathType Leaf
@@ -1348,6 +1347,13 @@ try {
     Assert-ReleaseCondition (
         (Get-Sha256 $nativePakPath) -eq (Get-Sha256 $archiveNativePak)
     ) "Archive contains a stale or unexpected native UI PAK."
+    Assert-ReleaseCondition (
+        Test-Path -LiteralPath (Join-Path $archiveModRoot "dlls\main.dll") -PathType Leaf
+    ) "Core archive is missing bundled dlls\main.dll."
+    Assert-ReleaseCondition (
+        (Get-Sha256 $nativeInputPath) -eq
+            (Get-Sha256 (Join-Path $archiveModRoot "dlls\main.dll"))
+    ) "Core archive contains a stale bundled DLL."
 
     foreach ($releaseFile in @("CHANGELOG.md", "README.txt")) {
         $sourcePath = Join-Path $releaseRoot $releaseFile
@@ -1363,7 +1369,6 @@ try {
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
     }
 }
-
 Write-Host ""
 Write-Host "Automated release gate passed for Perfect Placement $Version."
 Write-Host "Archive: $ZipPath"

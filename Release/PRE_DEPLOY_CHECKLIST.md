@@ -8,6 +8,7 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
 - [ ] Update `Info.json`, DarnMenu schema version, load-time version logging, changelogs, release readme, and publishing-script defaults.
 - [ ] Confirm every prose paragraph and list item in release text files occupies one physical line unless its layout is intentionally preformatted.
 - [ ] Build the Nexus archive with `Release/build-release.ps1`.
+- [ ] Confirm the build produced one Core archive containing `Scripts`, `dlls/main.dll`, and the native UI PAK.
 - [ ] Build a clean Workshop candidate:
 
   ```powershell
@@ -16,6 +17,9 @@ Complete this checklist against the exact Nexus archive and Workshop package tha
     -Destination .\Release\Dist\Workshop-<version> `
     -Version <version>
   ```
+- [ ] Confirm the Core Workshop candidate contains the controller Lua, `dlls/main.dll`, and native UI PAK as one item.
+- [ ] Publish the single bundled Core ZIP as the Nexus main file.
+- [ ] Publish the single bundled Core Workshop staging directory; no separate Gamepad Support item exists.
 
 - [ ] Run the automated release gate and confirm the Lua 5.4 scheduler stress suite passes:
 
@@ -159,7 +163,7 @@ Record the result before publishing:
 | UE4SS build | |
 | Test world | |
 | Keyboard/mouse | |
-| Controller | Required for 0.3.0-alpha.2 |
+| Controller | Required for 0.3.0-rc.1 |
 | Tester | |
 | Date | |
 | UE4SS log reviewed | Yes / No |

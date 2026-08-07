@@ -1,12 +1,16 @@
-Version 0.3.0-alpha.2 - Shifted keypad and frozen Replacement Mode hotfix
+Version 0.3.0-rc.1 - Native construction guide release candidate
 
 Fixed
+- Bundle native controller interception directly with the main Core item.
 - Make Shift-modified Numpad controls work with Num Lock enabled while preserving Ctrl and Alt in multi-modifier chords.
 - Cover Shift+Numpad Decimal through the Windows Delete-key translation.
 - Block Palworld Replacement Mode while a preview is frozen so top-row 4 cannot hide a foundation preview.
+- Keep the custom placement guide synchronized with Palworld's CommonInput state so synthetic mouse packets cannot switch it away from gamepad independently.
 
 Testing
+- Remove superseded preview discovery, legacy guide/toast implementations, abandoned trigger accessors, and unused Enhanced Input settings.
 - Add regression coverage for translated Shift-keypad events and require the frozen Replacement Mode guard in the release gate.
+- Build and verify one consolidated Core artifact for Nexus and Steam.
 
 Version 0.3.0-alpha.1 - Experimental native construction guide
 

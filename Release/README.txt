@@ -1,8 +1,8 @@
-PERFECT PLACEMENT 0.3.0-ALPHA.2
+PERFECT PLACEMENT 0.3.0-RC.1
 ============================
 
-EXPERIMENTAL ALPHA
-------------------
+RELEASE CANDIDATE
+-----------------
 This build changes how Perfect Placement integrates with Palworld's construction UI. Test it in a disposable world or with a verified save backup before using it for an important build.
 
 REQUIREMENT
@@ -23,8 +23,6 @@ Expected files:
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\main.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\config.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\darnmenu.lua
-  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\gamepad.lua
-  Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\companion_bridge.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\keybindings.lua
   Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement\Scripts\runtime.lua
   Pal\Content\Paks\~mods\PerfectPlacement_NativeUI_P.pak
@@ -51,6 +49,8 @@ Mouse bindings are ignored unless Palworld has an active construction preview. M
 
 GAMEPAD
 -------
+Full gamepad support is bundled with Perfect Placement Core, including the native input DLL required for D-pad Up and LB/RB interception.
+
 L3                 Freeze / unfreeze
 L3 + D-pad Down    Copy targeted build piece
 L3 + D-pad Up      Copy targeted piece, match its transform, and freeze
@@ -61,7 +61,7 @@ LT + D-pad Left/Right
 LB / RB            Rotate left / right
 R3                 Reset to the frozen transform
 
-The companion Blueprint reports complete physical controller chords to Lua only when pressed; Perfect Placement does not run a recurring Lua gamepad input poll. The visible placement controls are rendered inside Palworld's construction guide by PerfectPlacement_NativeUI_P.pak. Advanced controller bindings are available in Scripts\config.lua.
+The optional native gamepad bridge reports complete physical controller chords to Lua only when pressed; Perfect Placement does not run a recurring Lua gamepad input poll. The visible placement controls are rendered inside Palworld's construction guide by PerfectPlacement_NativeUI_P.pak, and their input-device state follows Palworld's CommonInput subsystem. Advanced controller bindings are available in Scripts\config.lua.
 
 For troubleshooting construction UI churn, temporarily set diagnostics.ui_lifecycle_counters to true in Scripts\config.lua. Perfect Placement logs aggregate Setup, Destruct, host, and guide-transition counts every five seconds; restore the default false value for normal play and release builds.
 
@@ -80,4 +80,4 @@ Bindings may become intermittent when the same chord is registered by another mo
 
 UNINSTALL
 ---------
-Delete the PerfectPlacement UE4SS mod folder and PerfectPlacement_NativeUI_P.pak.
+Delete the PerfectPlacement UE4SS mod folder and PerfectPlacement_NativeUI_P.pak. Remove legacy Pal\Content\Paks\LogicMods\PerfectPlacement.pak if upgrading from 0.2.0.

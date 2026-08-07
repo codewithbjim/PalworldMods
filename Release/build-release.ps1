@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.3.0-alpha.2",
+    [string]$Version = "0.3.0-rc.1",
     [switch]$KeepStage
 )
 
@@ -13,8 +13,10 @@ $zipPath = Join-Path $distRoot "PerfectPlacement-$Version.zip"
 $luaSource = Join-Path $repoRoot "PerfectPlacement"
 $nativePakSource = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak"
 $nativePakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak.sha256"
+$nativeInputSource = Join-Path $repoRoot "NativeInput\bin\main.dll"
 $thumbnailSource = Join-Path $releaseRoot "thumbnail.png"
 $luaDestination = Join-Path $stageRoot "Pal\Binaries\Win64\UE4SS\Mods\PerfectPlacement"
+$nativeInputDestination = Join-Path $luaDestination "dlls"
 $nativePakDestination = Join-Path $stageRoot "Pal\Content\Paks\~mods"
 
 foreach ($required in @(
@@ -22,13 +24,12 @@ foreach ($required in @(
     (Join-Path $luaSource "enabled.txt"),
     (Join-Path $luaSource "Scripts\main.lua"),
     (Join-Path $luaSource "Scripts\config.lua"),
-    (Join-Path $luaSource "Scripts\gamepad.lua"),
-    (Join-Path $luaSource "Scripts\companion_bridge.lua"),
     (Join-Path $luaSource "Scripts\keybindings.lua"),
     (Join-Path $luaSource "Scripts\runtime.lua"),
     (Join-Path $luaSource "Scripts\darnmenu.lua"),
     $nativePakSource,
     $nativePakHashPath,
+    $nativeInputSource,
     $thumbnailSource,
     (Join-Path $releaseRoot "README.txt"),
     (Join-Path $releaseRoot "CHANGELOG.md")
@@ -70,7 +71,7 @@ if ($actualNativePakHash -ne $expectedNativePakHash) {
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
 }
-New-Item -ItemType Directory -Force -Path $luaDestination, $nativePakDestination, $distRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $luaDestination, $nativeInputDestination, $nativePakDestination, $distRoot | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $luaSource "enabled.txt") -Destination $luaDestination
 Copy-Item -LiteralPath (Join-Path $luaSource "Info.json") -Destination $luaDestination
@@ -80,6 +81,7 @@ Copy-Item -LiteralPath (Join-Path $luaSource "Scripts") -Destination $luaDestina
 Copy-Item -LiteralPath $nativePakSource -Destination (Join-Path $nativePakDestination "PerfectPlacement_NativeUI_P.pak")
 Copy-Item -LiteralPath (Join-Path $releaseRoot "README.txt") -Destination $stageRoot
 Copy-Item -LiteralPath (Join-Path $releaseRoot "CHANGELOG.md") -Destination $stageRoot
+Copy-Item -LiteralPath $nativeInputSource -Destination (Join-Path $nativeInputDestination "main.dll")
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force

@@ -1,9 +1,10 @@
--- Event-driven gamepad input adapter for Perfect Placement.
+-- Gamepad input adapter for Perfect Placement.
 --
 -- The companion Blueprint owns device input and calls
 -- QueueGamepadPhysicalInput once for each physical chord. This module maps
 -- those physical inputs to configurable logical actions, then hands the action
--- to main.lua's guarded dispatcher. It never mutates a preview and never polls.
+-- to main.lua's guarded dispatcher. Problematic native-consumed buttons enter
+-- through dispatch_native_physical; neither path polls controller state.
 
 local M = {}
 local Instance = {}
@@ -863,6 +864,11 @@ function Instance:_dispatch_physical(index, host, fallback)
     local state_actions = self.chord_actions[physical.state] or {}
     local action = state_actions[physical.chord]
     if action == nil then
+        if not self.unmapped_input_logged[index] then
+            self.unmapped_input_logged[index] = true
+            self:_log("Gamepad physical input has no active binding: "
+                .. physical.name)
+        end
         return false
     end
 
@@ -887,11 +893,53 @@ function Instance:_dispatch_physical(index, host, fallback)
         self:_log("Gamepad action dispatch was rejected: " .. action)
         return false
     end
+    if not self.dispatched_input_logged[index] then
+        self.dispatched_input_logged[index] = true
+        self:_log("Gamepad physical input reached Lua: "
+            .. physical.name .. " -> " .. action)
+    end
     return true
 end
 
-function Instance:_dispatch_counter_delta(host)
-    if not self.counter_fallback_logged then
+function Instance:_mark_gamepad_input(host)
+    if not self:_is_valid(host) then
+        return false
+    end
+    local ok, error_message = pcall(function()
+        host:SetUsingGamepad(true)
+    end)
+    if not ok and not self.device_guide_error_logged then
+        self.device_guide_error_logged = true
+        self:_log("Could not switch the companion guide to gamepad input: "
+            .. tostring(error_message))
+    end
+    return ok
+end
+
+function Instance:set_using_gamepad(using_gamepad)
+    local host = nil
+    if type(self.get_host) == "function" then
+        local host_ok, current_host = pcall(self.get_host)
+        if host_ok then
+            host = current_host
+        end
+    end
+    if not self:_is_valid(host) then
+        return false
+    end
+    local ok, error_message = pcall(function()
+        host:SetUsingGamepad(using_gamepad == true)
+    end)
+    if not ok and not self.device_guide_error_logged then
+        self.device_guide_error_logged = true
+        self:_log("Could not update the companion guide input device: "
+            .. tostring(error_message))
+    end
+    return ok
+end
+
+function Instance:_dispatch_counter_delta(host, event_fallback)
+    if event_fallback and not self.counter_fallback_logged then
         self.counter_fallback_logged = true
         self:_log(
             "Gamepad enum argument was unavailable; using event-triggered "
@@ -927,6 +975,7 @@ function Instance:_on_hook(context, physical_input)
     end
 
     local host, host_was_replaced = self:_ensure_event_host(context)
+    self:_mark_gamepad_input(host)
     local index = decode_enum(physical_input)
     if index ~= nil then
         self:_dispatch_physical(index, host, false)
@@ -958,7 +1007,7 @@ function Instance:_on_hook(context, physical_input)
         end
         return
     end
-    self:_dispatch_counter_delta(host)
+    self:_dispatch_counter_delta(host, true)
 end
 
 function Instance:start()
@@ -1045,12 +1094,40 @@ function Instance:detach_host(host)
     return true
 end
 
-function Instance:is_started()
-    return self.started
-end
+function Instance:shutdown()
+    self.enabled = false
+    self.started = false
 
-function Instance:get_hook_ids()
-    return self.hook_pre_id, self.hook_post_id
+    local host = nil
+    if type(self.get_host) == "function" then
+        local host_ok, current_host = pcall(self.get_host)
+        if host_ok then
+            host = current_host
+        end
+    end
+    if self:_is_valid(host) then
+        self:_apply_enabled(host, false)
+    end
+
+    if type(self.unregister_hook) == "function"
+        and self.hook_pre_id ~= nil
+        and self.hook_post_id ~= nil
+    then
+        pcall(
+            self.unregister_hook,
+            C.hook_path,
+            self.hook_pre_id,
+            self.hook_post_id
+        )
+    end
+    self.hook_pre_id = nil
+    self.hook_post_id = nil
+    self:detach_host()
+    if self.retention_id ~= nil then
+        retained_instances[self.retention_id] = nil
+        self.retention_id = nil
+    end
+    return true
 end
 
 function Instance:get_resolved_bindings()
@@ -1059,6 +1136,22 @@ end
 
 function Instance:get_keycap_texture(token)
     return self:_load_keycap(token)
+end
+
+-- NativeInput calls this entry point only for physical buttons that Palworld
+-- consumes before the companion Blueprint can receive them. Keeping the
+-- physical-to-logical mapping here preserves user remaps and all normal input
+-- guards without duplicating placement behavior in native code.
+function Instance:dispatch_native_physical(index)
+    if not self.enabled or not self.started then
+        return false
+    end
+    local decoded = decode_integer(index)
+    if decoded == nil then
+        return false
+    end
+    self:set_using_gamepad(true)
+    return self:_dispatch_physical(decoded, nil, false)
 end
 
 function M.new(options)
@@ -1077,6 +1170,8 @@ function M.new(options)
             or default_is_valid,
         dispatch_action = options.dispatch_action,
         register_hook = options.register_hook,
+        unregister_hook = options.unregister_hook,
+        get_host = options.get_host,
         set_enabled = options.set_enabled,
         enabled_property = options.enabled_property or "GamepadEnabled",
         load_keycap_texture = options.load_keycap_texture,
@@ -1088,6 +1183,8 @@ function M.new(options)
         texture_cache = {},
         resolved_bindings = {},
         chord_actions = {},
+        dispatched_input_logged = {},
+        unmapped_input_logged = {},
     }, Instance)
     instance.enabled = instance.config.enabled == true
     instance:_resolve_bindings()

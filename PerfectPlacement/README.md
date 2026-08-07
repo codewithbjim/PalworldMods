@@ -11,15 +11,17 @@ The mod resolves the active placement preview directly through the local player'
 1. Install a Palworld 1.0-compatible UE4SS build and verify that its console opens correctly.
 2. Copy this `PerfectPlacement` directory into the UE4SS `Mods` directory.
 3. Copy `PerfectPlacement_NativeUI_P.pak` into `Pal\Content\Paks\~mods`.
-4. If your UE4SS installation still uses `mods.txt`, add:
+4. The bundled native gamepad bridge is installed with Perfect Placement Core.
+5. Remove the legacy `Pal\Content\Paks\LogicMods\PerfectPlacement.pak` if upgrading from 0.2.0.
+6. If your UE4SS installation still uses `mods.txt`, add `PerfectPlacement : 1`.
 
    ```text
    PerfectPlacement : 1
    ```
 
-5. Start a disposable test world. Do not develop against your only save.
-6. Enter build mode and make a building preview visible.
-7. Middle-click to freeze or unfreeze the selected preview.
+7. Start a disposable test world. Do not develop against your only save.
+8. Enter build mode and make a building preview visible.
+9. Middle-click to freeze or unfreeze the selected preview.
 
 ## Controls and configuration
 
@@ -56,7 +58,7 @@ Default gamepad controls:
 - `LB/RB`: rotate left or right
 - `R3`: reset to the frozen transform
 
-The companion Blueprint reports complete physical controller chords only when pressed, so gamepad input does not use a recurring Lua poll. Advanced controller bindings are available in `Scripts/config.lua`.
+Full gamepad support requires the separately distributed optional native bridge. The bridge reports controller input only when pressed, so it does not use a recurring Lua poll. Palworld's CommonInput subsystem remains authoritative for the displayed device guide. Advanced controller bindings are available in `Scripts/config.lua`.
 
 For troubleshooting construction UI churn, temporarily set `diagnostics.ui_lifecycle_counters = true` in `Scripts/config.lua`. Perfect Placement then logs aggregate Setup, Destruct, host, and guide-transition counts every five seconds; restore the default `false` value for normal play and release builds.
 
@@ -75,6 +77,8 @@ Compatibility note: bindings may become intermittent when the same chord is regi
 Horizontal movement follows the frozen build piece's orientation. The piece's yaw defines the movement axes, while the camera decides which aligned axis is forward; Numpad 8 therefore moves away from the camera without drifting off the piece's orientation. The movement directions turn when the piece is rotated. Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position. The upward range corresponds to two standard wall levels.
 
 While frozen, Perfect Placement suspends the local player's builder component and applies transforms only when an edit key is pressed. Continuous per-frame transform enforcement is disabled to avoid overloading the game thread.
+
+Important performance note: Palworld's normal unfrozen construction preview continues the game's native per-frame aiming, placement, snapping, collision, and material updates. Perfect Placement does not replace or continuously reapply that unfrozen behavior. A frozen preview may therefore run at a higher frame rate because Perfect Placement temporarily suspends the preview actor and player builder component until the preview is released.
 
 ## Required live discovery
 
@@ -113,4 +117,4 @@ The final confirmation must call Palworld's original server-authoritative path. 
 
 ## Input compatibility
 
-Keyboard and mouse controls still use UE4SS `RegisterKeyBind`, which may not consume the underlying game input on every UE4SS/Palworld build. Gamepad controls use the bundled Blueprint input bridge, which enables its Enhanced Input Mapping Context only for the applicable preview state and reports complete physical chords to Lua as events.
+Keyboard and mouse controls use UE4SS `RegisterKeyBind` and require no custom DLL. Full gamepad controls use the optional native input bridge and report physical chords to Lua as events. The custom guide reads Palworld's CommonInput state so synthetic mouse packets cannot switch it independently of the native guide.

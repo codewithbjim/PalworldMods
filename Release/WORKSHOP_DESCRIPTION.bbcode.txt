@@ -23,10 +23,10 @@ Perfect Placement lets you freeze a live construction preview in world space, wa
 [*]Palworld 1.0 for Windows through Steam
 [*][b][url=https://steamcommunity.com/workshop/filedetails/?id=3625223587]UE4SS Experimental (Palworld)[/url] is a hard requirement for the Steam Workshop version.[/b] It must be subscribed to and enabled through Palworld's Mod Management screen.
 [*][b]Optional: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3769456391]DarnMenu 1.6.2 or newer[/url][/b] for in-game Mod Options. DarnUI is installed as DarnMenu's own dependency.
-[*]Keyboard, mouse, or gamepad
+[*]Keyboard, mouse, and bundled full controller support
 [/list]
 
-The Workshop package contains both a UE4SS Lua component and a Logic Mod. Palworld's official mod loader installs both components from this single subscription.
+The Workshop item contains the UE4SS Lua component, native input bridge, and one regular resource PAK as a single installation.
 
 [h2]Enable the mod[/h2]
 [list=1]
@@ -54,6 +54,8 @@ Default movement steps are 1 cm, 10 cm, and 100 cm. Rotation uses configurable 1
 
 [h2]Gamepad controls[/h2]
 
+Full controller support, including D-pad Up and LB/RB interception, is included with this item.
+
 [list]
 [*][b]Freeze/release preview:[/b] L3
 [*][b]Copy targeted build piece:[/b] L3 + D-pad Down
@@ -74,6 +76,7 @@ The optional DarnMenu page also configures movement steps and limits, controller
 
 [h2]Important beta limitations[/h2]
 [list]
+[*][b]Unfrozen preview performance remains Palworld-controlled.[/b] Palworld continues its native per-frame aiming, placement, snapping, collision, and material updates while a preview is unfrozen. Frozen mode may run faster because Perfect Placement temporarily suspends the preview actor and player builder component; this difference does not indicate a recurring Perfect Placement transform or gamepad poll.
 [*][b]Final placement integration is incomplete.[/b] The current build freezes, edits, and releases the preview back to Palworld; it does not replace Palworld's authoritative validation or directly spawn completed structures.
 [*]The companion key-guide UI is not yet reliable on every current Palworld/UE4SS setup.
 [*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
@@ -95,7 +98,7 @@ Confirm Num Lock is enabled and check the UE4SS log for messages beginning with 
 
 [b]The guide UI is missing[/b]
 
-The Lua controls may still be available. Confirm that the Logic Mod installed correctly and report the relevant UE4SS log section.
+Confirm that PerfectPlacement_NativeUI_P.pak installed correctly and report the relevant UE4SS log section.
 
 When reporting a problem, include the Palworld revision, UE4SS version, installed mod list, reproduction steps, and relevant UE4SS log lines.
 

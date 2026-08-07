@@ -3,8 +3,8 @@
 
 return {
     ui = {
-        -- Implemented by the companion Blueprint Logic Mod. Lua discovers the
-        -- spawned host by generated class name and calls its public functions.
+        -- Implemented by the companion Blueprint assets in the regular _P.pak.
+        -- Lua discovers the spawned host and calls its public functions.
         host_class_name = "WBP_PerfectPlacement_KeyGuide_C",
         show_frozen_guide_function = "ShowFrozenGuide",
         show_unfrozen_guide_function = "ShowUnfrozenGuide",
@@ -140,33 +140,5 @@ return {
         -- Disabled by default so production builds add no recurring logger.
         ui_lifecycle_counters = false,
         ui_lifecycle_log_interval_ms = 5000,
-
-        -- These are intentionally isolated here because Palworld 1.0 class
-        -- names must be confirmed from a live UE4SS header/actor dump.
-        preview_class_names = {
-            "PalBuildObject",
-            "PalBuildObjectBase",
-            "PalBuildObjectIndicator",
-            "BP_BuildObject_Base_C",
-        },
-
-        -- Name fragments used to rank objects found through FindAllOf.
-        preferred_name_fragments = {
-            "Preview",
-            "Indicator",
-            "BuildObject",
-        },
-        rejected_name_fragments = {
-            "Default__",
-            "CDO",
-        },
-
-        -- APalBuildObject uses the Simulation state for an uncommitted build
-        -- object in older public header dumps. The live 1.0 dump must confirm
-        -- which of these property names is present.
-        simulation_state_properties = {
-            "CurrentState",
-            "State",
-        },
     },
 }

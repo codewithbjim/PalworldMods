@@ -12,6 +12,9 @@ package.path = repo_root .. "/PerfectPlacement/Scripts/?.lua;" .. package.path
 package.loaded.runtime = nil
 local Runtime = require("runtime")
 local Keybindings = require("keybindings")
+local CompanionBridge = require("companion_bridge")
+local Gamepad = require("gamepad")
+local GamepadFeature = require("gamepad_feature")
 
 local function fail(message)
     error(message, 2)
@@ -584,6 +587,315 @@ tests["missing owned pulse API uses the stable execute fallback"] = function()
     mock:run_engine_until_idle()
     assert_equal(calls, 8, "fallback pulse lost FIFO work")
     assert_equal(mock.max_engine_pending, 1, "fallback pulse drain overlap")
+end
+
+tests["companion bridge waits for the local player controller"] = function()
+    local previous_find_all = _G.FindAllOf
+    local previous_static_find = _G.StaticFindObject
+    local controller = nil
+    local delayed_callback = nil
+    local spawn_calls = 0
+    local actor_class = { valid = true }
+    local actor = { valid = true }
+    local world = { valid = true }
+
+    function actor:GetFullName()
+        return "ModActor_C TestActor"
+    end
+    function world:SpawnActor(received_class)
+        assert_equal(received_class, actor_class, "wrong bridge actor class")
+        spawn_calls = spawn_calls + 1
+        return actor
+    end
+
+    _G.FindAllOf = function()
+        return {}
+    end
+    _G.StaticFindObject = function()
+        return {
+            valid = true,
+            GetAsset = function()
+                return actor_class
+            end,
+        }
+    end
+
+    local bridge = CompanionBridge.new({
+        is_valid = function(value)
+            return type(value) == "table" and value.valid == true
+        end,
+        log = function() end,
+        ue_helpers = {
+            FindOrAddFName = function(value)
+                return value
+            end,
+            GetPlayerController = function()
+                return controller
+            end,
+            GetWorld = function()
+                return world
+            end,
+        },
+        delay = function(_, callback)
+            delayed_callback = callback
+            return true
+        end,
+    })
+    bridge.started = true
+    bridge.requested_mode = "unfrozen"
+
+    local ready, reason = bridge:ensure(world)
+    assert_false(ready, "bridge spawned before player controller existed")
+    assert_equal(reason, "local player controller is unavailable",
+        "unexpected controller wait reason")
+    assert_equal(spawn_calls, 0, "bridge spawned with a nil player controller")
+    assert_equal(type(delayed_callback), "function", "controller retry missing")
+
+    controller = { valid = true }
+    delayed_callback()
+    assert_equal(spawn_calls, 1, "bridge did not spawn after controller appeared")
+
+    _G.FindAllOf = previous_find_all
+    _G.StaticFindObject = previous_static_find
+end
+
+tests["companion bridge directly enforces child gamepad input mode"] = function()
+    local unfrozen_active = false
+    local frozen_active = false
+    local unfrozen = { valid = true }
+    local frozen = { valid = true }
+
+    function unfrozen:ActivateInput()
+        unfrozen_active = true
+    end
+    function unfrozen:DeactivateInput()
+        unfrozen_active = false
+    end
+    function frozen:ActivateInput()
+        frozen_active = true
+    end
+    function frozen:DeactivateInput()
+        frozen_active = false
+    end
+
+    local bridge = CompanionBridge.new({
+        is_valid = function(value)
+            return type(value) == "table" and value.valid == true
+        end,
+        log = function() end,
+    })
+    bridge.actor = {
+        valid = true,
+        UnfrozenInputActor = unfrozen,
+        FrozenInputActor = frozen,
+    }
+
+    assert_true(bridge:set_gamepad_input_mode("unfrozen"),
+        "unfrozen input mode failed")
+    assert_equal(unfrozen.InputPriority, 10000,
+        "unfrozen child input priority")
+    assert_equal(frozen.InputPriority, 10000,
+        "frozen child input priority")
+    assert_true(unfrozen_active, "unfrozen child was not activated")
+    assert_false(frozen_active, "frozen child remained active")
+
+    assert_true(bridge:set_gamepad_input_mode("frozen"),
+        "frozen input mode failed")
+    assert_false(unfrozen_active, "unfrozen child remained active")
+    assert_true(frozen_active, "frozen child was not activated")
+
+    assert_true(bridge:set_gamepad_input_mode("hidden"),
+        "hidden input mode failed")
+    assert_false(unfrozen_active, "unfrozen child remained active while hidden")
+    assert_false(frozen_active, "frozen child remained active while hidden")
+end
+
+tests["gamepad events switch the companion guide device mode"] = function()
+    local hook_callback = nil
+    local dispatched_action = nil
+    local guide_uses_gamepad = false
+    local host = { valid = true }
+
+    function host:GetFullName()
+        return "WBP_PerfectPlacement_KeyGuide_C TestHost"
+    end
+    function host:SetUsingGamepad(value)
+        guide_uses_gamepad = value
+    end
+
+    local gamepad = Gamepad.new({
+        config = {
+            gamepad = {
+                enabled = true,
+            },
+        },
+        is_valid = function(value)
+            return type(value) == "table" and value.valid == true
+        end,
+        log = function() end,
+        register_hook = function(_, callback)
+            hook_callback = callback
+            return 1, 2
+        end,
+        dispatch_action = function(action)
+            dispatched_action = action
+            return true
+        end,
+    })
+
+    assert_true(gamepad:attach_host(host), "gamepad host did not attach")
+    assert_equal(type(hook_callback), "function", "gamepad hook missing")
+    hook_callback(host, 0)
+    assert_true(guide_uses_gamepad,
+        "confirmed gamepad input did not update the guide device mode")
+    assert_equal(dispatched_action, "toggle_freeze",
+        "gamepad action was not dispatched after the guide update")
+end
+
+tests["native gamepad input dispatches without a polling fallback"] = function()
+    local dispatched_action = nil
+    local host = {
+        valid = true,
+        GamepadUnfrozenL3Serial = 0,
+    }
+
+    function host:GetFullName()
+        return "WBP_PerfectPlacement_KeyGuide_C PollHost"
+    end
+    function host:SetUsingGamepad() end
+
+    local gamepad = Gamepad.new({
+        config = {
+            gamepad = {
+                enabled = true,
+            },
+        },
+        is_valid = function(value)
+            return type(value) == "table" and value.valid == true
+        end,
+        log = function() end,
+        register_hook = function()
+            return 1, 2
+        end,
+        get_host = function()
+            return host
+        end,
+        dispatch_action = function(action)
+            dispatched_action = action
+            return true
+        end,
+    })
+
+    assert_true(gamepad:attach_host(host), "native-input host did not attach")
+    assert_true(gamepad:dispatch_native_physical(0),
+        "native physical input was rejected")
+    assert_equal(dispatched_action, "toggle_freeze",
+        "native input did not dispatch the unfrozen L3 action")
+end
+
+tests["disabled gamepad feature constructs no controller subsystems"] = function()
+    local constructors = 0
+    local forbidden_module = {
+        new = function()
+            constructors = constructors + 1
+            error("disabled feature constructed a controller subsystem")
+        end,
+    }
+    local feature = GamepadFeature.new({
+        config = {
+            gamepad = {
+                enabled = false,
+            },
+        },
+        dispatch_action = function() return true end,
+        gamepad_module = forbidden_module,
+        companion_bridge_module = forbidden_module,
+        log = function() end,
+    })
+
+    assert_false(feature:is_enabled(), "disabled feature reported enabled")
+    assert_equal(constructors, 0, "disabled feature ran constructors")
+    assert_false(feature:start(), "disabled feature started")
+    assert_false(feature:attach_host({}), "disabled feature attached a host")
+    assert_true(feature:shutdown(), "disabled feature shutdown failed")
+end
+
+tests["gamepad feature owns lifecycle and dispatch boundary"] = function()
+    local calls = {}
+    local input = {
+        attach_host = function(_, host)
+            calls[#calls + 1] = "attach:" .. host.name
+            return true
+        end,
+        detach_host = function()
+            calls[#calls + 1] = "detach"
+            return true
+        end,
+        get_resolved_bindings = function()
+            return { frozen = {} }, {}
+        end,
+        get_keycap_texture = function(_, token)
+            return "texture:" .. token
+        end,
+        dispatch_native_physical = function(_, index)
+            calls[#calls + 1] = "native:" .. tostring(index)
+            return true
+        end,
+        set_using_gamepad = function(_, enabled)
+            calls[#calls + 1] = "device:" .. tostring(enabled)
+            return true
+        end,
+        shutdown = function()
+            calls[#calls + 1] = "input_shutdown"
+            return true
+        end,
+    }
+    local bridge = {
+        start = function()
+            calls[#calls + 1] = "bridge_start"
+            return true
+        end,
+        set_gamepad_input_mode = function(_, mode)
+            calls[#calls + 1] = "mode:" .. mode
+            return true
+        end,
+        ensure_current_world = function()
+            calls[#calls + 1] = "ensure"
+            return true
+        end,
+        shutdown = function()
+            calls[#calls + 1] = "bridge_shutdown"
+            return true
+        end,
+    }
+    local feature = GamepadFeature.new({
+        config = { gamepad = { enabled = true } },
+        dispatch_action = function() return true end,
+        gamepad_module = { new = function() return input end },
+        companion_bridge_module = { new = function() return bridge end },
+        native_mode_path = false,
+        log = function() end,
+    })
+
+    assert_true(feature:start(), "enabled feature did not start")
+    assert_true(feature:start(), "repeated feature start failed")
+    assert_true(feature:attach_host({ name = "host" }), "host attach failed")
+    assert_true(feature:set_mode("frozen"), "frozen mode failed")
+    assert_true(feature:dispatch_native_physical(18),
+        "native physical input was not proxied")
+    assert_true(feature:set_using_gamepad(false),
+        "keyboard device mode was not proxied")
+    assert_true(feature:ensure_current_world(), "world ensure failed")
+    assert_equal(feature:get_keycap_texture("LB"), "texture:LB",
+        "keycap provider was not proxied")
+    assert_true(feature:shutdown(), "feature shutdown failed")
+    assert_contains(calls, "native:18",
+        "native physical input did not remain inside the gamepad boundary")
+    assert_contains(calls, "device:false",
+        "keyboard device mode did not remain inside the gamepad boundary")
+    assert_equal(table.concat(calls, ","),
+        "bridge_start,attach:host,mode:frozen,native:18,device:false,ensure,input_shutdown,bridge_shutdown",
+        "feature lifecycle order")
 end
 
 local failures = {}

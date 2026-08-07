@@ -15,11 +15,16 @@ PerfectPlacementBlueprint/PalworldModdingKit/Content/Mods/*
 # Superseded cooked-widget experiment and generated release archives
 PerfectPlacementPak/
 Release/Dist/
+Release/Stage/
+Release/Stage-Gamepad/
 Release/Tools/
 Release/WorkshopStage/
 Release/.nexus-apikey
 NativeUI/Work/
 NativeUI/bin/
 NativeUI/obj/
+NativeInput/Vendor/
+NativeInput/build/
+PerfectPlacement/native_gamepad_mode.txt
 Release/Media/*
 !Release/Media/perfect-placement-nexus-banner-1300x372-v2.png

@@ -28,7 +28,7 @@ Perfect Placement is for the moment when vanilla placement is almost right—but
 [*]Optional: DarnMenu 1.6.2 or newer for in-game Mod Options
 [/list]
 
-[b]Perfect Placement contains a UE4SS Lua mod and one consolidated resource _P.pak. Install both parts from the archive.[/b]
+[b]Perfect Placement is distributed as one package.[/b] It contains the UE4SS Lua mod, native input bridge, and resource _P.pak.
 
 With DarnMenu installed, configure controls and settings under [b]ESC → Mod Options → Perfect Placement[/b]. Changes apply after restarting Palworld. Without DarnMenu, the mod uses its built-in bindings and Scripts/config.lua defaults unless a saved Mods/shared/PerfectPlacement_user.lua override already exists.
 
@@ -69,6 +69,8 @@ If your UE4SS build still uses [b]mods.txt[/b], add:
 
 [size=5][b]Gamepad controls[/b][/size]
 
+Full controller support, including D-pad Up and LB/RB interception, is included in the main download.
+
 [list]
 [*][b]Freeze / unfreeze preview:[/b] L3
 [*][b]Copy targeted build piece:[/b] L3 + D-pad Down
@@ -86,6 +88,7 @@ The key guide appears only while a live construction preview is available. Mouse
 [size=5][b]Notes and limitations[/b][/size]
 
 [list]
+[*][b]Unfrozen preview performance remains Palworld-controlled.[/b] Palworld continues its native per-frame aiming, placement, snapping, collision, and material updates while a preview is unfrozen. Frozen mode may run faster because Perfect Placement temporarily suspends the preview actor and player builder component; this difference does not indicate a recurring Perfect Placement transform or gamepad poll.
 [*]Vertical movement is clamped from 25 cm below to 650 cm above the initially frozen position—an upward range of two standard wall levels.
 [*]Install the mod on each client that wants to use the placement controls.
 [*]Test new mod versions in a disposable world before using an important save.

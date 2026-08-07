@@ -34,7 +34,7 @@
 param(
     [string]$ZipPath,
     [string]$ModName = 'PerfectPlacement',
-    [string]$Version = '0.3.0-alpha.2',
+    [string]$Version = '0.3.0-rc.1',
     [string]$ApiKey = $env:NEXUS_APIKEY,
     [string]$ApiKeyFile,
     [string]$GameDomain = 'palworld',

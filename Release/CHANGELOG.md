@@ -1,16 +1,20 @@
 # Changelog
 
-## 0.3.0-alpha.2
+## 0.3.0-rc.1
 
-Experimental Native UI update based on 0.2.0-rc.5.
+Native UI release candidate based on 0.2.0-rc.5.
 
 ### Fixed
 
+- Bundle the native controller bridge directly with Perfect Placement Core so one installation provides keyboard, mouse, and full gamepad support.
+- Follow Palworld's authoritative CommonInput device state for custom construction controls so synthetic or zero-delta raw mouse packets cannot switch only the Perfect Placement guide away from gamepad prompts.
 - Register Windows' translated navigation-key events for Shift-modified Numpad controls, including Decimal, while preserving Ctrl and Alt in multi-modifier chords.
 - Keep frozen previews under Perfect Placement control by making Palworld Replacement Mode unavailable until release, preventing top-row `4` from hiding a foundation preview.
 
 ### Testing
 
+- Remove superseded heuristic preview discovery, legacy text-row and toast UI implementations, abandoned trigger accessors, and unused Enhanced Input settings; require those dead paths to remain absent.
+- Build and verify one consolidated Core artifact for Nexus and Steam Workshop, including the bundled DLL and native UI PAK.
 - Add Lua regression coverage for Shift, Alt+Shift, Ctrl+Alt+Shift, and Shift+Numpad Decimal translation while confirming unmodified Numpad bindings remain unchanged.
 - Extend the release gate to require the frozen Replacement Mode availability guard and the corrected Shift-keypad registration path.
 

@@ -2,7 +2,7 @@
   "ModName": "Perfect Placement",
   "PackageName": "PerfectPlacement",
   "Thumbnail": "thumbnail.png",
-  "Version": "0.3.0-alpha.2",
+  "Version": "0.3.0-rc.1",
   "DebugMode": false,
   "MinRevision": 82182,
   "Author": "virtualbjörn",
@@ -20,7 +20,8 @@
     {
       "Type": "Lua",
       "Targets": [
-        "./Scripts"
+        "./Scripts",
+        "./dlls"
       ]
     },
     {

@@ -5,7 +5,7 @@ param(
 
     [string]$ThumbnailSource,
 
-    [string]$Version = "0.3.0-alpha.2"
+    [string]$Version = "0.3.0-rc.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +14,7 @@ $repoRoot = Split-Path -Parent $releaseRoot
 $modRoot = Join-Path $repoRoot "PerfectPlacement"
 $nativePakSource = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak"
 $nativePakHashPath = Join-Path $releaseRoot "Assets\PerfectPlacement_NativeUI_P.pak.sha256"
+$nativeInputSource = Join-Path $repoRoot "NativeInput\bin\main.dll"
 $destinationRoot = [System.IO.Path]::GetFullPath($Destination)
 if (-not $ThumbnailSource) {
     $ThumbnailSource = Join-Path $releaseRoot "thumbnail.png"
@@ -23,13 +24,15 @@ foreach ($required in @(
     (Join-Path $modRoot "Info.json"),
     (Join-Path $modRoot "Scripts\main.lua"),
     (Join-Path $modRoot "Scripts\config.lua"),
-    (Join-Path $modRoot "Scripts\gamepad.lua"),
-    (Join-Path $modRoot "Scripts\companion_bridge.lua"),
     (Join-Path $modRoot "Scripts\keybindings.lua"),
     (Join-Path $modRoot "Scripts\runtime.lua"),
     (Join-Path $modRoot "Scripts\darnmenu.lua"),
+    (Join-Path $modRoot "Scripts\gamepad.lua"),
+    (Join-Path $modRoot "Scripts\gamepad_feature.lua"),
+    (Join-Path $modRoot "Scripts\companion_bridge.lua"),
     $nativePakSource,
-    $nativePakHashPath
+    $nativePakHashPath,
+    $nativeInputSource
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required Workshop package input not found: $required"
@@ -49,6 +52,7 @@ if ($actualNativePakHash -ne $expectedNativePakHash) {
 New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
 $scriptsDestination = Join-Path $destinationRoot "Scripts"
 $paksDestination = Join-Path $destinationRoot "Paks"
+$nativeInputDestination = Join-Path $destinationRoot "dlls"
 foreach ($payloadDirectory in @($scriptsDestination, $paksDestination)) {
     if (Test-Path -LiteralPath $payloadDirectory) {
         Remove-Item -LiteralPath $payloadDirectory -Recurse -Force
@@ -56,19 +60,26 @@ foreach ($payloadDirectory in @($scriptsDestination, $paksDestination)) {
 }
 foreach ($legacyPayload in @(
     (Join-Path $destinationRoot "PerfectPlacement.modconfig.json"),
-    (Join-Path $destinationRoot "LogicMods")
+    (Join-Path $destinationRoot "LogicMods"),
+    (Join-Path $destinationRoot "dlls")
 )) {
     if (Test-Path -LiteralPath $legacyPayload) {
         Remove-Item -LiteralPath $legacyPayload -Recurse -Force
     }
 }
-New-Item -ItemType Directory -Force -Path $scriptsDestination, $paksDestination | Out-Null
+foreach ($payloadDirectory in @($nativeInputDestination)) {
+    if (Test-Path -LiteralPath $payloadDirectory) {
+        Remove-Item -LiteralPath $payloadDirectory -Recurse -Force
+    }
+}
+New-Item -ItemType Directory -Force -Path $scriptsDestination, $paksDestination, $nativeInputDestination | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $modRoot "Info.json") -Destination $destinationRoot -Force
 foreach ($scriptName in @(
     "main.lua",
     "config.lua",
     "gamepad.lua",
+    "gamepad_feature.lua",
     "companion_bridge.lua",
     "keybindings.lua",
     "runtime.lua",
@@ -77,6 +88,7 @@ foreach ($scriptName in @(
     Copy-Item -LiteralPath (Join-Path $modRoot "Scripts\$scriptName") -Destination $scriptsDestination -Force
 }
 Copy-Item -LiteralPath $nativePakSource -Destination (Join-Path $paksDestination "PerfectPlacement_NativeUI_P.pak") -Force
+Copy-Item -LiteralPath $nativeInputSource -Destination (Join-Path $nativeInputDestination "main.dll") -Force
 
 $thumbnailDestination = Join-Path $destinationRoot "thumbnail.png"
 $resolvedThumbnailSource = [System.IO.Path]::GetFullPath($ThumbnailSource)
@@ -118,6 +130,11 @@ if ($paksRule.Targets.Count -ne 1 -or $paksRule.Targets[0] -ne "./Paks/PerfectPl
 }
 if ($manifest.InstallRule.Type -contains "LogicMods") {
     throw "The consolidated package must not contain a LogicMods InstallRule."
+}
+
+$luaRule = $manifest.InstallRule | Where-Object Type -eq "Lua"
+if ($luaRule.Targets.Count -ne 2 -or $luaRule.Targets -notcontains "./Scripts" -or $luaRule.Targets -notcontains "./dlls") {
+    throw "The Core Lua InstallRule must target Scripts and dlls."
 }
 
 Write-Host "Staged Perfect Placement $Version Workshop package at $destinationRoot"
