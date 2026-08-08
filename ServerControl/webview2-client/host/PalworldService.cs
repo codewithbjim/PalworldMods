@@ -1,12 +1,17 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 
 namespace PalworldServerControl.Host;
 
 internal sealed class PalworldService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
     private static readonly HashSet<string> AllowedCommands = new(StringComparer.Ordinal) { "start", "stop", "restart", "status" };
     private readonly string _shareRoot;
     private readonly string _metadataRoot;
@@ -153,7 +158,7 @@ internal sealed class PalworldService
 
     private static SettingView ToView(SettingMetadata item, string value, string defaultValue, bool isDefault, bool? hasSecret) =>
         new(item.Name, item.Category, item.Label, item.Description, item.Type,
-            item.Default.ValueKind == JsonValueKind.Undefined ? null : JsonSerializer.Deserialize<object>(item.Default.GetRawText()),
+            item.Default.ValueKind == JsonValueKind.Undefined ? null : item.Default.Clone(),
             item.Min, item.Max, item.Options, item.Source, $"{item.Source}::{item.Name}", value, defaultValue, isDefault, hasSecret);
 
     private static string DefaultText(SettingMetadata item) => item.Default.ValueKind switch

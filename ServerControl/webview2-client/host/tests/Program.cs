@@ -76,6 +76,33 @@ var tests = new (string Name, Action Run)[]
         Equal("Running", status.State);
         Equal(2, status.CurrentPlayers);
         Equal(59d, status.ServerFps);
+    }),
+    ("startup arguments save without reflection-based JSON metadata", () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "PalworldServerControlTests", Guid.NewGuid().ToString("N"));
+        var metadata = Path.Combine(root, "metadata");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "Pal", "Saved", "Config", "WindowsServer"));
+            Directory.CreateDirectory(Path.Combine(root, "ServerControl", "requests"));
+            Directory.CreateDirectory(metadata);
+            const string config = "[/Script/Pal.PalGameWorldSettings]\r\nOptionSettings=(Dummy=True)\r\n";
+            File.WriteAllText(Path.Combine(root, "Pal", "Saved", "Config", "WindowsServer", "PalWorldSettings.ini"), config);
+            File.WriteAllText(Path.Combine(root, "DefaultPalWorldSettings.ini"), config);
+            File.WriteAllText(Path.Combine(metadata, "PalServerSettings.json"), "[]");
+            File.WriteAllText(Path.Combine(metadata, "PalServerStartupSettings.json"),
+                """[{"name":"publiclobby","category":"Startup Arguments","label":"Community server listing","description":"Test","type":"boolean","default":false}]""");
+
+            var service = new PalworldService(root, metadata);
+            var snapshot = service.LoadSnapshotAsync().GetAwaiter().GetResult();
+            var result = service.SaveSettingsAsync(new SaveRequest(
+                new Dictionary<string, string> { ["startup::publiclobby"] = "True" }, snapshot.IniHash, snapshot.StartupHash)).GetAwaiter().GetResult();
+
+            Equal(1, result.Changed);
+            using var saved = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ServerControl", "startup-settings.json")));
+            Equal(true, saved.RootElement.GetProperty("publiclobby").GetBoolean());
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     })
 };
 

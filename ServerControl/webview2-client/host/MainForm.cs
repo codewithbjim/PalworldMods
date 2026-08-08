@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
@@ -9,7 +10,10 @@ namespace PalworldServerControl.Host;
 internal sealed class MainForm : Form
 {
     private const string AppOrigin = "https://palworld-control.local";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill, AllowExternalDrop = false };
     private readonly HostOptions _options;
     private readonly ConnectionManager _connections;

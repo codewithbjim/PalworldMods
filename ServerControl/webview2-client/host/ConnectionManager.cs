@@ -1,11 +1,16 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace PalworldServerControl.Host;
 
 internal sealed class ConnectionManager
 {
     internal const string DefaultShareRoot = @"C:\PalServer";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
     private readonly string _settingsPath;
     private readonly string? _explicitRoot;
 
